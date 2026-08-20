@@ -51,9 +51,46 @@ inline void HookCreateWindowExA(bool bEnable) {
 			if (x < 0) x = 0;
 			if (y < 0) y = 0;
 		}
-		return create_window_ex_a(dwExStyle, lpClassName, lpWindowName, dwStyle, x, y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+		HWND hWnd = create_window_ex_a(dwExStyle, lpClassName, lpWindowName, dwStyle, x, y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+		if (hWnd && Client::m_bEnableScaling && Client::m_nWindowWidth > 0 && Client::m_nWindowHeight > 0) {
+			RECT rc = { 0, 0, Client::m_nWindowWidth, Client::m_nWindowHeight };
+			AdjustWindowRectEx(&rc, dwStyle, (hMenu != NULL), dwExStyle);
+			int w = rc.right - rc.left;
+			int h = rc.bottom - rc.top;
+			int sx = (GetSystemMetrics(SM_CXSCREEN) - w) / 2;
+			int sy = (GetSystemMetrics(SM_CYSCREEN) - h) / 4;
+			if (sx < 0) sx = 0;
+			if (sy < 0) sy = 0;
+			SetWindowPos(hWnd, NULL, sx, sy, w, h, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+		}
+		return hWnd;
 	};
 	Memory::SetHook(bEnable, reinterpret_cast<void**>(&create_window_ex_a), hook);
+}
+
+inline void HookShowWindow(bool bEnable) {
+	static auto show_window = decltype(&ShowWindow)(GetProcAddress(LoadLibraryA("USER32"), "ShowWindow"));
+	static const decltype(&ShowWindow) hook = [](HWND hWnd, int nCmdShow) -> BOOL {
+		if (Client::m_bEnableScaling && Client::m_nWindowWidth > 0 && Client::m_nWindowHeight > 0) {
+			char szClass[64] = { 0 };
+			GetClassNameA(hWnd, szClass, sizeof(szClass));
+			if (strstr(szClass, "MapleStoryClass")) {
+				DWORD dwStyle = GetWindowLongA(hWnd, GWL_STYLE);
+				DWORD dwExStyle = GetWindowLongA(hWnd, GWL_EXSTYLE);
+				RECT rc = { 0, 0, Client::m_nWindowWidth, Client::m_nWindowHeight };
+				AdjustWindowRectEx(&rc, dwStyle, FALSE, dwExStyle);
+				int w = rc.right - rc.left;
+				int h = rc.bottom - rc.top;
+				int sx = (GetSystemMetrics(SM_CXSCREEN) - w) / 2;
+				int sy = (GetSystemMetrics(SM_CYSCREEN) - h) / 4;
+				if (sx < 0) sx = 0;
+				if (sy < 0) sy = 0;
+				SetWindowPos(hWnd, NULL, sx, sy, w, h, SWP_NOZORDER | SWP_FRAMECHANGED);
+			}
+		}
+		return show_window(hWnd, nCmdShow);
+	};
+	Memory::SetHook(bEnable, reinterpret_cast<void**>(&show_window), hook);
 }
 
 DWORD GetFuncAddress(LPCSTR lpModule, LPCSTR lpFunc)	//ty alias!			//multiclient, not currently working, likely cannot hook early enough with nmconew.dll

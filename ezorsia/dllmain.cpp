@@ -106,7 +106,17 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		EnableHighDpiAwareness();
 
 		//CreateConsole();	//console for devs, use this to log stuff if you want
-		INIReader reader("config.ini");
+		char iniPath[MAX_PATH] = { 0 };
+		GetModuleFileNameA(NULL, iniPath, MAX_PATH);
+		char* lastSlash = strrchr(iniPath, '\\');
+		if (lastSlash) {
+			*(lastSlash + 1) = '\0';
+			strcat_s(iniPath, "config.ini");
+		}
+		else {
+			strcpy_s(iniPath, "config.ini");
+		}
+		INIReader reader(iniPath);
 		if (reader.ParseError() == 0) {
 			int cfgWidth = reader.GetInteger("general", "width", 1280);
 			int cfgHeight = reader.GetInteger("general", "height", 720);
@@ -183,6 +193,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 
 		Hook_CreateMutexA(true); //multiclient //ty darter, angel, and alias!
 		HookCreateWindowExA(true); //default ezorsia
+		HookShowWindow(true);
 		HookGetModuleFileName(true); //default ezorsia
 		HookPcCreateObject_IWzResMan(true);
 		HookPcCreateObject_IWzNameSpace(true);
