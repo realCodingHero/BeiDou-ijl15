@@ -11,6 +11,11 @@
 #include "AutoLogin.h"
 #pragma comment(lib, "ws2_32.lib")
 
+// Optional v186 ItemEff compatibility module. Keep the handle alive for the
+// lifetime of the client; if the module is absent, the original client still
+// starts with its legacy effect behaviour.
+static HMODULE g_itemEffectModule = nullptr;
+
 // config.ini can use IP or hostname (ServerIP_Address=...).
 // The patch expects an IPv4 dotted string; resolve hostnames to IPv4.
 // On failure, fall back to the original value.
@@ -163,6 +168,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Client::DeleteChar();
 		std::cout << "GetModuleFileName hook created" << std::endl;
 		ijl15::CreateHook(); //NMCO::CreateHook();
+		g_itemEffectModule = LoadLibraryA("BeiDouItemEff.dll");
 
 		std::cout << "NMCO hook initialized" << std::endl;
 		break;
