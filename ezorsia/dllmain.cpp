@@ -19,6 +19,39 @@ static HMODULE g_itemEffectModule = nullptr;
 // config.ini can use IP or hostname (ServerIP_Address=...).
 // The patch expects an IPv4 dotted string; resolve hostnames to IPv4.
 // On failure, fall back to the original value.
+
+// 启用高DPI感知，防止在Windows 125%/150%/200%缩放下被DWM强制限制虚拟分辨率或模糊缩放
+static void EnableHighDpiAwareness()
+{
+	HMODULE hUser32 = GetModuleHandleA("USER32.dll");
+	if (hUser32) {
+		typedef BOOL(WINAPI* pfnSetProcessDpiAwarenessContext)(HANDLE);
+		auto pSetContext = (pfnSetProcessDpiAwarenessContext)GetProcAddress(hUser32, "SetProcessDpiAwarenessContext");
+		if (pSetContext) {
+			pSetContext((HANDLE)-4); // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+			return;
+		}
+	}
+
+	HMODULE hShcore = LoadLibraryA("SHCore.dll");
+	if (hShcore) {
+		typedef HRESULT(WINAPI* pfnSetProcessDpiAwareness)(int);
+		auto pSetDpiAwareness = (pfnSetProcessDpiAwareness)GetProcAddress(hShcore, "SetProcessDpiAwareness");
+		if (pSetDpiAwareness) {
+			pSetDpiAwareness(2); // PROCESS_PER_MONITOR_DPI_AWARE
+			return;
+		}
+	}
+
+	if (hUser32) {
+		typedef BOOL(WINAPI* pfnSetProcessDPIAware)();
+		auto pSetDPIAware = (pfnSetProcessDPIAware)GetProcAddress(hUser32, "SetProcessDPIAware");
+		if (pSetDPIAware) {
+			pSetDPIAware();
+		}
+	}
+}
+
 static std::string ResolveToIpv4String(const std::string& hostOrIp)
 {
 	if (hostOrIp.empty()) return hostOrIp;
@@ -70,6 +103,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	switch (ul_reason_for_call) {
 	case DLL_PROCESS_ATTACH:
 	{
+		EnableHighDpiAwareness();
+
 		//CreateConsole();	//console for devs, use this to log stuff if you want
 		INIReader reader("config.ini");
 		if (reader.ParseError() == 0) {
