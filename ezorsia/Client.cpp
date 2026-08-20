@@ -253,8 +253,11 @@ void Client::UpdateResolution() {
 	Memory::WriteInt(0x007E16BE + 1, m_nGameWidth);	//push 800 ; CWnd::GetCanvas //!!length of server message at top
 	Memory::WriteInt(0x008AA266 + 1, m_nGameHeight);//push 600
 	Memory::WriteInt(0x008AA26B + 1, m_nGameWidth);	//push 800 ; CreateWnd
-	Memory::WriteInt(0x009F6E99 + 1, m_nGameHeight);//push 600
-	Memory::WriteInt(0x009F6EA0 + 1, m_nGameWidth);	//push 800 ; StringPool#1162 (MapleStoryClass)
+	int winWidth = m_bEnableScaling ? m_nWindowWidth : m_nGameWidth;
+	int winHeight = m_bEnableScaling ? m_nWindowHeight : m_nGameHeight;
+
+	Memory::WriteInt(0x009F6E99 + 1, winHeight);//push 600
+	Memory::WriteInt(0x009F6EA0 + 1, winWidth);	//push 800 ; StringPool#1162 (MapleStoryClass)
 
 	Memory::WriteInt(0x007CF48F + 1, m_nGameHeight);//mov eax,600 ; 
 	Memory::WriteInt(0x007CF49D + 1, m_nGameWidth);	//mov eax,800 ; IWzVector2D::RelMove
@@ -953,8 +956,8 @@ void Client::MoreHook() {
 
 
 	// 窗口保存位置
-	Memory::WriteInt(0x0049D218 + 1, m_nGameWidth - 16);// 窗口保存位置边界 x
-	Memory::WriteInt(0x0049D268 + 1, m_nGameHeight - 16);// 窗口保存位置边界 y
+	Memory::WriteInt(0x0049D218 + 1, (m_bEnableScaling ? m_nWindowWidth : m_nGameWidth) - 16);// 窗口保存位置边界 x
+	Memory::WriteInt(0x0049D268 + 1, (m_bEnableScaling ? m_nWindowHeight : m_nGameHeight) - 16);// 窗口保存位置边界 y
 }
 
 void Client::WorldMap()
