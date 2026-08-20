@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 class Client
 {
 public:
@@ -21,6 +21,11 @@ public:
 	static const int m_nIGCipherHash = 0XC65053F2;
 	static int m_nGameHeight;
 	static int m_nGameWidth;
+	static int m_nWindowWidth;
+	static int m_nWindowHeight;
+	static bool m_bEnableScaling;
+	static float m_fScaleX;
+	static float m_fScaleY;
 	static int MsgAmount;
 	static bool CustomLoginFrame;
 	static bool WindowedMode;

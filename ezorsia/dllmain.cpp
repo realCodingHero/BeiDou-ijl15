@@ -73,8 +73,28 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		//CreateConsole();	//console for devs, use this to log stuff if you want
 		INIReader reader("config.ini");
 		if (reader.ParseError() == 0) {
-			Client::m_nGameWidth = reader.GetInteger("general", "width", 1280);
-			Client::m_nGameHeight = reader.GetInteger("general", "height", 720);
+			int cfgWidth = reader.GetInteger("general", "width", 1280);
+			int cfgHeight = reader.GetInteger("general", "height", 720);
+			bool enableScaling = reader.GetBoolean("general", "enable_scaling", true);
+
+			Client::m_nWindowWidth = cfgWidth;
+			Client::m_nWindowHeight = cfgHeight;
+
+			// 自动缩放机制：若启用缩放且为16:9比例（width > 1280 且 width * 9 == height * 16）
+			if (enableScaling && cfgWidth > 1280 && (cfgWidth * 9 == cfgHeight * 16)) {
+				Client::m_nGameWidth = 1280;
+				Client::m_nGameHeight = 720;
+				Client::m_bEnableScaling = true;
+				Client::m_fScaleX = static_cast<float>(cfgWidth) / 1280.0f;
+				Client::m_fScaleY = static_cast<float>(cfgHeight) / 720.0f;
+			}
+			else {
+				Client::m_nGameWidth = cfgWidth;
+				Client::m_nGameHeight = cfgHeight;
+				Client::m_bEnableScaling = false;
+				Client::m_fScaleX = 1.0f;
+				Client::m_fScaleY = 1.0f;
+			}
 			Client::MsgAmount = reader.GetInteger("general", "MsgAmount", 26);
 			Client::CustomLoginFrame = reader.GetBoolean("general", "CustomLoginFrame", true);
 			Client::WindowedMode = reader.GetBoolean("general", "WindowedMode", true);
