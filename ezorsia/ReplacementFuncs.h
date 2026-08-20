@@ -39,8 +39,16 @@ inline void HookCreateWindowExA(bool bEnable) {
 	static auto create_window_ex_a = decltype(&CreateWindowExA)(GetProcAddress(LoadLibraryA("USER32"), "CreateWindowExA"));
 	static const decltype(&CreateWindowExA) hook = [](DWORD dwExStyle, LPCSTR lpClassName, LPCSTR lpWindowName, DWORD dwStyle, int x, int y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam) -> HWND {
 		dwStyle |= WS_MINIMIZEBOX; // enable minimize button
-        x = (GetSystemMetrics(SM_CXSCREEN) - nWidth) / 2;
-        y = (GetSystemMetrics(SM_CYSCREEN) - nHeight) / 4;
+		if (Client::m_bEnableScaling && Client::m_nWindowWidth > 0 && Client::m_nWindowHeight > 0) {
+			RECT rc = { 0, 0, Client::m_nWindowWidth, Client::m_nWindowHeight };
+			AdjustWindowRectEx(&rc, dwStyle, (hMenu != NULL), dwExStyle);
+			nWidth = rc.right - rc.left;
+			nHeight = rc.bottom - rc.top;
+		}
+		x = (GetSystemMetrics(SM_CXSCREEN) - nWidth) / 2;
+		y = (GetSystemMetrics(SM_CYSCREEN) - nHeight) / 4;
+		if (x < 0) x = 0;
+		if (y < 0) y = 0;
 		return create_window_ex_a(dwExStyle, lpClassName, lpWindowName, dwStyle, x, y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
 	};
 	Memory::SetHook(bEnable, reinterpret_cast<void**>(&create_window_ex_a), hook);

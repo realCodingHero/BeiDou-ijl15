@@ -6,8 +6,13 @@
 
 #include "MapleClientCollectionTypes/ZXString.h"
 
-int Client::m_nGameHeight = 720; // 游戏窗口高度
-int Client::m_nGameWidth = 1280; // 游戏窗口宽度
+int Client::m_nGameHeight = 720; // 游戏内部渲染高度
+int Client::m_nGameWidth = 1280; // 游戏内部渲染宽度
+int Client::m_nWindowWidth = 1280; // 物理窗口宽度
+int Client::m_nWindowHeight = 720; // 物理窗口高度
+bool Client::m_bEnableScaling = false; // 是否启用高分辨率硬件等比缩放
+float Client::m_fScaleX = 1.0f; // X轴缩放比
+float Client::m_fScaleY = 1.0f; // Y轴缩放比
 int Client::MsgAmount = 26; // 消息显示数量
 bool Client::CustomLoginFrame = true; // 使用自定义登录界面
 bool Client::WindowedMode = true; // 窗口模式
