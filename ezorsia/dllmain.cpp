@@ -125,13 +125,21 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 			Client::m_nWindowWidth = cfgWidth;
 			Client::m_nWindowHeight = cfgHeight;
 
-			// 自动缩放机制：若启用缩放且为16:9比例（width > 1280 且 width * 9 == height * 16）
-			if (enableScaling && cfgWidth > 1280 && (cfgWidth * 9 == cfgHeight * 16)) {
-				Client::m_nGameWidth = 1280;
-				Client::m_nGameHeight = 720;
+			// 自定义/自适应逻辑渲染基准分辨率（render_width / render_height）
+			// 默认规则：若目标物理窗口 >= 2560x1440，默认以 1920x1080 (1080p) 高清基准渲染拉伸；
+			// 若目标物理窗口为 1600x900 或 1920x1080，默认以 1280x720 (720p) 为基准渲染拉伸；
+			// 用户亦可在 config.ini 中显式指定 render_width / render_height。
+			int defaultRenderWidth = (cfgWidth >= 2560) ? 1920 : 1280;
+			int defaultRenderHeight = (cfgHeight >= 1440) ? 1080 : 720;
+			int renderWidth = reader.GetInteger("general", "render_width", defaultRenderWidth);
+			int renderHeight = reader.GetInteger("general", "render_height", defaultRenderHeight);
+
+			if (enableScaling && cfgWidth > renderWidth && (cfgWidth * renderHeight == cfgHeight * renderWidth)) {
+				Client::m_nGameWidth = renderWidth;
+				Client::m_nGameHeight = renderHeight;
 				Client::m_bEnableScaling = true;
-				Client::m_fScaleX = static_cast<float>(cfgWidth) / 1280.0f;
-				Client::m_fScaleY = static_cast<float>(cfgHeight) / 720.0f;
+				Client::m_fScaleX = static_cast<float>(cfgWidth) / static_cast<float>(renderWidth);
+				Client::m_fScaleY = static_cast<float>(cfgHeight) / static_cast<float>(renderHeight);
 			}
 			else {
 				Client::m_nGameWidth = cfgWidth;
