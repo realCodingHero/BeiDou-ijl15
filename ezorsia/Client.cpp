@@ -178,18 +178,9 @@ void Client::UpdateGameStartup() {
 	Memory::WriteByte(0x0068E534 + 1, 0x86);
 	Memory::WriteByte(0x0068E65D + 1, 0x86);
 	// 通用点装武器（170xxxx）全武器兼容性校验放行（允许在短杖、长杖、弓、拳套等所有武器类型上穿戴）
-	// CItemInfo::IsCashWeaponCompatible: 0x0046D39D (caller at 0x004F21A2 -> 0x0046D39F)
-	unsigned char patchCashWeaponCompatible[] = {
-		0xEB, 0x06,                         // 0046D39D: jmp +6 -> 0046D3A5
-		0xEB, 0x04,                         // 0046D39F: jmp +4 -> 0046D3A5
-		0x90, 0x90, 0x90, 0x90,             // 0046D3A1: nop nop nop nop
-		0xB8, 0x01, 0x00, 0x00, 0x00,       // 0046D3A5: mov eax, 1
-		0xC2, 0x04, 0x00                    // 0046D3AA: ret 4
-	};
-	Memory::WriteByteArray(0x0046D39D, patchCashWeaponCompatible, sizeof(patchCashWeaponCompatible));
-	// 额外覆盖 0x0046DF9C 防止其他分支
-	unsigned char patchLegacy[] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC2, 0x04, 0x00 };
-	Memory::WriteByteArray(0x0046DF9C, patchLegacy, sizeof(patchLegacy));
+	// CItemInfo::IsCashWeaponCompatible (0x0046D39C): 0046D3CE: 74 05 (jz FAIL) -> 90 90 (nop nop)
+	// 保持原生寄存器与栈帧（pop esi; ret 4）完全一致，无损返回放行
+	Memory::PatchNop(0x0046D3CE, 2);
 }
 
 void Client::UpdateResolution() {
