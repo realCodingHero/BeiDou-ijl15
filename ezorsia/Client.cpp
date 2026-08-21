@@ -1,4 +1,4 @@
-﻿#include "stdafx.h"
+#include "stdafx.h"
 #include "AddyLocations.h"
 #include "codecaves.h"
 #include "FixIme.h"
@@ -177,7 +177,10 @@ void Client::UpdateGameStartup() {
 	Memory::WriteByte(0x0068E0E7 + 1, 0x86);
 	Memory::WriteByte(0x0068E534 + 1, 0x86);
 	Memory::WriteByte(0x0068E65D + 1, 0x86);
-	Memory::WriteByte(0x0068E709 + 1, 0x86);
+	// 通用点装武器（170xxxx）全武器兼容性校验放行（允许在短杖、长杖、弓、拳套等所有武器类型上穿戴）
+	// CItemInfo::IsCashWeaponCompatible (0x0046DF9C): mov eax, 1; ret 4
+	unsigned char patchCashWeaponCompatible[] = { 0xB8, 0x01, 0x00, 0x00, 0x00, 0xC2, 0x04, 0x00 };
+	Memory::WriteByteArray(0x0046DF9C, patchCashWeaponCompatible, sizeof(patchCashWeaponCompatible));
 }
 
 void Client::UpdateResolution() {
