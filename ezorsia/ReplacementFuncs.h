@@ -1,3 +1,4 @@
+#include "CustomInventoryTab.h"
 #pragma once
 #include "AutoTypes.h"
 
@@ -52,6 +53,7 @@ inline void HookCreateWindowExA(bool bEnable) {
 			if (y < 0) y = 0;
 		}
 		HWND hWnd = create_window_ex_a(dwExStyle, lpClassName, lpWindowName, dwStyle, x, y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+		if (hWnd) CustomInventoryTab::AttachWindowHook(hWnd);
 		if (hWnd && Client::m_bEnableScaling && Client::m_nWindowWidth > 0 && Client::m_nWindowHeight > 0) {
 			RECT rc = { 0, 0, Client::m_nWindowWidth, Client::m_nWindowHeight };
 			AdjustWindowRectEx(&rc, dwStyle, (hMenu != NULL), dwExStyle);
