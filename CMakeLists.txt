@@ -12,6 +12,7 @@ add_library(ijl15 SHARED
     ezorsia/BossHP.cpp
     ezorsia/HpMpAlert.cpp
     ezorsia/Client.cpp
+    ezorsia/CustomInventoryTab.cpp
     ezorsia/ijl15.cpp
     ezorsia/ZAllocEx.cpp
     ezorsia/dllmain.cpp

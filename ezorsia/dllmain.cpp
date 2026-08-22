@@ -9,6 +9,7 @@
 #include "HpMpAlert.h"
 #include "SelectCharMacFix.h"
 #include "AutoLogin.h"
+#include "CustomInventoryTab.h"
 #pragma comment(lib, "ws2_32.lib")
 
 // Optional v186 ItemEff compatibility module. Keep the handle alive for the
@@ -232,6 +233,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Client::LongQuickSlot();
 		Client::FixDateFormat();
 		Client::FixItemType();
+		CustomInventoryTab::Initialize();
 		Client::JumpCap();
 		Client::FixChatPosHook();
 		Client::NoPassword();
