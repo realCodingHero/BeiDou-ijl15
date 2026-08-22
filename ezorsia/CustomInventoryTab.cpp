@@ -4,14 +4,15 @@
 #include "Client.h"
 
 bool CustomInventoryTab::s_bEnabled = true;
-int CustomInventoryTab::s_nCurrentTab = 0;
-HWND CustomInventoryTab::s_hGameWnd = nullptr;
-WNDPROC CustomInventoryTab::s_pfnOrigWndProc = nullptr;
-std::vector<int> CustomInventoryTab::s_vecNormalEquipSlots;
-std::vector<int> CustomInventoryTab::s_vecCashEquipSlots;
+bool CustomInventoryTab::s_bDecorMode = false;
+int CustomInventoryTab::s_nCurTab = 0;
+decltype(&CustomInventoryTab::Hook_FilterItem) CustomInventoryTab::s_pfnOrigFilterItem = reinterpret_cast<decltype(&CustomInventoryTab::Hook_FilterItem)>(0x008A2378);
+decltype(&CustomInventoryTab::Hook_OnChildNotify) CustomInventoryTab::s_pfnOrigOnChildNotify = reinterpret_cast<decltype(&CustomInventoryTab::Hook_OnChildNotify)>(0x0089E185);
 
 void CustomInventoryTab::Initialize() {
     if (!s_bEnabled) return;
+    Memory::SetHook(true, reinterpret_cast<void**>(&s_pfnOrigFilterItem), Hook_FilterItem);
+    Memory::SetHook(true, reinterpret_cast<void**>(&s_pfnOrigOnChildNotify), Hook_OnChildNotify);
 }
 
 bool CustomInventoryTab::IsEnabled() {
@@ -20,12 +21,6 @@ bool CustomInventoryTab::IsEnabled() {
 
 void CustomInventoryTab::SetEnabled(bool enabled) {
     s_bEnabled = enabled;
-}
-
-void CustomInventoryTab::AttachWindowHook(HWND hWnd) {
-    if (!hWnd || s_hGameWnd == hWnd) return;
-    s_hGameWnd = hWnd;
-    s_pfnOrigWndProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrA(hWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(SubclassWndProc)));
 }
 
 bool CustomInventoryTab::IsCashEquip(int nItemId, uint64_t liCashSN) {
@@ -49,52 +44,50 @@ bool CustomInventoryTab::IsCashEquip(int nItemId, uint64_t liCashSN) {
     return false;
 }
 
-int CustomInventoryTab::GetCurrentTab() {
-    return s_nCurrentTab;
+bool CustomInventoryTab::IsDecorMode() {
+    return s_bDecorMode;
 }
 
-void CustomInventoryTab::SetCurrentTab(int nTab) {
-    s_nCurrentTab = nTab;
-}
-
-int CustomInventoryTab::MapVirtualToRealEquipSlot(int nVirtualSlot, bool isDecorTab) {
-    if (isDecorTab) {
-        if (nVirtualSlot > 0 && nVirtualSlot <= static_cast<int>(s_vecCashEquipSlots.size())) {
-            return s_vecCashEquipSlots[nVirtualSlot - 1];
-        }
-    } else {
-        if (nVirtualSlot > 0 && nVirtualSlot <= static_cast<int>(s_vecNormalEquipSlots.size())) {
-            return s_vecNormalEquipSlots[nVirtualSlot - 1];
-        }
+void CustomInventoryTab::SetDecorMode(bool bDecor) {
+    if (s_bDecorMode != bDecor) {
+        s_bDecorMode = bDecor;
+        RefreshInventoryUI();
     }
-    return nVirtualSlot;
 }
 
-int CustomInventoryTab::MapRealToVirtualEquipSlot(int nRealSlot, bool isDecorTab) {
-    if (isDecorTab) {
-        for (size_t i = 0; i < s_vecCashEquipSlots.size(); ++i) {
-            if (s_vecCashEquipSlots[i] == nRealSlot) {
-                return static_cast<int>(i + 1);
+void CustomInventoryTab::ToggleDecorMode() {
+    SetDecorMode(!s_bDecorMode);
+}
+
+void CustomInventoryTab::RefreshInventoryUI() {
+    void* pUIItem = *reinterpret_cast<void**>(0x00BEDCD0);
+    if (pUIItem) {
+        // CUIItem::UpdateInventorySlots
+        typedef void(__thiscall* UpdateSlots_t)(void* pThis);
+        auto pfnUpdate = reinterpret_cast<UpdateSlots_t>(0x0089E020);
+        pfnUpdate(pUIItem);
+    }
+}
+
+int __fastcall CustomInventoryTab::Hook_FilterItem(void* pThis, void* edx, int nItemId, void* pExtra) {
+    int res = s_pfnOrigFilterItem(pThis, edx, nItemId, pExtra);
+    if (res != 0 && s_bEnabled) {
+        // Check if item is Equipment
+        int nType = nItemId / 1000000;
+        if (nType == 1) {
+            bool isCash = IsCashEquip(nItemId);
+            if (s_bDecorMode) {
+                // Decor Mode: only show cash equips
+                return isCash ? 1 : 0;
+            } else {
+                // Normal Mode: only show non-cash equips
+                return isCash ? 0 : 1;
             }
         }
-    } else {
-        for (size_t i = 0; i < s_vecNormalEquipSlots.size(); ++i) {
-            if (s_vecNormalEquipSlots[i] == nRealSlot) {
-                return static_cast<int>(i + 1);
-            }
-        }
     }
-    return nRealSlot;
+    return res;
 }
 
-void CustomInventoryTab::RefreshEquipSlotCache() {
-    s_vecNormalEquipSlots.clear();
-    s_vecCashEquipSlots.clear();
-}
-
-LRESULT CALLBACK CustomInventoryTab::SubclassWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    if (s_pfnOrigWndProc) {
-        return CallWindowProcA(s_pfnOrigWndProc, hWnd, uMsg, wParam, lParam);
-    }
-    return DefWindowProcA(hWnd, uMsg, wParam, lParam);
+void __fastcall CustomInventoryTab::Hook_OnChildNotify(void* pThis, void* edx, uint32_t uId, uint32_t uMsg) {
+    s_pfnOrigOnChildNotify(pThis, edx, uId, uMsg);
 }
