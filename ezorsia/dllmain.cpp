@@ -20,7 +20,7 @@ static HMODULE g_itemEffectModule = nullptr;
 // The patch expects an IPv4 dotted string; resolve hostnames to IPv4.
 // On failure, fall back to the original value.
 
-// ÆôÓÃ¸ßDPI¸ÐÖª£¬·ÀÖ¹ÔÚWindows 125%/150%/200%Ëõ·ÅÏÂ±»DWMÇ¿ÖÆÏÞÖÆÐéÄâ·Ö±æÂÊ»òÄ£ºýËõ·Å
+// å¯ç”¨é«˜DPIæ„ŸçŸ¥ï¼Œé˜²æ­¢åœ¨Windows 125%/150%/200%ç¼©æ”¾ä¸‹è¢«DWMå¼ºåˆ¶é™åˆ¶è™šæ‹Ÿåˆ†è¾¨çŽ‡æˆ–æ¨¡ç³Šç¼©æ”¾
 static void EnableHighDpiAwareness()
 {
 	HMODULE hUser32 = GetModuleHandleA("USER32.dll");
@@ -125,10 +125,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 			Client::m_nWindowWidth = cfgWidth;
 			Client::m_nWindowHeight = cfgHeight;
 
-			// ×Ô¶¨Òå/×ÔÊÊÓ¦Âß¼­äÖÈ¾»ù×¼·Ö±æÂÊ£¨render_width / render_height£©
-			// Ä¬ÈÏ¹æÔò£ºÈôÄ¿±êÎïÀí´°¿Ú >= 2560x1440£¬Ä¬ÈÏÒÔ 1920x1080 (1080p) ¸ßÇå»ù×¼äÖÈ¾À­Éì£»
-			// ÈôÄ¿±êÎïÀí´°¿ÚÎª 1600x900 »ò 1920x1080£¬Ä¬ÈÏÒÔ 1280x720 (720p) Îª»ù×¼äÖÈ¾À­Éì£»
-			// ÓÃ»§Òà¿ÉÔÚ config.ini ÖÐÏÔÊ½Ö¸¶¨ render_width / render_height¡£
+			// è‡ªå®šä¹‰/è‡ªé€‚åº”é€»è¾‘æ¸²æŸ“åŸºå‡†åˆ†è¾¨çŽ‡ï¼ˆrender_width / render_heightï¼‰
+			// é»˜è®¤è§„åˆ™ï¼šè‹¥ç›®æ ‡ç‰©ç†çª—å£ >= 2560x1440ï¼Œé»˜è®¤ä»¥ 1920x1080 (1080p) é«˜æ¸…åŸºå‡†æ¸²æŸ“æ‹‰ä¼¸ï¼›
+			// è‹¥ç›®æ ‡ç‰©ç†çª—å£ä¸º 1600x900 æˆ– 1920x1080ï¼Œé»˜è®¤ä»¥ 1280x720 (720p) ä¸ºåŸºå‡†æ¸²æŸ“æ‹‰ä¼¸ï¼›
+			// ç”¨æˆ·äº¦å¯åœ¨ config.ini ä¸­æ˜¾å¼æŒ‡å®š render_width / render_heightã€‚
 			int defaultRenderWidth = (cfgWidth >= 2560) ? 1920 : 1280;
 			int defaultRenderHeight = (cfgHeight >= 1440) ? 1080 : 720;
 			int renderWidth = reader.GetInteger("general", "render_width", defaultRenderWidth);
@@ -242,7 +242,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Client::DeleteChar();
 		std::cout << "GetModuleFileName hook created" << std::endl;
 		ijl15::CreateHook(); //NMCO::CreateHook();
-		g_itemEffectModule = LoadLibraryA("BeiDouItemEff.dll");
+		g_itemEffectModule = LoadLibraryA("MoonKidsItemEff.dll");
+		if (!g_itemEffectModule) {
+			g_itemEffectModule = LoadLibraryA("BeiDouItemEff.dll");
+		}
 
 		std::cout << "NMCO hook initialized" << std::endl;
 		break;
