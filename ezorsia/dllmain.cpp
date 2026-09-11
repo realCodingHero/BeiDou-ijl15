@@ -9,6 +9,7 @@
 #include "HpMpAlert.h"
 #include "SelectCharMacFix.h"
 #include "AutoLogin.h"
+#include "BossRoomAssistDisplay.h"
 #pragma comment(lib, "ws2_32.lib")
 
 // Optional v186 ItemEff compatibility module. Keep the handle alive for the
@@ -216,6 +217,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Hook_lpfn_NextLevel(true);
 		HookSaveGlobal(true);
 		HookHpMpAlertRecv(true);
+		BossRoomAssistDisplay::Hook(true);
 		HookSelectCharMacFix(true);
 		AutoLogin::Hook(true);
 		//Hook_get_unknown(true);
