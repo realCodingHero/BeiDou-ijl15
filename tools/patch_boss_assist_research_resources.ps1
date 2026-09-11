@@ -168,7 +168,7 @@ function Join-ByteArrays([byte[]]$prefix, [byte[]]$suffix) {
     return ,$joined
 }
 
-function Update-ConsumeStrings([string]$path, [byte[]]$newRecord) {
+function Update-StringTable([string]$path, [byte[]]$newRecord) {
     $bytes = [IO.File]::ReadAllBytes($path)
     if ((Find-ByteSequence $bytes $newRecord) -ge 0) {
         return 'already-current'
@@ -245,8 +245,10 @@ function Update-Commodity([string]$path) {
 
 $dataConsume = Join-Path $resolvedClientPath 'Data\String\Consume.img'
 $englishConsume = Join-Path $resolvedClientPath 'EN\String\Consume.img'
+$dataCash = Join-Path $resolvedClientPath 'Data\String\Cash.img'
+$englishCash = Join-Path $resolvedClientPath 'EN\String\Cash.img'
 $commodity = Join-Path $resolvedClientPath 'Data\Etc\Commodity.img'
-$targets = @($dataConsume, $englishConsume, $commodity)
+$targets = @($dataConsume, $englishConsume, $dataCash, $englishCash, $commodity)
 foreach ($target in $targets) {
     if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
         throw "Required Research client resource is missing: $target"
@@ -258,16 +260,22 @@ foreach ($target in $targets) {
 }
 
 $stringRecord = New-BossAssistStringRecord
-$dataResult = Update-ConsumeStrings $dataConsume $stringRecord
-$englishResult = Update-ConsumeStrings $englishConsume $stringRecord
+$dataResult = Update-StringTable $dataConsume $stringRecord
+$englishResult = Update-StringTable $englishConsume $stringRecord
+$dataCashResult = Update-StringTable $dataCash $stringRecord
+$englishCashResult = Update-StringTable $englishCash $stringRecord
 $commodityResult = Update-Commodity $commodity
 
 [pscustomobject]@{
     DataConsume = $dataResult
     EnglishConsume = $englishResult
+    DataCash = $dataCashResult
+    EnglishCash = $englishCashResult
     Commodity = $commodityResult
     ItemName = '首领房辅助增益道具'
     DataConsumeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $dataConsume).Hash
     EnglishConsumeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $englishConsume).Hash
+    DataCashHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $dataCash).Hash
+    EnglishCashHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $englishCash).Hash
     CommodityHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $commodity).Hash
 }
