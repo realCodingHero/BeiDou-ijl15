@@ -194,22 +194,34 @@ function Update-Commodity([string]$path) {
         throw 'Could not locate the expected Commodity template node.'
     }
 
-    $payloadLength = [BitConverter]::ToInt32($bytes, $sourceOffset + 7)
-    $sourceLength = 11 + $payloadLength
-    $record = New-Object byte[] $sourceLength
-    [Array]::Copy($bytes, $sourceOffset, $record, 0, $sourceLength)
-
-    # Give the appended WZ child a unique four-character name: "boss".
-    $record[2] = 0x5E
-    $record[3] = 0x6A
-    $record[4] = 0xE0
-    $record[5] = 0x7A
-    [Array]::Copy($newSn, 0, $record, 24, 5)
-    [Array]::Copy([byte[]](0x80, 0x52, 0x14, 0x25, 0x00), 0, $record, 35, 5) # ItemId 2430034
-    [Array]::Copy([byte[]](0x80, 0x6C, 0x07, 0x00, 0x00), 0, $record, 53, 5) # Price 1900
-    $record[71] = 1 # Priority
-
     $oldCount = Get-RootChildCount $bytes
+    $payloadLength = [BitConverter]::ToInt32($bytes, $sourceOffset + 7)
+    $payload = New-Object byte[] $payloadLength
+    [Array]::Copy($bytes, $sourceOffset + 11, $payload, 0, $payloadLength)
+
+    # Commodity's top-level children are a zero-based numeric sequence. The
+    # original client converts every child name to an integer while entering
+    # the Cash Shop, so a descriptive name such as "boss" crashes that parse.
+    # Use the next numeric index and let its variable-length WZ string encoding
+    # grow naturally instead of overwriting a four-character template name.
+    [Array]::Copy($newSn, 0, $payload, 13, 5)
+    [Array]::Copy([byte[]](0x80, 0x52, 0x14, 0x25, 0x00), 0, $payload, 24, 5) # ItemId 2430034
+    [Array]::Copy([byte[]](0x80, 0x6C, 0x07, 0x00, 0x00), 0, $payload, 42, 5) # Price 1900
+    $payload[60] = 1 # Priority
+
+    $recordStream = [IO.MemoryStream]::new()
+    $recordWriter = [IO.BinaryWriter]::new($recordStream)
+    try {
+        Write-InlineWzString $recordWriter $oldCount.ToString([Globalization.CultureInfo]::InvariantCulture)
+        $recordWriter.Write([byte]9)
+        $recordWriter.Write([int]$payloadLength)
+        $recordWriter.Write($payload)
+        $record = $recordStream.ToArray()
+    } finally {
+        $recordWriter.Dispose()
+        $recordStream.Dispose()
+    }
+
     Set-RootChildCount $bytes ($oldCount + 1)
     [IO.File]::WriteAllBytes($path, (Join-ByteArrays $bytes $record))
     return 'added-purchasable-commodity'
