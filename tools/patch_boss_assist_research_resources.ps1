@@ -66,9 +66,25 @@ function Write-WzAsciiString([IO.BinaryWriter]$writer, [string]$value) {
     }
 }
 
+function Write-WzUnicodeString([IO.BinaryWriter]$writer, [string]$value) {
+    Write-CompressedInt $writer $value.Length
+    $plain = [Text.Encoding]::Unicode.GetBytes($value)
+    $keyStream = Get-WzKeyStream $plain.Length
+    for ($i = 0; $i -lt $value.Length; $i++) {
+        $mask = (0xAAAA + $i) -band 0xFFFF
+        $writer.Write([byte]($plain[$i * 2] -bxor $keyStream[$i * 2] -bxor ($mask -band 0xFF)))
+        $writer.Write([byte]($plain[$i * 2 + 1] -bxor $keyStream[$i * 2 + 1] -bxor (($mask -shr 8) -band 0xFF)))
+    }
+}
+
 function Write-InlineWzString([IO.BinaryWriter]$writer, [string]$value) {
     $writer.Write([byte]0)
     Write-WzAsciiString $writer $value
+}
+
+function Write-InlineWzUnicodeString([IO.BinaryWriter]$writer, [string]$value) {
+    $writer.Write([byte]0)
+    Write-WzUnicodeString $writer $value
 }
 
 function New-BossAssistStringRecord {
@@ -83,11 +99,11 @@ function New-BossAssistStringRecord {
 
         Write-InlineWzString $payloadWriter 'name'
         $payloadWriter.Write([byte]8)
-        Write-InlineWzString $payloadWriter '首领房辅助增益道具'
+        Write-InlineWzUnicodeString $payloadWriter '首领房辅助增益道具'
 
         Write-InlineWzString $payloadWriter 'desc'
         $payloadWriter.Write([byte]8)
-        Write-InlineWzString $payloadWriter '双击后选择一个可用的辅助增益。\n仅可在单人专属首领房间内使用，离开房间后自动失效。'
+        Write-InlineWzUnicodeString $payloadWriter '双击后选择一个可用的辅助增益。\n仅可在单人专属首领房间内使用，离开房间后自动失效。'
         $payload = $payloadStream.ToArray()
     } finally {
         $payloadWriter.Dispose()
