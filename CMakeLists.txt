@@ -10,6 +10,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL$<$<CONFIG:Debug>:Debug>")
 add_library(ijl15 SHARED
     ezorsia/AutoLogin.cpp
     ezorsia/BossHP.cpp
+    ezorsia/BossRoomAssistDisplay.cpp
     ezorsia/HpMpAlert.cpp
     ezorsia/Client.cpp
     ezorsia/ijl15.cpp
