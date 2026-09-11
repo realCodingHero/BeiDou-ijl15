@@ -109,7 +109,10 @@ static void __fastcall MDamage_Hook(
     DWORD a13, DWORD a14, DWORD a15) {
     s_MDamage(pThis, edx, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12,
               a13, a14, a15);
-    ScaleDamageArray(a15, a6, ReadMultiplier(&g_magicMultiplier));
+    // CalcDamage::MDamage writes its hit results to the array passed as a11.
+    // The original function temporarily reuses its local copy of a15 as the
+    // current output cursor, but a15 itself is an additive magic-attack input.
+    ScaleDamageArray(a11, a6, ReadMultiplier(&g_magicMultiplier));
 }
 
 using ReadCharacterStat_t = int(__cdecl*)(void*, DWORD);
