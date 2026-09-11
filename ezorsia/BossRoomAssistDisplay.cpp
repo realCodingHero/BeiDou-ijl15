@@ -2,17 +2,19 @@
 #include "BossRoomAssistDisplay.h"
 
 #include <climits>
-#include <intrin.h>
 
 namespace {
 constexpr DWORD kPDamageAddress = 0x0078DF87;
 constexpr DWORD kMDamageAddress = 0x00791617;
-constexpr DWORD kPanelMagicAttackAddress = 0x0077E067;
 constexpr DWORD kPhysicalPanelPatchAddress = 0x008C3352;
 constexpr DWORD kPhysicalPanelReturnAddress = 0x008C335A;
 constexpr DWORD kPhysicalPanelColorPatchAddress = 0x008C3391;
 constexpr DWORD kPhysicalPanelColorFallbackAddress = 0x008C339A;
 constexpr DWORD kPhysicalPanelColorDoneAddress = 0x008C33B4;
+constexpr DWORD kMagicPanelPatchAddress = 0x008C3686;
+constexpr DWORD kMagicPanelSimpleAddress = 0x008C368E;
+constexpr DWORD kMagicPanelDetailedAddress = 0x008C37F6;
+constexpr DWORD kReadCharacterStatAddress = 0x00416563;
 constexpr int kMaxMultiplier = 30;
 constexpr int kMaxDamageEntries = 64;
 
@@ -23,6 +25,8 @@ volatile LONG g_damageHooksReady = 0;
 DWORD g_physicalPanelReturn = kPhysicalPanelReturnAddress;
 DWORD g_physicalPanelColorFallback = kPhysicalPanelColorFallbackAddress;
 DWORD g_physicalPanelColorDone = kPhysicalPanelColorDoneAddress;
+DWORD g_magicPanelSimple = kMagicPanelSimpleAddress;
+DWORD g_magicPanelDetailed = kMagicPanelDetailedAddress;
 
 static LONG NormalizeMultiplier(unsigned char value) {
     return value >= 1 && value <= kMaxMultiplier ? value : 1;
@@ -108,35 +112,40 @@ static void __fastcall MDamage_Hook(
     ScaleDamageArray(a15, a6, ReadMultiplier(&g_magicMultiplier));
 }
 
-using PanelMagicAttack_t = int(__fastcall*)(void*, void*, DWORD);
+using ReadCharacterStat_t = int(__cdecl*)(void*, DWORD);
 
-static PanelMagicAttack_t s_PanelMagicAttack =
-    reinterpret_cast<PanelMagicAttack_t>(kPanelMagicAttackAddress);
+static ReadCharacterStat_t s_ReadCharacterStat =
+    reinterpret_cast<ReadCharacterStat_t>(kReadCharacterStatAddress);
 
-static bool IsMagicAttackPanelCaller(DWORD returnAddress) {
-    switch (returnAddress) {
-    case 0x008C3462:
-    case 0x008C34FC:
-    case 0x008C350D:
-    case 0x008C354E:
-    case 0x008C3575:
-        return true;
-    default:
-        return false;
+// The magic-attack row keeps its base value in the character-stat container at
+// +0x60 and its existing temporary Buff bonus in EBX. Convert that bonus to the
+// amount needed for (base + all native bonuses) * Boss multiplier. The panel's
+// own detailed branch then renders the result in red as "total (base+bonus)".
+static int __stdcall GetScaledMagicPanelBonus(void* characterData, int nativeBonus) {
+    const int multiplier = ReadMultiplier(&g_magicMultiplier);
+    if (multiplier <= 1 || characterData == nullptr) {
+        return nativeBonus;
     }
-}
 
-// The native stat panel compares this result with the unbuffed magic attack.
-// Scaling only these five panel call sites makes it take its existing positive
-// Buff branch: red text formatted as "total (base+bonus)". Other callers keep
-// the original value, so combat is still scaled exactly once by MDamage_Hook.
-static int __fastcall PanelMagicAttack_Hook(void* pThis, void* edx, DWORD characterData) {
-    const DWORD returnAddress = reinterpret_cast<DWORD>(_ReturnAddress());
-    const int magicAttack = s_PanelMagicAttack(pThis, edx, characterData);
-    if (!IsMagicAttackPanelCaller(returnAddress)) {
-        return magicAttack;
+    __try {
+        unsigned char* data = static_cast<unsigned char*>(characterData);
+        const int baseMagicAttack = s_ReadCharacterStat(
+            data + 0x60, *reinterpret_cast<DWORD*>(data + 0x68));
+        const __int64 currentMagicAttack =
+            static_cast<__int64>(baseMagicAttack) + nativeBonus;
+        if (currentMagicAttack <= 0) {
+            return nativeBonus;
+        }
+
+        const __int64 scaledTotal = currentMagicAttack * multiplier;
+        const __int64 scaledBonus = scaledTotal - baseMagicAttack;
+        const __int64 maxBonus = INT_MAX -
+            static_cast<__int64>(baseMagicAttack > 0 ? baseMagicAttack : 0);
+        return scaledBonus >= maxBonus ? static_cast<int>(maxBonus)
+                                      : static_cast<int>(scaledBonus);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nativeBonus;
     }
-    return ScalePositiveDamage(magicAttack, ReadMultiplier(&g_magicMultiplier), INT_MAX);
 }
 
 static int __stdcall ScalePanelDamageValue(int damage) {
@@ -192,6 +201,35 @@ __declspec(naked) void PhysicalPanelColor_Hook() {
 
     fallback:
         jmp dword ptr [g_physicalPanelColorFallback]
+    }
+}
+
+// Replaces exactly:
+//   test ebx, ebx
+//   jne 008C37F6
+// immediately after the native magic-attack total/bonus calculation. EDI is
+// the character-stat container and EBX is the existing native bonus.
+__declspec(naked) void MagicPanelDamage_Hook() {
+    __asm {
+        push eax
+        push ecx
+        push edx
+
+        push ebx
+        push edi
+        call GetScaledMagicPanelBonus
+        mov ebx, eax
+
+        pop edx
+        pop ecx
+        pop eax
+
+        test ebx, ebx
+        jne detailed
+        jmp dword ptr [g_magicPanelSimple]
+
+    detailed:
+        jmp dword ptr [g_magicPanelDetailed]
     }
 }
 
@@ -252,7 +290,6 @@ bool Hook(bool enable) {
         InterlockedExchange(&g_damageHooksReady, 0);
         Memory::SetHook(false, reinterpret_cast<void**>(&s_PDamage), PDamage_Hook);
         Memory::SetHook(false, reinterpret_cast<void**>(&s_MDamage), MDamage_Hook);
-        Memory::SetHook(false, reinterpret_cast<void**>(&s_PanelMagicAttack), PanelMagicAttack_Hook);
         return true;
     }
 
@@ -262,23 +299,23 @@ bool Hook(bool enable) {
     static const unsigned char expectedMDamage[] = {
         0x55, 0x8B, 0xEC, 0x81, 0xEC, 0x94, 0x00, 0x00, 0x00, 0x83, 0x65, 0xFC, 0x00
     };
-    static const unsigned char expectedPanelMagicAttack[] = {
-        0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x10, 0x53, 0x56, 0x8B, 0xF1, 0x57
-    };
     static const unsigned char expectedPanel[] = {
         0x53, 0xFF, 0x75, 0xCC, 0xC6, 0x45, 0xFC, 0x08
     };
     static const unsigned char expectedPanelColor[] = {
         0x85, 0xC9, 0x7E, 0x05, 0xFF, 0x75, 0xD8, 0xEB, 0x1A
     };
+    static const unsigned char expectedMagicPanel[] = {
+        0x85, 0xDB, 0x0F, 0x85, 0x68, 0x01, 0x00, 0x00
+    };
 
     if (!HasExpectedBytes(kPDamageAddress, expectedPDamage, sizeof(expectedPDamage))
             || !HasExpectedBytes(kMDamageAddress, expectedMDamage, sizeof(expectedMDamage))
-            || !HasExpectedBytes(kPanelMagicAttackAddress, expectedPanelMagicAttack,
-                sizeof(expectedPanelMagicAttack))
             || !HasExpectedBytes(kPhysicalPanelPatchAddress, expectedPanel, sizeof(expectedPanel))
             || !HasExpectedBytes(kPhysicalPanelColorPatchAddress, expectedPanelColor,
-                sizeof(expectedPanelColor))) {
+                sizeof(expectedPanelColor))
+            || !HasExpectedBytes(kMagicPanelPatchAddress, expectedMagicPanel,
+                sizeof(expectedMagicPanel))) {
         return false;
     }
 
@@ -286,28 +323,24 @@ bool Hook(bool enable) {
         true, reinterpret_cast<void**>(&s_PDamage), PDamage_Hook);
     const bool magicHooked = Memory::SetHook(
         true, reinterpret_cast<void**>(&s_MDamage), MDamage_Hook);
-    const bool panelMagicHooked = Memory::SetHook(
-        true, reinterpret_cast<void**>(&s_PanelMagicAttack), PanelMagicAttack_Hook);
-    if (!physicalHooked || !magicHooked || !panelMagicHooked) {
+    if (!physicalHooked || !magicHooked) {
         if (physicalHooked) {
             Memory::SetHook(false, reinterpret_cast<void**>(&s_PDamage), PDamage_Hook);
         }
         if (magicHooked) {
             Memory::SetHook(false, reinterpret_cast<void**>(&s_MDamage), MDamage_Hook);
         }
-        if (panelMagicHooked) {
-            Memory::SetHook(false, reinterpret_cast<void**>(&s_PanelMagicAttack), PanelMagicAttack_Hook);
-        }
         return false;
     }
 
     Memory::CodeCave(PhysicalPanelDamage_Hook, kPhysicalPanelPatchAddress, 8);
     Memory::CodeCave(PhysicalPanelColor_Hook, kPhysicalPanelColorPatchAddress, 9);
+    Memory::CodeCave(MagicPanelDamage_Hook, kMagicPanelPatchAddress, 8);
     if (!HasJumpTo(kPhysicalPanelPatchAddress, PhysicalPanelDamage_Hook, 8)
-            || !HasJumpTo(kPhysicalPanelColorPatchAddress, PhysicalPanelColor_Hook, 9)) {
+            || !HasJumpTo(kPhysicalPanelColorPatchAddress, PhysicalPanelColor_Hook, 9)
+            || !HasJumpTo(kMagicPanelPatchAddress, MagicPanelDamage_Hook, 8)) {
         Memory::SetHook(false, reinterpret_cast<void**>(&s_PDamage), PDamage_Hook);
         Memory::SetHook(false, reinterpret_cast<void**>(&s_MDamage), MDamage_Hook);
-        Memory::SetHook(false, reinterpret_cast<void**>(&s_PanelMagicAttack), PanelMagicAttack_Hook);
         return false;
     }
 
