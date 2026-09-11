@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "HpMpAlert.h"
+#include "BossRoomAssistDisplay.h"
 namespace {
 constexpr DWORD kSaveGlobalAddr = 0x0049C8E7;
 constexpr DWORD kUIStatusBarPtr = 0x00BEBF9C;
@@ -8,6 +9,9 @@ constexpr DWORD kMpAlertOffset = 0x84;
 constexpr DWORD kClientSocketPtr = 0x00BE7914;
 constexpr DWORD kProcessPacketAddr = 0x004965F1;
 constexpr WORD kOpcodeSetHpMpAlert = 0x1000;
+constexpr WORD kOpcodeBossRoomAssist = 0x1001;
+constexpr WORD kOpcodeSetField = 0x007D;
+constexpr unsigned char kBossRoomAssistProtocolVersion = 1;
 struct COutPacket {
     int Loopback;
     union {
@@ -79,6 +83,26 @@ static void SendHpMpAlertFromStatusBar() {
     packet.EncryptedByShanda = 0;
     g_SendPacket(reinterpret_cast<void*>(socketPtr), nullptr, &packet);
 }
+static void SendBossRoomAssistAck(unsigned char physical, unsigned char magic) {
+    DWORD socketPtr = 0;
+    if (!TryReadDword(kClientSocketPtr, socketPtr) || socketPtr == 0) {
+        return;
+    }
+    unsigned char payload[5] = {
+        static_cast<unsigned char>(kOpcodeBossRoomAssist & 0xFF),
+        static_cast<unsigned char>((kOpcodeBossRoomAssist >> 8) & 0xFF),
+        kBossRoomAssistProtocolVersion,
+        physical,
+        magic
+    };
+    COutPacket packet{};
+    packet.Loopback = 0;
+    packet.Data = payload;
+    packet.Size = sizeof(payload);
+    packet.Offset = 0;
+    packet.EncryptedByShanda = 0;
+    g_SendPacket(reinterpret_cast<void*>(socketPtr), nullptr, &packet);
+}
 static void ApplyHpMpAlertToStatusBar(unsigned char hpAlert, unsigned char mpAlert) {
     DWORD statusBar = 0;
     if (!TryReadDword(kUIStatusBarPtr, statusBar) || statusBar == 0) {
@@ -108,6 +132,29 @@ static void HandleHpMpAlertPacket(CInPacket* packet) {
         return;
     }
 }
+static void HandleBossRoomAssistPacket(CInPacket* packet) {
+    if (packet == nullptr) {
+        return;
+    }
+    __try {
+        if (packet->Data == nullptr || packet->Size < 9) {
+            return;
+        }
+        const unsigned char* data = reinterpret_cast<const unsigned char*>(packet->Data);
+        const unsigned short opcode = *reinterpret_cast<const unsigned short*>(data + 4);
+        if (opcode != kOpcodeBossRoomAssist) {
+            return;
+        }
+        if (!BossRoomAssistDisplay::IsReady()) {
+            BossRoomAssistDisplay::ResetMultipliers();
+            return;
+        }
+        BossRoomAssistDisplay::SetMultipliers(data[6], data[7], data[8]);
+        SendBossRoomAssistAck(data[6], data[7]);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        BossRoomAssistDisplay::ResetMultipliers();
+    }
+}
 using SaveGlobal_t = void(__fastcall*)(void* pThis, void* edx);
 static SaveGlobal_t s_SaveGlobal = reinterpret_cast<SaveGlobal_t>(kSaveGlobalAddr);
 static void __fastcall SaveGlobal_Hook(void* pThis, void* edx) {
@@ -117,7 +164,21 @@ static void __fastcall SaveGlobal_Hook(void* pThis, void* edx) {
 using ProcessPacket_t = void(__fastcall*)(void* pThis, void* edx, CInPacket* packet);
 static ProcessPacket_t s_ProcessPacket = reinterpret_cast<ProcessPacket_t>(kProcessPacketAddr);
 static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* packet) {
+    if (packet != nullptr) {
+        __try {
+            if (packet->Data != nullptr && packet->Size >= 6) {
+                const unsigned char* data = reinterpret_cast<const unsigned char*>(packet->Data);
+                const unsigned short opcode = *reinterpret_cast<const unsigned short*>(data + 4);
+                if (opcode == kOpcodeSetField) {
+                    BossRoomAssistDisplay::ResetMultipliers();
+                }
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            BossRoomAssistDisplay::ResetMultipliers();
+        }
+    }
     HandleHpMpAlertPacket(packet);
+    HandleBossRoomAssistPacket(packet);
     s_ProcessPacket(pThis, edx, packet);
 }
 } // namespace

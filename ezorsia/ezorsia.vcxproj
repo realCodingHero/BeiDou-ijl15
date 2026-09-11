@@ -172,6 +172,7 @@
       <FileType>CppHeader</FileType>
     </ClInclude>
     <ClInclude Include="BossHP.h" />
+    <ClInclude Include="BossRoomAssistDisplay.h" />
     <ClInclude Include="HpMpAlert.h" />
     <ClInclude Include="AutoLogin.h" />
     <ClInclude Include="Client.h" />
@@ -213,6 +214,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BossHP.cpp" />
+    <ClCompile Include="BossRoomAssistDisplay.cpp" />
     <ClCompile Include="HpMpAlert.cpp" />
     <ClCompile Include="AutoLogin.cpp" />
     <ClCompile Include="Client.cpp" />
