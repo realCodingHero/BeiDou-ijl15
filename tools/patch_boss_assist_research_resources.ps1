@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$ClientPath
+    [string]$ClientPath,
+
+    [string]$MapleLibDirectory = 'C:\Game\BeiDou-Server\tools\WzBridge\bin\Release\net10.0-windows'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -243,12 +245,119 @@ function Update-Commodity([string]$path) {
     return 'added-purchasable-commodity'
 }
 
+function Import-MapleLib([string]$directory) {
+    $mapleLibPath = Join-Path $directory 'MapleLib.dll'
+    if (-not (Test-Path -LiteralPath $mapleLibPath -PathType Leaf)) {
+        throw "MapleLib.dll was not found in: $directory"
+    }
+
+    # MapleLib references several sibling assemblies. Load every managed DLL
+    # from the WzBridge output directory before resolving MapleLib's types.
+    foreach ($assemblyPath in Get-ChildItem -LiteralPath $directory -Filter '*.dll' -File) {
+        try {
+            [void][Reflection.Assembly]::LoadFrom($assemblyPath.FullName)
+        } catch {
+            # Native and optional DLLs are expected to fail managed loading.
+        }
+    }
+
+    try {
+        $mapleAssembly = [Reflection.Assembly]::LoadFrom($mapleLibPath)
+    } catch {
+        throw "Unable to load MapleLib.dll from ${directory}: $($_.Exception.Message)"
+    }
+    if ($null -eq $mapleAssembly.GetType('MapleLib.WzLib.Serializer.WzImgDeserializer')) {
+        throw "Loaded MapleLib.dll does not expose WzImgDeserializer: $mapleLibPath"
+    }
+}
+
+function Update-BossAssistItemCashFlag([string]$path, [string]$mapleLibDirectory) {
+    Import-MapleLib $mapleLibDirectory
+
+    $parsed = $false
+    $deserializer = [MapleLib.WzLib.Serializer.WzImgDeserializer]::new($false)
+    $image = $deserializer.WzImageFromIMGFile(
+        $path,
+        [MapleLib.WzLib.WzAESConstant]::WZ_GMSIV,
+        [IO.Path]::GetFileName($path),
+        [ref]$parsed
+    )
+    if (-not $parsed) {
+        $image.Dispose()
+        throw "Unable to parse item IMG: $path"
+    }
+    $originalPropertyCount = $image.WzProperties.Count
+
+    $temporaryPath = "$path.boss-assist.tmp.img"
+    try {
+        $item = $image['02430034']
+        if ($null -eq $item -or $null -eq $item['info']) {
+            throw 'Boss assist item 02430034 or its info node is missing.'
+        }
+
+        $info = $item['info']
+        $cash = $info['cash']
+        if ($null -ne $cash -and $cash.Value -eq 1) {
+            return 'already-current'
+        }
+
+        if ($null -eq $cash) {
+            $info.AddProperty([MapleLib.WzLib.WzProperties.WzIntProperty]::new('cash', 1))
+        } else {
+            $cash.Value = 1
+        }
+
+        if (Test-Path -LiteralPath $temporaryPath) {
+            Remove-Item -LiteralPath $temporaryPath -Force
+        }
+        [MapleLib.MapleCryptoLib.MapleCryptoConstants]::UserKey_WzLib =
+            [MapleLib.MapleCryptoLib.MapleCryptoConstants]::MAPLESTORY_USERKEY_DEFAULT.Clone()
+        $image.Changed = $true
+        $serializer = [MapleLib.WzLib.Serializer.WzImgSerializer]::new(
+            [MapleLib.WzLib.WzAESConstant]::WZ_GMSIV
+        )
+        $serializer.SerializeImage($image, $temporaryPath)
+    } finally {
+        $image.Dispose()
+    }
+
+    $verifyParsed = $false
+    $verifyDeserializer = [MapleLib.WzLib.Serializer.WzImgDeserializer]::new($true)
+    $verifyImage = $verifyDeserializer.WzImageFromIMGFile(
+        $temporaryPath,
+        [MapleLib.WzLib.WzAESConstant]::WZ_GMSIV,
+        [IO.Path]::GetFileName($temporaryPath),
+        [ref]$verifyParsed
+    )
+    try {
+        $verifyItem = if ($verifyParsed) { $verifyImage['02430034'] } else { $null }
+        $verifyInfo = if ($null -ne $verifyItem) { $verifyItem['info'] } else { $null }
+        if ((-not $verifyParsed) -or
+            ($verifyImage.WzProperties.Count -ne $originalPropertyCount) -or
+            ($null -eq $verifyInfo) -or
+            ($null -eq $verifyInfo['cash']) -or
+            ($verifyInfo['cash'].Value -ne 1) -or
+            ($null -eq $verifyInfo['icon']) -or
+            ($null -eq $verifyInfo['iconRaw'])) {
+            throw 'Patched item IMG failed cash-flag or icon verification.'
+        }
+    } finally {
+        if ($null -ne $verifyImage) {
+            $verifyImage.Dispose()
+        }
+    }
+
+    Move-Item -LiteralPath $temporaryPath -Destination $path -Force
+    return 'added-cash-flag'
+}
+
 $dataConsume = Join-Path $resolvedClientPath 'Data\String\Consume.img'
 $englishConsume = Join-Path $resolvedClientPath 'EN\String\Consume.img'
 $dataCash = Join-Path $resolvedClientPath 'Data\String\Cash.img'
 $englishCash = Join-Path $resolvedClientPath 'EN\String\Cash.img'
 $commodity = Join-Path $resolvedClientPath 'Data\Etc\Commodity.img'
-$targets = @($dataConsume, $englishConsume, $dataCash, $englishCash, $commodity)
+$itemConsume = Join-Path $resolvedClientPath 'Data\Item\Consume\0243.img'
+$targets = @($dataConsume, $englishConsume, $dataCash, $englishCash, $commodity, $itemConsume)
 foreach ($target in $targets) {
     if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
         throw "Required Research client resource is missing: $target"
@@ -265,6 +374,7 @@ $englishResult = Update-StringTable $englishConsume $stringRecord
 $dataCashResult = Update-StringTable $dataCash $stringRecord
 $englishCashResult = Update-StringTable $englishCash $stringRecord
 $commodityResult = Update-Commodity $commodity
+$itemCashResult = Update-BossAssistItemCashFlag $itemConsume $MapleLibDirectory
 
 [pscustomobject]@{
     DataConsume = $dataResult
@@ -272,10 +382,12 @@ $commodityResult = Update-Commodity $commodity
     DataCash = $dataCashResult
     EnglishCash = $englishCashResult
     Commodity = $commodityResult
+    ItemConsumeCashFlag = $itemCashResult
     ItemName = '首领房辅助增益道具'
     DataConsumeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $dataConsume).Hash
     EnglishConsumeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $englishConsume).Hash
     DataCashHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $dataCash).Hash
     EnglishCashHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $englishCash).Hash
     CommodityHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $commodity).Hash
+    ItemConsumeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $itemConsume).Hash
 }
