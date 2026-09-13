@@ -15,6 +15,7 @@ add_library(ijl15 SHARED
     ezorsia/HpMpAlert.cpp
     ezorsia/Client.cpp
     ezorsia/WindowScaling.cpp
+    ezorsia/UpscaleLoader.cpp
     ezorsia/ijl15.cpp
     ezorsia/ZAllocEx.cpp
     ezorsia/dllmain.cpp
@@ -57,3 +58,8 @@ target_link_libraries(ijl15 PRIVATE
 set_target_properties(ijl15 PROPERTIES
     OUTPUT_NAME "ijl15"
 )
+
+option(BUILD_UPSCALING "Build the optional application-local neural upscaling DLL" OFF)
+if(BUILD_UPSCALING)
+    add_subdirectory(upscaling)
+endif()

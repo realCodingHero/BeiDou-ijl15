@@ -12,6 +12,7 @@
 #include "BossRoomAssistDisplay.h"
 #include "WindowScaling.h"
 #include "HelpMenu.h"
+#include "UpscaleLoader.h"
 #pragma comment(lib, "ws2_32.lib")
 
 // Optional v186 ItemEff compatibility module. Keep the handle alive for the
@@ -205,6 +206,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		}
 
 		WindowScaling::LoadPlacement(iniPath);
+		if (!UpscaleLoader::Install(hModule, reader.GetBoolean("upscaling", "enabled", false)))
+			OutputDebugStringA("BeiDou: upscaling loader unavailable; keeping native graphics\n");
 
 		Hook_CreateMutexA(true); //multiclient //ty darter, angel, and alias!
 		if (!WindowScaling::Hook(true)) OutputDebugStringA("BeiDou: window scaling hooks failed\n");

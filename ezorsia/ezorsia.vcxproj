@@ -178,6 +178,7 @@
     <ClInclude Include="AutoLogin.h" />
     <ClInclude Include="Client.h" />
     <ClInclude Include="WindowScaling.h" />
+    <ClInclude Include="UpscaleLoader.h" />
     <ClInclude Include="WindowScalingGeometry.h" />
     <ClInclude Include="WindowPlacementConfig.h" />
     <ClInclude Include="FixBuddy.h" />
@@ -224,6 +225,7 @@
     <ClCompile Include="AutoLogin.cpp" />
     <ClCompile Include="Client.cpp" />
     <ClCompile Include="WindowScaling.cpp" />
+    <ClCompile Include="UpscaleLoader.cpp" />
     <ClCompile Include="ijl15.cpp" />
     <ClCompile Include="ZAllocEx.cpp" />
     <ClCompile Include="dllmain.cpp" />

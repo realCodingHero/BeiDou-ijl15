@@ -1,0 +1,85 @@
+#include "UpscaleRenderer.h"
+#include <cstdio>
+#include <fstream>
+#include <filesystem>
+#include <chrono>
+#include <algorithm>
+#include <vector>
+#include <cstring>
+#include <string>
+using Microsoft::WRL::ComPtr;
+using namespace NeuralUpscale;
+void Check(HRESULT hr, const char* operation) {
+    if (FAILED(hr)) { printf("FAIL %s: %08lX\n", operation, hr); exit(1); }
+}
+void Require(bool condition, const char* what) { if (!condition) { printf("FAIL %s\n", what); exit(1); } }
+ComPtr<IDirect3DSurface9> Target(IDirect3DDevice9* device, UINT w, UINT h, bool memory = false) {
+    ComPtr<IDirect3DSurface9> result;
+    if (memory) Check(device->CreateOffscreenPlainSurface(w,h,D3DFMT_A8R8G8B8,D3DPOOL_SYSTEMMEM,&result,nullptr), "staging");
+    else Check(device->CreateRenderTarget(w,h,D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&result,nullptr), "target");
+    return result;
+}
+void Save(IDirect3DDevice9* device, IDirect3DSurface9* source, const std::filesystem::path& path) {
+    D3DSURFACE_DESC desc{}; source->GetDesc(&desc);
+    auto staging = Target(device, desc.Width, desc.Height, true);
+    Check(device->GetRenderTargetData(source, staging.Get()), "readback");
+    D3DLOCKED_RECT locked{}; Check(staging->LockRect(&locked,nullptr,D3DLOCK_READONLY), "read lock");
+    std::ofstream output(path, std::ios::binary);
+    for (UINT y = 0; y < desc.Height; ++y) output.write(static_cast<char*>(locked.pBits)+y*locked.Pitch, desc.Width*4);
+    staging->UnlockRect();
+}
+int main(int argc, char** argv) {
+    if (argc < 2) return 2;
+    const std::filesystem::path folder(argv[1]);
+    const UINT w = argc > 2 ? static_cast<UINT>(atoi(argv[2])) : 64;
+    const UINT h = argc > 3 ? static_cast<UINT>(atoi(argv[3])) : 48;
+    WNDCLASSA cls{}; cls.lpfnWndProc=DefWindowProcA; cls.hInstance=GetModuleHandle(nullptr); cls.lpszClassName="NeuralFixture";
+    RegisterClassA(&cls);
+    HWND window=CreateWindowExA(WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE,cls.lpszClassName,"Neural GPU fixture",WS_POPUP,0,0,w,h,nullptr,nullptr,cls.hInstance,nullptr);
+    Require(window != nullptr, "fixture window");
+    ComPtr<IDirect3D9> d3d; d3d.Attach(Direct3DCreate9(D3D_SDK_VERSION)); Require(d3d != nullptr, "D3D9");
+    D3DADAPTER_IDENTIFIER9 adapter{}; d3d->GetAdapterIdentifier(0,0,&adapter);
+    printf("GPU: %s\n",adapter.Description);
+    D3DPRESENT_PARAMETERS pp{}; pp.Windowed=TRUE; pp.hDeviceWindow=window; pp.SwapEffect=D3DSWAPEFFECT_DISCARD;
+    pp.BackBufferWidth=w; pp.BackBufferHeight=h; pp.BackBufferFormat=D3DFMT_X8R8G8B8;
+    ComPtr<IDirect3DDevice9> device;
+    Check(d3d->CreateDevice(0,D3DDEVTYPE_HAL,window,D3DCREATE_SOFTWARE_VERTEXPROCESSING,&pp,&device), "create device");
+    auto source=Target(device.Get(),w,h), upload=Target(device.Get(),w,h,true);
+    std::ifstream input(folder/"input.bgra",std::ios::binary);
+    Require(input.good(), "input fixture");
+    D3DLOCKED_RECT locked{}; Check(upload->LockRect(&locked,nullptr,0),"upload lock");
+    for (UINT y=0;y<h;++y) input.read(static_cast<char*>(locked.pBits)+y*locked.Pitch,w*4);
+    Require(input.good(),"complete input"); upload->UnlockRect();
+    Check(device->UpdateSurface(upload.Get(),nullptr,source.Get(),nullptr),"upload");
+    Renderer renderer(device.Get());
+    Settings settings; settings.enabled=true;
+    D3DVIEWPORT9 sentinel{3,5,w-6,h-10,.2f,.8f};
+    device->SetViewport(&sentinel); device->SetRenderState(D3DRS_ALPHABLENDENABLE,TRUE);
+    device->SetSamplerState(0,D3DSAMP_ADDRESSU,D3DTADDRESS_WRAP);
+    for (auto quality : {Quality::Fast,Quality::Balanced}) {
+        settings.quality=quality;
+        auto target=Target(device.Get(),w*2,h*2);
+        Check(renderer.Render(source.Get(),target.Get(),settings),"neural render");
+        D3DVIEWPORT9 after{}; device->GetViewport(&after);
+        Require(memcmp(&sentinel,&after,sizeof(after))==0,"restore viewport");
+        DWORD state=0;device->GetRenderState(D3DRS_ALPHABLENDENABLE,&state);Require(state==TRUE,"restore blend");
+        device->GetSamplerState(0,D3DSAMP_ADDRESSU,&state);Require(state==D3DTADDRESS_WRAP,"restore sampler");
+        Save(device.Get(),target.Get(),folder/(quality==Quality::Fast ? "fast.bgra" : "balanced.bgra"));
+    }
+    auto identity=Target(device.Get(),w,h);Check(renderer.Render(source.Get(),identity.Get(),settings),"identity");
+    Save(device.Get(),identity.Get(),folder/"identity.bgra");
+    for (auto size : {std::pair<UINT,UINT>{w*3/2,h*3/2},{w/2,h/2},{w*2,h*2},{w*3/2,h*3/2}}) {
+        auto target=Target(device.Get(),size.first,size.second);
+        Check(renderer.Render(source.Get(),target.Get(),settings),"resize");
+        Save(device.Get(),target.Get(),folder/(std::to_string(size.first)+"x"+std::to_string(size.second)+".bgra"));
+    }
+    settings.algorithm=Algorithm::Linear;
+    auto linear=Target(device.Get(),w*2,h*2);Check(renderer.Render(source.Get(),linear.Get(),settings),"linear");
+    Save(device.Get(),linear.Get(),folder/"linear.bgra");
+    identity.Reset();linear.Reset();source.Reset();upload.Reset();renderer.Reset();
+    Check(device->Reset(&pp),"device reset after neural resources released");
+    device->AddRef(); const ULONG refs=device->Release();
+    Require(refs==1,"no retained device references");
+    printf("PASS GPU render: two networks, identity, shrink, fractional resize, state restoration, reset and resource release\n");
+    device.Reset();d3d.Reset();DestroyWindow(window);
+}
