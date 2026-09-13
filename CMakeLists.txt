@@ -13,6 +13,7 @@ add_library(ijl15 SHARED
     ezorsia/BossRoomAssistDisplay.cpp
     ezorsia/HpMpAlert.cpp
     ezorsia/Client.cpp
+    ezorsia/WindowScaling.cpp
     ezorsia/ijl15.cpp
     ezorsia/ZAllocEx.cpp
     ezorsia/dllmain.cpp
