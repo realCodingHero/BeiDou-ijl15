@@ -91,5 +91,6 @@ pre-feature backup also restores `native_help_menu` to its previous state.
   reach the correct feature. The first visual test identified Format257 button
   corruption; it is corrected by the explicit Format2 encoding above.
 
-Remaining runtime check: restart Research and confirm that both corrected
-labels are clear, including their hover/pressed appearance.
+- After restarting with the Format2 resources, the user confirmed that both
+  options display normally. All four serialized button states use the same
+  verified Format2 encoding.
