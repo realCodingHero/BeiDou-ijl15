@@ -16,6 +16,10 @@
 
 先把客户端原本的ijl15.dll重命名成2ijl15.dll，然后把生成的ijl15.dll拷贝到客户端目录下，然后把项目根目录下的config.ini同样复制到客户端目录下，具体配置都在config.ini中
 
+## 窗口缩放优化
+
+可选内置模块、配置和构建方法见 [内置神经网络缩放](docs/built-in-upscaling.md)。
+
 ## 推荐服务端
 
 北斗 https://github.com/SleepNap/BeiDou

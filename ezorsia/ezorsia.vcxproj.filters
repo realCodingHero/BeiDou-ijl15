@@ -48,6 +48,9 @@
     <ClInclude Include="WindowScaling.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="UpscaleLoader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="WindowScalingGeometry.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -177,6 +180,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="WindowScaling.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="UpscaleLoader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Client.cpp">
