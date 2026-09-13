@@ -11,6 +11,7 @@
 #include "AutoLogin.h"
 #include "BossRoomAssistDisplay.h"
 #include "WindowScaling.h"
+#include "HelpMenu.h"
 #pragma comment(lib, "ws2_32.lib")
 
 // Optional v186 ItemEff compatibility module. Keep the handle alive for the
@@ -224,6 +225,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		BossRoomAssistDisplay::Hook(true);
 		HookSelectCharMacFix(true);
 		AutoLogin::Hook(true);
+		HelpMenu::Install(reader.GetBoolean("optional", "native_help_menu", false));
 		//Hook_get_unknown(true);
 		//Hook_get_resource_object(true); //helper function hooks  //ty teto for helping me get started
 		//Hook_com_ptr_t_IWzProperty__ctor(true);

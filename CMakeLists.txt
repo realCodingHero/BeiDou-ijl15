@@ -11,6 +11,7 @@ add_library(ijl15 SHARED
     ezorsia/AutoLogin.cpp
     ezorsia/BossHP.cpp
     ezorsia/BossRoomAssistDisplay.cpp
+    ezorsia/HelpMenu.cpp
     ezorsia/HpMpAlert.cpp
     ezorsia/Client.cpp
     ezorsia/WindowScaling.cpp
