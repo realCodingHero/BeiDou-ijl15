@@ -2,10 +2,15 @@
 #include "NeuralShaders.h"
 #include <algorithm>
 #include <cstring>
+#include <cmath>
+#include <chrono>
 
 namespace NeuralUpscale {
 namespace {
 using Microsoft::WRL::ComPtr;
+double Milliseconds() {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 // State blocks omit render targets and depth surfaces. Restore them explicitly,
 // before applying the captured viewport and the rest of the game's state.
 class StateGuard {
@@ -42,16 +47,65 @@ Renderer::~Renderer() { Reset(); }
 ULONG Renderer::References() const { device_->AddRef(); return device_->Release(); }
 
 void Renderer::Reset() {
+    pacer_.Reset();
     // Call before the underlying Reset; DEFAULT-pool resources and additional
     // swapchains must not keep the old device surfaces alive.
     output_.Reset(); outputWidth_ = outputHeight_ = 0; outputWindow_ = nullptr;
     input_ = {}; residual_ = {}; doubled_ = {}; horizontal_ = {};
+    horizontalWeights_ = {}; verticalWeights_ = {};
     for (auto& bank : groups_) for (auto& texture : bank) texture = {};
     network_.clear(); copy_.Reset(); resolve_.Reset(); resample_.Reset();
+    resampleFast_.Reset();
     width_ = height_ = targetWidth_ = targetHeight_ = 0;
     internalReferences_ = 0;
     activeLogged_ = false;
     disabledUntilReset_ = false;
+    profileStart_ = lastFrame_ = renderTotal_ = presentTotal_ = 0;
+    maxGap_ = maxRender_ = maxPresent_ = 0; profileFrames_ = profileReports_ = 0;
+}
+
+void Renderer::CreateWeights(Texture& texture, UINT inputExtent, UINT outputExtent) {
+    texture = {};
+    const double scale = std::max(1., double(inputExtent) / outputExtent);
+    // Six samples exactly cover Lanczos2's support up to this ratio.
+    // Larger reductions keep the original wide low-pass shader.
+    if (inputExtent == outputExtent || scale > 1.5) return;
+    if (FAILED(device_->CreateTexture(outputExtent, 2, 1, 0, D3DFMT_A32B32G32R32F,
+        D3DPOOL_MANAGED, &texture.image, nullptr))) return;
+    D3DLOCKED_RECT lock{};
+    if (FAILED(texture.image->LockRect(0, &lock, nullptr, 0))) { texture = {}; return; }
+    const double pi = 3.14159265358979323846;
+    for (UINT x = 0; x < outputExtent; ++x) {
+        const double p = (x + .5) * inputExtent / outputExtent - .5;
+        double values[6]{}, sum = 0;
+        for (int k = -2; k <= 3; ++k) {
+            const double d = std::abs((std::floor(p) + k - p) / scale);
+            const double weight = d < .00001 ? 1 : d >= 2 ? 0 : std::sin(pi*d)*std::sin(pi*d*.5)/(pi*pi*.5*d*d);
+            values[k+2] = weight; sum += weight;
+        }
+        auto* row0 = reinterpret_cast<float*>(static_cast<char*>(lock.pBits)) + x*4;
+        auto* row1 = reinterpret_cast<float*>(static_cast<char*>(lock.pBits) + lock.Pitch) + x*4;
+        for (int k = 0; k < 4; ++k) row0[k] = static_cast<float>(values[k]/sum);
+        row1[0] = static_cast<float>(values[4]/sum); row1[1] = static_cast<float>(values[5]/sum);
+        row1[2] = row1[3] = 0;
+    }
+    texture.image->UnlockRect(0);
+}
+
+void Renderer::RecordFrame(double start, double renderMs, double presentMs) {
+    if (!Configuration().diagnostics || profileReports_ >= 12) return;
+    if (!profileStart_) { profileStart_ = lastFrame_ = start; return; }
+    maxGap_ = std::max(maxGap_, start-lastFrame_); lastFrame_ = start;
+    renderTotal_ += renderMs; presentTotal_ += presentMs;
+    maxRender_ = std::max(maxRender_, renderMs); maxPresent_ = std::max(maxPresent_, presentMs);
+    ++profileFrames_;
+    if (start-profileStart_ >= 5000) {
+        Log("timing: fps=%.1f, max_gap=%.2fms, submit_avg/max=%.2f/%.2fms, present_avg/max=%.2f/%.2fms",
+            profileFrames_*1000./(start-profileStart_), maxGap_, renderTotal_/profileFrames_, maxRender_,
+            presentTotal_/profileFrames_, maxPresent_);
+        profileStart_ = start; renderTotal_ = presentTotal_ = maxGap_ = maxRender_ = maxPresent_ = 0;
+        profileFrames_ = 0; ++profileReports_;
+    }
 }
 
 HRESULT Renderer::CreateTexture(Texture& texture, UINT w, UINT h, D3DFORMAT format) {
@@ -79,6 +133,7 @@ HRESULT Renderer::Prepare(UINT w, UINT h, UINT tw, UINT th, const Settings& sett
     if (!copy_ && FAILED(hr = makeShader(NeuralShaders::Copy, copy_))) return hr;
     if (!resolve_ && FAILED(hr = makeShader(NeuralShaders::Resolve, resolve_))) return hr;
     if (!resample_ && FAILED(hr = makeShader(NeuralShaders::Resample, resample_))) return hr;
+    if (!resampleFast_ && FAILED(hr = makeShader(NeuralShaders::ResampleFast, resampleFast_))) return hr;
     if (network_.size() != (settings.quality == Quality::Fast ? 6u : 9u) || settings.quality != preparedSettings_.quality) {
         network_.clear();
         const auto* code = settings.quality == Quality::Fast ? NeuralShaders::fast : NeuralShaders::balanced;
@@ -100,6 +155,8 @@ HRESULT Renderer::Prepare(UINT w, UINT h, UINT tw, UINT th, const Settings& sett
     }
     const UINT activeHeight = neural ? h*2 : h;
     if (FAILED(hr = CreateTexture(horizontal_, tw, activeHeight))) return hr;
+    CreateWeights(horizontalWeights_, neural ? w*2 : w, tw);
+    CreateWeights(verticalWeights_, activeHeight, th);
     width_ = w; height_ = h; targetWidth_ = tw; targetHeight_ = th;
     preparedSettings_ = settings;
     return S_OK;
@@ -193,13 +250,17 @@ HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* desti
             return Draw(destination, copy_.Get(), {active}, aw, ah);
         if (aw != dst.Width) {
             const float axis[4]{1,0,static_cast<float>(aw),static_cast<float>(dst.Width)};
-            HRESULT pass = Draw(horizontal_.surface.Get(), resample_.Get(), {active}, aw, ah, false, axis);
+            const bool fast = horizontalWeights_.image != nullptr;
+            HRESULT pass = Draw(horizontal_.surface.Get(), fast ? resampleFast_.Get() : resample_.Get(),
+                fast ? std::vector<IDirect3DTexture9*>{active, horizontalWeights_.image.Get()} : std::vector<IDirect3DTexture9*>{active}, aw, ah, false, axis);
             if (FAILED(pass)) return pass;
             active = horizontal_.image.Get(); aw = dst.Width;
         }
         if (ah != dst.Height) {
             const float axis[4]{0,1,static_cast<float>(ah),static_cast<float>(dst.Height)};
-            return Draw(destination, resample_.Get(), {active}, aw, ah, false, axis);
+            const bool fast = verticalWeights_.image != nullptr;
+            return Draw(destination, fast ? resampleFast_.Get() : resample_.Get(),
+                fast ? std::vector<IDirect3DTexture9*>{active, verticalWeights_.image.Get()} : std::vector<IDirect3DTexture9*>{active}, aw, ah, false, axis);
         }
         return Draw(destination, copy_.Get(), {active}, aw, ah);
     };
@@ -220,6 +281,7 @@ HRESULT Renderer::Render(IDirect3DSurface9* source, IDirect3DSurface9* destinati
 }
 
 bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND overrideWindow, HRESULT& result) {
+    double frameStart = Milliseconds();
     if (!Configuration().enabled || disabledUntilReset_) return false;
     ComPtr<IDirect3DSwapChain9> original;
     if (FAILED(device_->GetSwapChain(0, &original))) return false;
@@ -238,8 +300,10 @@ bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND over
     if (sourceRect && (sourceRect->left || sourceRect->top ||
         sourceRect->right != description.Width || sourceRect->bottom != description.Height)) return false;
     if (targetRect && !EqualRect(targetRect, &client)) return false;
-    if (description.Width == client.right && description.Height == client.bottom) return false;
     if (FAILED(device_->TestCooperativeLevel())) return false;
+    pacer_.Wait(FrameLimit());
+    frameStart = Milliseconds();
+    if (description.Width == client.right && description.Height == client.bottom) return false;
     // Count only references owned by this renderer, never temporary game surfaces.
     const ULONG external = References() - internalReferences_;
     HRESULT hr = S_OK;
@@ -260,6 +324,7 @@ bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND over
         ComPtr<IDirect3DSurface9> target;
         hr = output_->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &target);
         if (SUCCEEDED(hr)) hr = Render(source.Get(), target.Get(), Configuration());
+        const double submitEnd = Milliseconds();
         if (SUCCEEDED(hr)) {
             if (!activeLogged_) {
                 Log("active: %ux%u -> %ldx%ld, CuNNy=%s", description.Width, description.Height,
@@ -267,6 +332,7 @@ bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND over
                 activeLogged_ = true;
             }
             hr = output_->Present(nullptr, nullptr, window, nullptr, 0);
+            RecordFrame(frameStart, submitEnd-frameStart, Milliseconds()-submitEnd);
             // Let the game handle normal device-loss recovery through Reset.
             if (SUCCEEDED(hr) || hr == D3DERR_DEVICELOST) { result = hr; return true; }
         }

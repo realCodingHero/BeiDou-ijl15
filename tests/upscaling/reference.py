@@ -77,3 +77,32 @@ for quality,model in [('fast','veryfast'),('balanced','fast')]:
     assert difference.mean()<1.2 and np.percentile(difference,99)<=6, 'GPU inference differs from reference'
 assert (folder/'identity.bgra').read_bytes()==(folder/'input.bgra').read_bytes(), '1:1 output changed pixels'
 print('PASS independent neural reference and pixel-exact identity')
+
+
+def resize_axis(pixels, extent, axis):
+    # Full wide kernel, independent of the GPU's six-tap/LUT optimization.
+    moved=np.moveaxis(pixels,axis,0).astype(np.float64)
+    scale=max(1.,moved.shape[0]/extent)
+    stride=max(1.,np.ceil(scale/4))
+    output=[]
+    for n in range(extent):
+        p=(n+.5)*len(moved)/extent-.5
+        locations=np.floor(p)+np.arange(-8,9)*stride
+        distance=np.abs((locations-p)/scale)
+        weights=np.sinc(distance)*np.sinc(distance/2)
+        weights[distance>=2]=0
+        samples=moved[np.clip(locations.astype(int),0,len(moved)-1)]
+        value=np.sum(samples*weights[:,None,None],axis=0)/weights.sum()
+        a,b=moved[np.clip([int(np.floor(p)),int(np.floor(p))+1],0,len(moved)-1)]
+        output.append(np.rint(np.clip(value,np.minimum(a,b),np.maximum(a,b))))
+    return np.moveaxis(np.array(output,dtype=np.uint8),0,axis)
+
+
+neural=np.frombuffer((folder/'balanced.bgra').read_bytes(),np.uint8).reshape(96,128,4)
+original=np.frombuffer((folder/'input.bgra').read_bytes(),np.uint8).reshape(48,64,4)
+for pixels,width,height in [(neural,96,72),(original,32,24)]:
+    expected=resize_axis(resize_axis(pixels,width,1),height,0)
+    actual=np.frombuffer((folder/f'{width}x{height}.bgra').read_bytes(),np.uint8).reshape(height,width,4)
+    difference=np.abs(expected.astype(int)-actual.astype(int))
+    assert difference.mean()<.5 and np.percentile(difference,99)<=2, 'Lanczos resizing differs from reference'
+    print(f'PASS independent resample {width}x{height}: mean={difference.mean():.4f}, max={difference.max()}')

@@ -19,6 +19,7 @@ const Settings& Configuration() {
         INIReader config(Directory() + "config.ini");
         if (config.ParseError()) return result;
         result.enabled = config.GetBoolean("upscaling", "enabled", false);
+        result.diagnostics = config.GetBoolean("upscaling", "diagnostics", false);
         const std::string algorithm = config.Get("upscaling", "algorithm", "cunny");
         if (algorithm == "linear") result.algorithm = Algorithm::Linear;
         else if (algorithm != "cunny") result.enabled = false;
@@ -28,6 +29,19 @@ const Settings& Configuration() {
         return result;
     }();
     return settings;
+}
+unsigned FrameLimit() {
+    // This one inexpensive control can be changed live for A/B diagnosis.
+    // Other settings keep their startup-only behavior.
+    thread_local ULONGLONG checked = 0;
+    thread_local unsigned limit = 60;
+    const auto now = GetTickCount64();
+    if (!checked || now-checked >= 1000) {
+        checked = now;
+        const UINT value = GetPrivateProfileIntA("upscaling", "max_fps", 60, (Directory()+"config.ini").c_str());
+        limit = value == 0 ? 0 : value >= 15 && value <= 240 ? value : 60;
+    }
+    return limit;
 }
 void Log(const char* format, ...) {
     static std::mutex lock;

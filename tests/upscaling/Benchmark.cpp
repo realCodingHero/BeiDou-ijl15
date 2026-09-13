@@ -24,7 +24,7 @@ int main(){
     Check(device->CreateQuery(D3DQUERYTYPE_TIMESTAMPFREQ,&freq),"frequency");Check(device->CreateQuery(D3DQUERYTYPE_TIMESTAMPDISJOINT,&disjoint),"disjoint");
     Renderer renderer(device.Get());
     printf("input,output,mode,gpu_median_ms,gpu_p95_ms,cpu_submit_median_ms\n");
-    for(auto dimensions : {std::array<UINT,4>{1280,720,1920,1080},{1280,720,2560,1440},{1920,1080,3840,2160}}){
+    for(auto dimensions : {std::array<UINT,4>{1280,720,1920,1080},{1280,720,2560,1440},{1920,1080,3840,2160},{1920,1080,3365,1893},{1920,1080,2560,1440}}){
         ComPtr<IDirect3DSurface9> source,target;
         Check(device->CreateRenderTarget(dimensions[0],dimensions[1],D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&source,nullptr),"source");
         Check(device->CreateRenderTarget(dimensions[2],dimensions[3],D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&target,nullptr),"target");

@@ -44,6 +44,11 @@ try {
 
     & $compiler @common (Join-Path $repoRoot 'tests\upscaling\Benchmark.cpp') (Join-Path $outDir 'UpscaleRenderer.obj') (Join-Path $outDir 'UpscaleConfig.obj') ('/Fo' + $outDir + '\') /link /MACHINE:X86 d3d9.lib user32.lib ('/OUT:' + (Join-Path $outDir 'Benchmark.exe'))
     if ($LASTEXITCODE -ne 0) { throw 'Benchmark build failed' }
+
+    & $compiler @common (Join-Path $repoRoot 'tests\upscaling\FramePacerTests.cpp') ('/Fo' + $outDir + '\') /link /MACHINE:X86 ('/OUT:' + (Join-Path $outDir 'FramePacerTests.exe'))
+    if ($LASTEXITCODE -ne 0) { throw 'Frame pacer fixture build failed' }
+    & (Join-Path $outDir 'FramePacerTests.exe')
+    if ($LASTEXITCODE -ne 0) { throw 'Frame pacing tests failed' }
     & $Python -B (Join-Path $repoRoot 'tests\upscaling\reference.py') (Join-Path $outDir 'reference') prepare
     if ($LASTEXITCODE -ne 0) { throw 'Reference fixture creation failed' }
     if (!$SkipGpuTests) {
