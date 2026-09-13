@@ -1,4 +1,5 @@
 #pragma once
+#include "WindowScaling.h"
 int nStatusBarY = 0;
 __declspec(naked) void AdjustStatusBar() {
 	__asm {
@@ -978,7 +979,7 @@ __declspec(naked) void testingCodeCave4() {
 
 DWORD fixMouseWheelAddr = 0x009E8090;
 DWORD fixMouseWheelRetJmpAddr = 0x009E809F;
-DWORD fixMouseWheelCallSetCursorPosAddr = 0x0059A0CB;
+DWORD fixMouseWheelCallSetCursorPosAddr = reinterpret_cast<DWORD>(&WindowScaling::DrawNativeCursor);
 __declspec(naked) void fixMouseWheelHook() {
 	__asm {
 		// is mouse wheel

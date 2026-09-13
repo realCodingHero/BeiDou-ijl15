@@ -10,6 +10,7 @@
 #include "SelectCharMacFix.h"
 #include "AutoLogin.h"
 #include "BossRoomAssistDisplay.h"
+#include "WindowScaling.h"
 #pragma comment(lib, "ws2_32.lib")
 
 // Optional v186 ItemEff compatibility module. Keep the handle alive for the
@@ -135,10 +136,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 			int renderWidth = reader.GetInteger("general", "render_width", defaultRenderWidth);
 			int renderHeight = reader.GetInteger("general", "render_height", defaultRenderHeight);
 
-			if (enableScaling && cfgWidth > renderWidth && (cfgWidth * renderHeight == cfgHeight * renderWidth)) {
+			if (enableScaling && renderWidth > 0 && renderHeight > 0) {
 				Client::m_nGameWidth = renderWidth;
 				Client::m_nGameHeight = renderHeight;
-				Client::m_bEnableScaling = true;
+				Client::m_bEnableScaling = cfgWidth != renderWidth || cfgHeight != renderHeight;
 				Client::m_fScaleX = static_cast<float>(cfgWidth) / static_cast<float>(renderWidth);
 				Client::m_fScaleY = static_cast<float>(cfgHeight) / static_cast<float>(renderHeight);
 			}
@@ -152,6 +153,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 			Client::MsgAmount = reader.GetInteger("general", "MsgAmount", 26);
 			Client::CustomLoginFrame = reader.GetBoolean("general", "CustomLoginFrame", true);
 			Client::WindowedMode = reader.GetBoolean("general", "WindowedMode", true);
+			WindowScaling::Configure(enableScaling && reader.GetBoolean("general", "resizable_window", true),
+				reader.GetBoolean("general", "keep_aspect_ratio", true));
 			Client::RemoveLogos = reader.GetBoolean("general", "RemoveLogos", true);
 			Memory::UseVirtuProtect = reader.GetBoolean("general", "UseVirtuProtect", true);
 			Client::setDamageCap = reader.GetReal("optional", "setDamageCap", 199999);
@@ -200,9 +203,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 			AutoLogin::Init(autoLogin, autoLoginUsername, autoLoginPassword, autoLoginWorld, autoLoginChannel);
 		}
 
+		WindowScaling::LoadPlacement(iniPath);
+
 		Hook_CreateMutexA(true); //multiclient //ty darter, angel, and alias!
-		HookCreateWindowExA(true); //default ezorsia
-		HookShowWindow(true);
+		if (!WindowScaling::Hook(true)) OutputDebugStringA("BeiDou: window scaling hooks failed\n");
 		HookGetModuleFileName(true); //default ezorsia
 		HookPcCreateObject_IWzResMan(true);
 		HookPcCreateObject_IWzNameSpace(true);
