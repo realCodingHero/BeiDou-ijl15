@@ -1,13 +1,13 @@
 # Research help menu
 
-The bottom Help button opens a two-entry popup using the native v83 ShortCut
-(Interface) window: Maple Helper and Auction. The original Interface button
+The bottom Help button opens a four-entry popup using the native v83 ShortCut
+(Interface) window: Maple Helper, Auction, Quest Helper and Super Teleport. The original Interface button
 continues to open its original menu.
 
 ## Compatibility and configuration
 
-- Client base: `03f11037eb7ce1fcd0c8cb46497760b9e7189cef` on `BeiDou`, including
-  the completed window sizing/input/persistence fixes from PR #5.
+- Client base: `e5abd63afcdaaa840b5a3b5e5f066cb720cb4cf0` on `BeiDou`, including
+  the completed window scaling and placement work through PR #9.
 - Supported BeiDou.exe/MoonKidsMS.exe SHA-256:
   `1198fa57ca5a7c489bae43ec13c69681d9cabe0f96762f3dc0357facf2e7d4df`.
 - Enable `[optional] native_help_menu=true`. The source config defaults to false.
@@ -20,7 +20,7 @@ continues to open its original menu.
 `CUIStatusBar::OnButtonClicked` (Help ID 1001) invokes the existing ShortCut path
 (ID 1007) inside a scoped help mode. The native constructor, eight button ZRefs,
 fade animation, modal loop and destructor remain responsible for ownership.
-Two buttons receive new resource paths; the unused controls are initialized
+Four buttons receive new resource paths; the unused controls are initialized
 below the screen and excluded from keyboard selection. The compact popup stays
 anchored above Help and uses the current resolution's native Y position.
 
@@ -32,12 +32,20 @@ one of the following packets:
 | --- | --- |
 | Maple Helper | `02 10 01 01` |
 | Auction | `02 10 01 02` |
+| Quest Helper | `02 10 01 03` |
+| Super Teleport | `02 10 01 04` |
 
-Opcode `0x1002`, version 1, action 1/2. Esc/cancel sends no packet. Up, Down and
-Tab cycle between the two entries; Enter or Space selects the highlighted one.
+Opcode `0x1002`, version 1, action 1-4. Esc/cancel sends no packet. Up, Down and
+Tab cycle between the four entries; Enter or Space selects the highlighted one.
 The server opens NPC 9900001 independently of `use_mts`, while Auction respects
 the existing MTS switch and gameplay restrictions. It returns normal NPC/MTS or
 notice packets; there is no new server response opcode.
+
+Quest Helper and Super Teleport open the same NPC 9900001 named scripts used
+inside Maple Helper: `questHelper` and `万能传送`. Their script entry points retain
+all existing task, job advancement, destination and cost checks. Existing
+actions 1/2 keep their original wire values; deploy backend support for 3/4
+before installing the expanded client menu.
 
 Backend PR: https://github.com/realCodingHero/MoonkidsMS/pull/147.
 Research image commit: `4c18391180bdb1e1b8a3418d86ec17c61bb085fd`.
@@ -47,7 +55,7 @@ Deployment: https://github.com/realCodingHero/MoonkidsMS/actions/runs/3475908988
 
 The resource builder derives both locales from the existing Chinese ShortCut
 skin, retaining the frame, marker, gradient and all four button states. The
-background is 93 x 84 pixels; each button is 81 x 25 pixels. Labels are authored
+background is 93 x 136 pixels; each button is 81 x 25 pixels. Labels are authored
 as pixels, so they do not depend on the Windows text code page.
 
 All canvases explicitly use **Format2 (BGRA8888)**, matching the original
@@ -76,7 +84,16 @@ For rollback, close Research, restore the files listed as existing in the
 backup manifest, and remove only help images marked as newly created. The
 pre-feature backup also restores `native_help_menu` to its previous state.
 
-## Verification
+## Four-entry verification
+
+- Native ABI fixture covers all four packets and resource paths, visible and
+  hidden button positions, cleanup before send, mouse selection, Up/Down/Tab
+  wrapping, Enter/Space, cancellation and isolation from the Interface menu.
+- Resource generation reparses both locales and checks the background and all
+  16 button canvases per locale for the v83-compatible Format2 encoding.
+- Research gameplay validation of the two new shortcuts is still pending.
+
+## Previous two-entry verification
 
 - Backend CI: 49 tests passed, including 17 help-menu handler cases; exact-SHA
   Research image deployment completed successfully.

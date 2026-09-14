@@ -10,6 +10,13 @@ foreach ($assembly in Get-ChildItem -LiteralPath $MapleLibDirectory -Filter '*.d
 }
 [MapleLib.MapleCryptoLib.MapleCryptoConstants]::UserKey_WzLib =
     [MapleLib.MapleCryptoLib.MapleCryptoConstants]::MAPLESTORY_USERKEY_DEFAULT.Clone()
+$entries = @(
+    @{ Name = 'BtHelper'; Chinese = '枫叶助手'; English = 'Helper'; Caption = 'HELPER' }
+    @{ Name = 'BtAuction'; Chinese = '拍卖行'; English = 'Auction'; Caption = 'AUCTION' }
+    @{ Name = 'BtQuestHelper'; Chinese = '任务辅助'; English = 'Quests'; Caption = 'QUESTS' }
+    @{ Name = 'BtTeleport'; Chinese = '超级传送'; English = 'Teleport'; Caption = 'TELEPORT' }
+)
+$backgroundHeight = 32 + 26 * $entries.Count
 
 function Read-Img([string]$path) {
     $parsed = $false
@@ -77,9 +84,9 @@ foreach ($language in @('Data', 'EN')) {
         $background = $shortcut['backgrnd'].DeepClone()
         $nativeBitmap = $background.PngProperty.GetImage($false)
         if ($nativeBitmap.Width -ne 93 -or $nativeBitmap.Height -ne 245) { throw 'Unexpected ShortCut background size' }
-        $bitmap = [Drawing.Bitmap]::new(93, 84, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
-        for ($y = 0; $y -lt 84; $y++) {
-            $sourceY = if ($y -lt 76) { $y } else { $y + 161 }
+        $bitmap = [Drawing.Bitmap]::new(93, $backgroundHeight, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
+        for ($y = 0; $y -lt $backgroundHeight; $y++) {
+            $sourceY = if ($y -lt $backgroundHeight - 8) { $y } else { $y + 245 - $backgroundHeight }
             for ($x = 0; $x -lt 93; $x++) { $bitmap.SetPixel($x, $y, $nativeBitmap.GetPixel($x, $sourceY)) }
         }
         for ($y = 4; $y -lt 18; $y++) {
@@ -95,16 +102,12 @@ foreach ($language in @('Data', 'EN')) {
         $graphics.Dispose(); $font.Dispose(); $format.Dispose()
         Set-V83Canvas $background $bitmap
         $result.AddProperty($background)
-        $helper = $shortcut['BtItem'].DeepClone(); $helper.Name = 'BtHelper'
-        $auction = $shortcut['BtItem'].DeepClone(); $auction.Name = 'BtAuction'
-        if ($language -eq 'Data') {
-            Set-ButtonText $helper '枫叶助手' 'HELPER'
-            Set-ButtonText $auction '拍卖行' 'AUCTION'
-        } else {
-            Set-ButtonText $helper 'Helper' 'HELPER'
-            Set-ButtonText $auction 'Auction' 'AUCTION'
+        foreach ($entry in $entries) {
+            $button = $shortcut['BtItem'].DeepClone(); $button.Name = $entry.Name
+            $label = if ($language -eq 'Data') { $entry.Chinese } else { $entry.English }
+            Set-ButtonText $button $label $entry.Caption
+            $result.AddProperty($button)
         }
-        $result.AddProperty($helper); $result.AddProperty($auction)
         $target = Join-Path $OutputDirectory "$language\UI"
         [void][IO.Directory]::CreateDirectory($target)
         $path = Join-Path $target 'HelpMenu.img'
@@ -114,12 +117,13 @@ foreach ($language in @('Data', 'EN')) {
         # Verify the serialized IMG, and render a preview from its decoded pixels.
         $verify = Read-Img $path
         try {
-            if ($verify.WzProperties.Count -ne 3 -or $verify['backgrnd'].PngProperty.Height -ne 84) { throw 'Invalid help menu structure' }
+            if ($verify.WzProperties.Count -ne $entries.Count + 1 -or $verify['backgrnd'].PngProperty.Height -ne $backgroundHeight) { throw 'Invalid help menu structure' }
             if ([int]$verify['backgrnd'].PngProperty.Format -ne 2) { throw 'Background must use v83 Format2' }
             $preview = [Drawing.Bitmap]$verify['backgrnd'].PngProperty.GetImage($false).Clone()
             $g = [Drawing.Graphics]::FromImage($preview)
             $y = 24
-            foreach ($name in @('BtHelper','BtAuction')) {
+            foreach ($entry in $entries) {
+                $name = $entry.Name
                 foreach ($state in @('normal','pressed','disabled','mouseOver')) {
                     $png = $verify[$name][$state]['0'].PngProperty
                     if ($png.Width -ne 81 -or $png.Height -ne 25) { throw "Invalid $name/$state" }

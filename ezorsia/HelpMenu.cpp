@@ -9,7 +9,12 @@ namespace {
 constexpr int kHelpButton = 1001;
 constexpr int kShortCutButton = 1007;
 constexpr int kNativeHeight = 271;
-constexpr int kHelpHeight = 110;
+constexpr int kEntryCount = 4;
+constexpr int kHelpHeight = 162;
+constexpr const wchar_t* kButtonPaths[] = {
+    L"UI/HelpMenu.img/BtHelper", L"UI/HelpMenu.img/BtAuction",
+    L"UI/HelpMenu.img/BtQuestHelper", L"UI/HelpMenu.img/BtTeleport"
+};
 thread_local bool g_helpMode = false;
 thread_local void* g_helpWindow = nullptr;
 thread_local unsigned char g_action = 0;
@@ -48,7 +53,7 @@ int& WindowInt(void* window, size_t offset) {
 }
 
 void SendAction(unsigned char action) {
-    if (action != 1 && action != 2) return;
+    if (action < 1 || action > kEntryCount) return;
     void* socket = *s_socket;
     if (!socket) return;
     unsigned char bytes[] = {0x02, 0x10, 0x01, action};
@@ -103,20 +108,19 @@ void __fastcall CreateSlide(void* self, void* edx, int width, int height,
 
 void* __fastcall GetStringW(void* self, void* edx, void* result, unsigned int index) {
     void* value = s_stringW(self, edx, result, index);
-    if (g_helpMode && g_helpWindow && (index == 0x8B4 || index == 0x8B5)) {
+    if (g_helpMode && g_helpWindow && index >= 0x8B4 && index < 0x8B4 + kEntryCount) {
         // Assign through ZXString<wchar_t>; a literal pointer has no native
         // reference-count header and cannot be substituted directly.
-        s_assign(result, nullptr,
-            index == 0x8B4 ? L"UI/HelpMenu.img/BtHelper" : L"UI/HelpMenu.img/BtAuction", -1);
+        s_assign(result, nullptr, kButtonPaths[index - 0x8B4], -1);
     }
     return value;
 }
 
 void __fastcall CreateButton(void* self, void* edx, void* parent, int id,
     int x, int y, int argument, void* params) {
-    if (g_helpMode && parent == g_helpWindow && id >= 1002 && id <= 1007) {
+    if (g_helpMode && parent == g_helpWindow && id >= 1000 + kEntryCount && id <= 1007) {
         // Native OnCreate/destruction/highlight logic requires all eight ZRefs.
-        // Initialize unused controls below the screen; only the first two can
+        // Initialize unused controls below the screen; only the first four can
         // receive mouse or keyboard input in this popup.
         y += 4096;
     }
@@ -128,7 +132,7 @@ void __fastcall MenuClick(void* self, void* edx, int id) {
         s_menuClick(self, edx, id);
         return;
     }
-    if (id == 1000 || id == 1001) {
+    if (id >= 1000 && id < 1000 + kEntryCount) {
         g_action = static_cast<unsigned char>(id - 999);
         // Cancel native ShortCut dispatch; our status-bar wrapper sends the
         // selected server action after the modal loop and cleanup finish.
@@ -150,10 +154,15 @@ void __fastcall MenuKey(void* input, void* edx, unsigned int key, unsigned int f
         MenuClick(window, nullptr, 2);
     } else if (key == VK_RETURN || key == VK_SPACE) {
         int selected = WindowInt(window, 0x118);
-        if (selected >= 0 && selected < 2) MenuClick(window, nullptr, 1000 + selected);
+        if (selected >= 0 && selected < kEntryCount) MenuClick(window, nullptr, 1000 + selected);
     } else if (key == VK_UP || key == VK_DOWN || key == VK_TAB) {
         WindowInt(window, 0x114) = 1;
-        WindowInt(window, 0x118) = WindowInt(window, 0x118) == 0 ? 1 : 0;
+        int& selected = WindowInt(window, 0x118);
+        if (selected < 0 || selected >= kEntryCount) {
+            selected = key == VK_UP ? kEntryCount - 1 : 0;
+        } else {
+            selected = (selected + (key == VK_UP ? kEntryCount - 1 : 1)) % kEntryCount;
+        }
         s_highlight(window, nullptr);
     }
 }
