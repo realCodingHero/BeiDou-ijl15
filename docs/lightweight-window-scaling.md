@@ -91,4 +91,18 @@ GPU 扫描输出之后显示器使用的具体滤波器。用户已确认清晰�
 代理和配置测试通过，实际 DX8 代理日志确认 60Hz 设备上 `interval=0x00000001`、
 `timer_fps=0`，包括 1:1 输出；无限制和较低上限切换也通过。
 部署前已确认 research 退出；部署后核对 research 整份配置、原有两个稳定性模块及
-正式版配置和三个 DLL 哈希均保持不变。此版本仍等待真实游戏流畅度验收。
+正式版配置和三个 DLL 哈希均保持不变。当时等待真实游戏流畅度验收。
+
+## 验收与正式部署
+
+用户随后确认 research 效果通过，并要求同步正式客户端。research 实机日志确认
+`1920x1080 -> 3582x2015`、`CuNNy=no`、`interval=0x00000001`、
+`device_refresh=60Hz`、`max_fps=60`、`timer_fps=0`。这次发布采用用户已测试的
+确切 DLL，不重新构建另一份二进制。
+
+2026-09-14 17:17:00，正式客户端已安装上述 `4075b44e...6143f24` 模块，
+`algorithm=linear`、`max_fps=60`，保留正式版的 `diagnostics=false`。
+部署备份为正式目录下的 `upscaling-backups/20260914-171700-398681`，包含原 DLL、
+原配置与安装清单。部署时客户端已退出。核对确认正式与 research 模块 SHA256 相同，
+原有 `ijl15.dll`、`BeiDouItemEff.dll` 未变；除 `[upscaling]` 中部署涉及的
+`enabled/algorithm/quality` 三项外，INI 字节保持一致。正式版下次启动加载新模块。
