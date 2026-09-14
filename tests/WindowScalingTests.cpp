@@ -16,6 +16,13 @@ float Client::m_fScaleY = 1.5f;
 int gameFullscreenCommands = 0;
 
 LRESULT CALLBACK GameFixtureProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    if (message == WM_GETMINMAXINFO) {
+        const LRESULT result = DefWindowProcA(window, message, wParam, lParam);
+        // Hidden resize fixtures must also cover wide windows on portrait/RDP
+        // desktops. Maximize sizing still uses the real monitor's work area.
+        reinterpret_cast<MINMAXINFO*>(lParam)->ptMaxTrackSize = {8192, 8192};
+        return result;
+    }
     if (message == WM_SYSCOMMAND && (wParam & 0xfff0) == SC_MAXIMIZE) {
         ++gameFullscreenCommands; // BeiDou's original handler would enter fullscreen here.
         return 0;

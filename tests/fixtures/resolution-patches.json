@@ -1,0 +1,2727 @@
+{
+  "machine": 332,
+  "timestamp": 1266423241,
+  "preferred_base": 4194304,
+  "image_size": 11091968,
+  "exe_sha256": "1198fa57ca5a7c489bae43ec13c69681d9cabe0f96762f3dc0357facf2e7d4df",
+  "sites": [
+    {
+      "address": 4419964,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 4419963,
+      "guard_size": 5,
+      "original": "bf58020000",
+      "instruction": "mov edi, 0x258"
+    },
+    {
+      "address": 4419970,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 4419969,
+      "guard_size": 5,
+      "original": "be20030000",
+      "instruction": "mov esi, 0x320"
+    },
+    {
+      "address": 4420274,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 4420273,
+      "guard_size": 5,
+      "original": "68d4feffff",
+      "instruction": "push 0xfffffed4"
+    },
+    {
+      "address": 4420279,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 4420278,
+      "guard_size": 5,
+      "original": "6870feffff",
+      "instruction": "push 0xfffffe70"
+    },
+    {
+      "address": 4564428,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 4564427,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 4567864,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 4567863,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 4568088,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 4568087,
+      "guard_size": 5,
+      "original": "683f020000",
+      "instruction": "push 0x23f"
+    },
+    {
+      "address": 4569241,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 4569240,
+      "guard_size": 5,
+      "original": "683f020000",
+      "instruction": "push 0x23f"
+    },
+    {
+      "address": 4569471,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 4569470,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 4625428,
+      "size": 12,
+      "kind": "Jump",
+      "guard": 4625428,
+      "guard_size": 12,
+      "original": "683c01000068000100005353",
+      "instruction": "push 0x13c; push 0x100; push ebx; push ebx"
+    },
+    {
+      "address": 4625455,
+      "size": 14,
+      "kind": "Jump",
+      "guard": 4625455,
+      "guard_size": 14,
+      "original": "6a686800010000683e0100006aff",
+      "instruction": "push 0x68; push 0x100; push 0x13e; push -1"
+    },
+    {
+      "address": 4625484,
+      "size": 16,
+      "kind": "Jump",
+      "guard": 4625484,
+      "guard_size": 16,
+      "original": "68a300000068f600000068aa01000053",
+      "instruction": "push 0xa3; push 0xf6; push 0x1aa; push ebx"
+    },
+    {
+      "address": 4625515,
+      "size": 14,
+      "kind": "Jump",
+      "guard": 4625515,
+      "guard_size": 14,
+      "original": "6a4e68fc0100006a116810010000",
+      "instruction": "push 0x4e; push 0x1fc; push 0x11; push 0x110"
+    },
+    {
+      "address": 4625544,
+      "size": 17,
+      "kind": "Jump",
+      "guard": 4625544,
+      "guard_size": 17,
+      "original": "68ae010000689c0100006a5f6813010000",
+      "instruction": "push 0x1ae; push 0x19c; push 0x5f; push 0x113"
+    },
+    {
+      "address": 4625576,
+      "size": 12,
+      "kind": "Jump",
+      "guard": 4625576,
+      "guard_size": 12,
+      "original": "68660100006a5a689d000000",
+      "instruction": "push 0x166; push 0x5a; push 0x9d"
+    },
+    {
+      "address": 4625595,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 4625594,
+      "guard_size": 5,
+      "original": "68b2020000",
+      "instruction": "push 0x2b2"
+    },
+    {
+      "address": 4625608,
+      "size": 17,
+      "kind": "Jump",
+      "guard": 4625608,
+      "guard_size": 17,
+      "original": "6a386821020000681202000068fe000000",
+      "instruction": "push 0x38; push 0x221; push 0x212; push 0xfe"
+    },
+    {
+      "address": 4625640,
+      "size": 11,
+      "kind": "Jump",
+      "guard": 4625640,
+      "guard_size": 11,
+      "original": "6a166a596a6168b2020000",
+      "instruction": "push 0x16; push 0x59; push 0x61; push 0x2b2"
+    },
+    {
+      "address": 4634717,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 4634716,
+      "guard_size": 5,
+      "original": "b858020000",
+      "instruction": "mov eax, 0x258"
+    },
+    {
+      "address": 4634731,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 4634730,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 4894991,
+      "size": 14,
+      "kind": "Jump",
+      "guard": 4894991,
+      "guard_size": 14,
+      "original": "68a500000068d40000006a286a18",
+      "instruction": "push 0xa5; push 0xd4; push 0x28; push 0x18"
+    },
+    {
+      "address": 5030243,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5030240,
+      "guard_size": 7,
+      "original": "c745f020030000",
+      "instruction": "mov dword ptr [ebp - 0x10], 0x320"
+    },
+    {
+      "address": 5030577,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5030576,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 5030599,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5030597,
+      "guard_size": 6,
+      "original": "81f958020000",
+      "instruction": "cmp ecx, 0x258"
+    },
+    {
+      "address": 5069214,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5069213,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 5069236,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5069234,
+      "guard_size": 6,
+      "original": "81f958020000",
+      "instruction": "cmp ecx, 0x258"
+    },
+    {
+      "address": 5167808,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5167807,
+      "guard_size": 5,
+      "original": "b858020000",
+      "instruction": "mov eax, 0x258"
+    },
+    {
+      "address": 5167833,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5167832,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 5167993,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5167992,
+      "guard_size": 5,
+      "original": "b958020000",
+      "instruction": "mov ecx, 0x258"
+    },
+    {
+      "address": 5168010,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5168009,
+      "guard_size": 5,
+      "original": "b920030000",
+      "instruction": "mov ecx, 0x320"
+    },
+    {
+      "address": 5385332,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5385331,
+      "guard_size": 5,
+      "original": "b8fc010000",
+      "instruction": "mov eax, 0x1fc"
+    },
+    {
+      "address": 5385352,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5385351,
+      "guard_size": 5,
+      "original": "bad0010000",
+      "instruction": "mov edx, 0x1d0"
+    },
+    {
+      "address": 5385830,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5385829,
+      "guard_size": 5,
+      "original": "b8fc010000",
+      "instruction": "mov eax, 0x1fc"
+    },
+    {
+      "address": 5385850,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5385849,
+      "guard_size": 5,
+      "original": "bad0010000",
+      "instruction": "mov edx, 0x1d0"
+    },
+    {
+      "address": 5386367,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5386366,
+      "guard_size": 5,
+      "original": "b8fc010000",
+      "instruction": "mov eax, 0x1fc"
+    },
+    {
+      "address": 5386387,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5386386,
+      "guard_size": 5,
+      "original": "bad0010000",
+      "instruction": "mov edx, 0x1d0"
+    },
+    {
+      "address": 5386581,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5386580,
+      "guard_size": 5,
+      "original": "baf2010000",
+      "instruction": "mov edx, 0x1f2"
+    },
+    {
+      "address": 5387098,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5387097,
+      "guard_size": 5,
+      "original": "b8fc010000",
+      "instruction": "mov eax, 0x1fc"
+    },
+    {
+      "address": 5387118,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5387117,
+      "guard_size": 5,
+      "original": "bad0010000",
+      "instruction": "mov edx, 0x1d0"
+    },
+    {
+      "address": 5387670,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5387669,
+      "guard_size": 5,
+      "original": "b8fc010000",
+      "instruction": "mov eax, 0x1fc"
+    },
+    {
+      "address": 5388172,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5388171,
+      "guard_size": 5,
+      "original": "b8fc010000",
+      "instruction": "mov eax, 0x1fc"
+    },
+    {
+      "address": 5388192,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5388191,
+      "guard_size": 5,
+      "original": "bad0010000",
+      "instruction": "mov edx, 0x1d0"
+    },
+    {
+      "address": 5388670,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5388669,
+      "guard_size": 5,
+      "original": "b8fc010000",
+      "instruction": "mov eax, 0x1fc"
+    },
+    {
+      "address": 5388690,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5388689,
+      "guard_size": 5,
+      "original": "bad0010000",
+      "instruction": "mov edx, 0x1d0"
+    },
+    {
+      "address": 5389234,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5389233,
+      "guard_size": 5,
+      "original": "b8fc010000",
+      "instruction": "mov eax, 0x1fc"
+    },
+    {
+      "address": 5389254,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5389253,
+      "guard_size": 5,
+      "original": "bad0010000",
+      "instruction": "mov edx, 0x1d0"
+    },
+    {
+      "address": 5389734,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5389733,
+      "guard_size": 5,
+      "original": "b8fc010000",
+      "instruction": "mov eax, 0x1fc"
+    },
+    {
+      "address": 5389766,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5389765,
+      "guard_size": 5,
+      "original": "bad0010000",
+      "instruction": "mov edx, 0x1d0"
+    },
+    {
+      "address": 5390244,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5390243,
+      "guard_size": 5,
+      "original": "b8fc010000",
+      "instruction": "mov eax, 0x1fc"
+    },
+    {
+      "address": 5390264,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5390263,
+      "guard_size": 5,
+      "original": "bad0010000",
+      "instruction": "mov edx, 0x1d0"
+    },
+    {
+      "address": 5390733,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5390732,
+      "guard_size": 5,
+      "original": "b8f2010000",
+      "instruction": "mov eax, 0x1f2"
+    },
+    {
+      "address": 5391324,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5391323,
+      "guard_size": 5,
+      "original": "b8fc010000",
+      "instruction": "mov eax, 0x1fc"
+    },
+    {
+      "address": 5391344,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5391343,
+      "guard_size": 5,
+      "original": "bad0010000",
+      "instruction": "mov edx, 0x1d0"
+    },
+    {
+      "address": 5454596,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5454595,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 5456753,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5456752,
+      "guard_size": 5,
+      "original": "b919030000",
+      "instruction": "mov ecx, 0x319"
+    },
+    {
+      "address": 5459978,
+      "size": 10,
+      "kind": "Jump",
+      "guard": 5459978,
+      "guard_size": 10,
+      "original": "68040100006890010000",
+      "instruction": "push 0x104; push 0x190"
+    },
+    {
+      "address": 5464755,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5464754,
+      "guard_size": 5,
+      "original": "680f010000",
+      "instruction": "push 0x10f"
+    },
+    {
+      "address": 5465260,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5465258,
+      "guard_size": 6,
+      "original": "c7000f010000",
+      "instruction": "mov dword ptr [eax], 0x10f"
+    },
+    {
+      "address": 5472396,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5472395,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 5472402,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5472401,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 5473134,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5473133,
+      "guard_size": 5,
+      "original": "68d4feffff",
+      "instruction": "push 0xfffffed4"
+    },
+    {
+      "address": 5473140,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5473139,
+      "guard_size": 5,
+      "original": "6870feffff",
+      "instruction": "push 0xfffffe70"
+    },
+    {
+      "address": 5474033,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5474032,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 5474038,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5474037,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 5587009,
+      "size": 8,
+      "kind": "Jump",
+      "guard": 5587009,
+      "guard_size": 8,
+      "original": "6a3268a900000051",
+      "instruction": "push 0x32; push 0xa9; push ecx"
+    },
+    {
+      "address": 5587145,
+      "size": 8,
+      "kind": "Jump",
+      "guard": 5587145,
+      "guard_size": 8,
+      "original": "6a1a689001000051",
+      "instruction": "push 0x1a; push 0x190; push ecx"
+    },
+    {
+      "address": 5587279,
+      "size": 8,
+      "kind": "Jump",
+      "guard": 5587279,
+      "guard_size": 8,
+      "original": "6a32687702000051",
+      "instruction": "push 0x32; push 0x277; push ecx"
+    },
+    {
+      "address": 5587418,
+      "size": 8,
+      "kind": "Jump",
+      "guard": 5587418,
+      "guard_size": 8,
+      "original": "68820000006a1451",
+      "instruction": "push 0x82; push 0x14; push ecx"
+    },
+    {
+      "address": 5587557,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 5587557,
+      "guard_size": 5,
+      "original": "6a506a0951",
+      "instruction": "push 0x50; push 9; push ecx"
+    },
+    {
+      "address": 5587953,
+      "size": 7,
+      "kind": "Jump",
+      "guard": 5587953,
+      "guard_size": 7,
+      "original": "6a20683d010000",
+      "instruction": "push 0x20; push 0x13d"
+    },
+    {
+      "address": 5588092,
+      "size": 7,
+      "kind": "Jump",
+      "guard": 5588092,
+      "guard_size": 7,
+      "original": "6a2068e2010000",
+      "instruction": "push 0x20; push 0x1e2"
+    },
+    {
+      "address": 5588231,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 5588231,
+      "guard_size": 5,
+      "original": "6a566a1151",
+      "instruction": "push 0x56; push 0x11; push ecx"
+    },
+    {
+      "address": 5589923,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 5589923,
+      "guard_size": 5,
+      "original": "ba3e010000",
+      "instruction": "mov edx, 0x13e"
+    },
+    {
+      "address": 5592385,
+      "size": 7,
+      "kind": "Jump",
+      "guard": 5592385,
+      "guard_size": 7,
+      "original": "6a106859010000",
+      "instruction": "push 0x10; push 0x159"
+    },
+    {
+      "address": 5617673,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5617672,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 5617678,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5617677,
+      "guard_size": 5,
+      "original": "bf20030000",
+      "instruction": "mov edi, 0x320"
+    },
+    {
+      "address": 5617797,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5617796,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 5618480,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5618479,
+      "guard_size": 5,
+      "original": "68d4feffff",
+      "instruction": "push 0xfffffed4"
+    },
+    {
+      "address": 5618486,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5618485,
+      "guard_size": 5,
+      "original": "6870feffff",
+      "instruction": "push 0xfffffe70"
+    },
+    {
+      "address": 5619430,
+      "size": 9,
+      "kind": "Jump",
+      "guard": 5619430,
+      "guard_size": 9,
+      "original": "81c2ed00000083c16e",
+      "instruction": "add edx, 0xed; add ecx, 0x6e"
+    },
+    {
+      "address": 5619839,
+      "size": 12,
+      "kind": "Jump",
+      "guard": 5619839,
+      "guard_size": 12,
+      "original": "83c06e508b45c405ed000000",
+      "instruction": "add eax, 0x6e; push eax; mov eax, dword ptr [ebp - 0x3c]; add eax, 0xed"
+    },
+    {
+      "address": 5620165,
+      "size": 13,
+      "kind": "Jump",
+      "guard": 5620165,
+      "guard_size": 13,
+      "original": "83c06e57508b45c405ed000000",
+      "instruction": "add eax, 0x6e; push edi; push eax; mov eax, dword ptr [ebp - 0x3c]; add eax, 0xed"
+    },
+    {
+      "address": 5818535,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5818534,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 5843463,
+      "size": 1,
+      "kind": "Byte",
+      "guard": 5843462,
+      "guard_size": 2,
+      "original": "6a64",
+      "instruction": "push 0x64"
+    },
+    {
+      "address": 5843465,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5843464,
+      "guard_size": 5,
+      "original": "6813010000",
+      "instruction": "push 0x113"
+    },
+    {
+      "address": 5873822,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5873820,
+      "guard_size": 6,
+      "original": "c70690010000",
+      "instruction": "mov dword ptr [esi], 0x190"
+    },
+    {
+      "address": 5873832,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5873826,
+      "guard_size": 10,
+      "original": "c7833c0900002c010000",
+      "instruction": "mov dword ptr [ebx + 0x93c], 0x12c"
+    },
+    {
+      "address": 5874015,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5874013,
+      "guard_size": 6,
+      "original": "81c1d4feffff",
+      "instruction": "add ecx, 0xfffffed4"
+    },
+    {
+      "address": 5874027,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5874025,
+      "guard_size": 6,
+      "original": "81c170feffff",
+      "instruction": "add ecx, 0xfffffe70"
+    },
+    {
+      "address": 5875865,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5875864,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 5875890,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5875889,
+      "guard_size": 5,
+      "original": "b858020000",
+      "instruction": "mov eax, 0x258"
+    },
+    {
+      "address": 5876746,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5876745,
+      "guard_size": 5,
+      "original": "b920030000",
+      "instruction": "mov ecx, 0x320"
+    },
+    {
+      "address": 5876771,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5876770,
+      "guard_size": 5,
+      "original": "b958020000",
+      "instruction": "mov ecx, 0x258"
+    },
+    {
+      "address": 5892577,
+      "size": 12,
+      "kind": "Jump",
+      "guard": 5892577,
+      "guard_size": 12,
+      "original": "68c800000068000100005757",
+      "instruction": "push 0xc8; push 0x100; push edi; push edi"
+    },
+    {
+      "address": 5892601,
+      "size": 13,
+      "kind": "Jump",
+      "guard": 5892601,
+      "guard_size": 13,
+      "original": "6a6e680001000068c800000057",
+      "instruction": "push 0x6e; push 0x100; push 0xc8; push edi"
+    },
+    {
+      "address": 5892629,
+      "size": 13,
+      "kind": "Jump",
+      "guard": 5892629,
+      "guard_size": 13,
+      "original": "6a6c6800010000683601000057",
+      "instruction": "push 0x6c; push 0x100; push 0x136; push edi"
+    },
+    {
+      "address": 5892657,
+      "size": 16,
+      "kind": "Jump",
+      "guard": 5892657,
+      "guard_size": 16,
+      "original": "68b4000000680001000068a201000057",
+      "instruction": "push 0xb4; push 0x100; push 0x1a2; push edi"
+    },
+    {
+      "address": 5892687,
+      "size": 16,
+      "kind": "Jump",
+      "guard": 5892687,
+      "guard_size": 16,
+      "original": "6a0a6a4e68fd0100006a116810010000",
+      "instruction": "push 0xa; push 0x4e; push 0x1fd; push 0x11; push 0x110"
+    },
+    {
+      "address": 5892718,
+      "size": 14,
+      "kind": "Jump",
+      "guard": 5892718,
+      "guard_size": 14,
+      "original": "6a3068fd0100006a626811010000",
+      "instruction": "push 0x30; push 0x1fd; push 0x62; push 0x111"
+    },
+    {
+      "address": 5892747,
+      "size": 20,
+      "kind": "Jump",
+      "guard": 5892747,
+      "guard_size": 20,
+      "original": "686d01000068fd01000068910000006811010000",
+      "instruction": "push 0x16d; push 0x1fd; push 0x91; push 0x111"
+    },
+    {
+      "address": 5892782,
+      "size": 17,
+      "kind": "Jump",
+      "guard": 5892782,
+      "guard_size": 17,
+      "original": "6a386821020000681302000068ff000000",
+      "instruction": "push 0x38; push 0x221; push 0x213; push 0xff"
+    },
+    {
+      "address": 5892938,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5892937,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 5933895,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5933894,
+      "guard_size": 5,
+      "original": "b858020000",
+      "instruction": "mov eax, 0x258"
+    },
+    {
+      "address": 5933911,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5933910,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 5937987,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5937986,
+      "guard_size": 5,
+      "original": "b858020000",
+      "instruction": "mov eax, 0x258"
+    },
+    {
+      "address": 5938003,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5938002,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 5942699,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5942698,
+      "guard_size": 5,
+      "original": "b858020000",
+      "instruction": "mov eax, 0x258"
+    },
+    {
+      "address": 5942715,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5942714,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 5946470,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5946469,
+      "guard_size": 5,
+      "original": "b858020000",
+      "instruction": "mov eax, 0x258"
+    },
+    {
+      "address": 5946486,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5946485,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 5950250,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5950249,
+      "guard_size": 5,
+      "original": "b858020000",
+      "instruction": "mov eax, 0x258"
+    },
+    {
+      "address": 5950266,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5950265,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 6035583,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6035582,
+      "guard_size": 5,
+      "original": "b858020000",
+      "instruction": "mov eax, 0x258"
+    },
+    {
+      "address": 6035599,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6035598,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 6040931,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6040930,
+      "guard_size": 5,
+      "original": "b858020000",
+      "instruction": "mov eax, 0x258"
+    },
+    {
+      "address": 6040947,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6040946,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 6176673,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6176672,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 6243917,
+      "size": 10,
+      "kind": "Jump",
+      "guard": 6243917,
+      "guard_size": 10,
+      "original": "b8850200002b45e46a0a",
+      "instruction": "mov eax, 0x285; sub eax, dword ptr [ebp - 0x1c]; push 0xa"
+    },
+    {
+      "address": 6243918,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6243917,
+      "guard_size": 5,
+      "original": "b885020000",
+      "instruction": "mov eax, 0x285"
+    },
+    {
+      "address": 6244383,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6244382,
+      "guard_size": 5,
+      "original": "68d4feffff",
+      "instruction": "push 0xfffffed4"
+    },
+    {
+      "address": 6244389,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6244388,
+      "guard_size": 5,
+      "original": "6870feffff",
+      "instruction": "push 0xfffffe70"
+    },
+    {
+      "address": 6251743,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6251742,
+      "guard_size": 5,
+      "original": "68d4feffff",
+      "instruction": "push 0xfffffed4"
+    },
+    {
+      "address": 6252072,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6252071,
+      "guard_size": 5,
+      "original": "68d4feffff",
+      "instruction": "push 0xfffffed4"
+    },
+    {
+      "address": 6308125,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6308124,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 6346826,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6346825,
+      "guard_size": 5,
+      "original": "b82c010000",
+      "instruction": "mov eax, 0x12c"
+    },
+    {
+      "address": 6346843,
+      "size": 51,
+      "kind": "Jump",
+      "guard": 6346843,
+      "guard_size": 51,
+      "original": "83e23f83c2213bcf0f9cc38bcec746048470af00c746088070af00f7db1bdb83e36403d8535233c050525052b86bffffff5057",
+      "instruction": "and edx, 0x3f; add edx, 0x21; cmp ecx, edi; setl bl; mov ecx, esi; mov dword ptr [esi + 4], 0xaf7084; mov dword ptr [esi + 8], 0xaf7080; neg ebx; sbb ebx, ebx; and ebx, 0x64; add ebx, eax; push ebx; push edx; xor eax, eax; push eax; push edx; push eax; push edx; mov eax, 0xffffff6b; push eax; push edi"
+    },
+    {
+      "address": 6349247,
+      "size": 11,
+      "kind": "Jump",
+      "guard": 6349247,
+      "guard_size": 11,
+      "original": "68600100006a7d6a7d6a00",
+      "instruction": "push 0x160; push 0x7d; push 0x7d; push 0"
+    },
+    {
+      "address": 6354844,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6354843,
+      "guard_size": 5,
+      "original": "b896000000",
+      "instruction": "mov eax, 0x96"
+    },
+    {
+      "address": 6354853,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6354852,
+      "guard_size": 5,
+      "original": "baaa000000",
+      "instruction": "mov edx, 0xaa"
+    },
+    {
+      "address": 6354861,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6354860,
+      "guard_size": 5,
+      "original": "b9db000000",
+      "instruction": "mov ecx, 0xdb"
+    },
+    {
+      "address": 6354870,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6354869,
+      "guard_size": 5,
+      "original": "bbef000000",
+      "instruction": "mov ebx, 0xef"
+    },
+    {
+      "address": 6369428,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6369427,
+      "guard_size": 5,
+      "original": "b9c8000000",
+      "instruction": "mov ecx, 0xc8"
+    },
+    {
+      "address": 6369434,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6369433,
+      "guard_size": 5,
+      "original": "b863010000",
+      "instruction": "mov eax, 0x163"
+    },
+    {
+      "address": 6413056,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6413055,
+      "guard_size": 5,
+      "original": "b896000000",
+      "instruction": "mov eax, 0x96"
+    },
+    {
+      "address": 6413065,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6413064,
+      "guard_size": 5,
+      "original": "baaa000000",
+      "instruction": "mov edx, 0xaa"
+    },
+    {
+      "address": 6413073,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6413072,
+      "guard_size": 5,
+      "original": "b9db000000",
+      "instruction": "mov ecx, 0xdb"
+    },
+    {
+      "address": 6413082,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6413081,
+      "guard_size": 5,
+      "original": "bbef000000",
+      "instruction": "mov ebx, 0xef"
+    },
+    {
+      "address": 6427167,
+      "size": 1,
+      "kind": "Byte",
+      "guard": 6427166,
+      "guard_size": 2,
+      "original": "6a2f",
+      "instruction": "push 0x2f"
+    },
+    {
+      "address": 6427175,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6427174,
+      "guard_size": 5,
+      "original": "68b8000000",
+      "instruction": "push 0xb8"
+    },
+    {
+      "address": 6468404,
+      "size": 17,
+      "kind": "Jump",
+      "guard": 6468404,
+      "guard_size": 17,
+      "original": "68a7000000681c0200006a336888000000",
+      "instruction": "push 0xa7; push 0x21c; push 0x33; push 0x88"
+    },
+    {
+      "address": 6483540,
+      "size": 21,
+      "kind": "Fill",
+      "guard": 6483540,
+      "guard_size": 21,
+      "original": "8b45f03bc3741538187411a1387bbe003958287407",
+      "instruction": "mov eax, dword ptr [ebp - 0x10]; cmp eax, ebx; je 0x62ee70; cmp byte ptr [eax], bl; je 0x62ee70; mov eax, dword ptr [0xbe7b38]; cmp dword ptr [eax + 0x28], ebx; je 0x62ee70"
+    },
+    {
+      "address": 6484229,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6484228,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 6484234,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6484233,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 6485472,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6485471,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 6485477,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6485476,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 6486471,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6486470,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 6486476,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6486475,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 6487115,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6487114,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 6487120,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6487119,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 6487652,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6487651,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 6487657,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6487656,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 6554687,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6554686,
+      "guard_size": 5,
+      "original": "bf90010000",
+      "instruction": "mov edi, 0x190"
+    },
+    {
+      "address": 6554692,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6554691,
+      "guard_size": 5,
+      "original": "be2c010000",
+      "instruction": "mov esi, 0x12c"
+    },
+    {
+      "address": 6554873,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6554872,
+      "guard_size": 5,
+      "original": "b920030000",
+      "instruction": "mov ecx, 0x320"
+    },
+    {
+      "address": 6554891,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6554890,
+      "guard_size": 5,
+      "original": "b958020000",
+      "instruction": "mov ecx, 0x258"
+    },
+    {
+      "address": 6555143,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6555142,
+      "guard_size": 5,
+      "original": "b920030000",
+      "instruction": "mov ecx, 0x320"
+    },
+    {
+      "address": 6555161,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6555160,
+      "guard_size": 5,
+      "original": "b958020000",
+      "instruction": "mov ecx, 0x258"
+    },
+    {
+      "address": 6555175,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6555174,
+      "guard_size": 5,
+      "original": "0590010000",
+      "instruction": "add eax, 0x190"
+    },
+    {
+      "address": 6555194,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6555193,
+      "guard_size": 5,
+      "original": "b920030000",
+      "instruction": "mov ecx, 0x320"
+    },
+    {
+      "address": 6555212,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6555211,
+      "guard_size": 5,
+      "original": "b958020000",
+      "instruction": "mov ecx, 0x258"
+    },
+    {
+      "address": 6555224,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6555222,
+      "guard_size": 6,
+      "original": "81c770feffff",
+      "instruction": "add edi, 0xfffffe70"
+    },
+    {
+      "address": 6555263,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6555262,
+      "guard_size": 5,
+      "original": "b920030000",
+      "instruction": "mov ecx, 0x320"
+    },
+    {
+      "address": 6555281,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6555280,
+      "guard_size": 5,
+      "original": "b958020000",
+      "instruction": "mov ecx, 0x258"
+    },
+    {
+      "address": 6555332,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6555331,
+      "guard_size": 5,
+      "original": "b920030000",
+      "instruction": "mov ecx, 0x320"
+    },
+    {
+      "address": 6555350,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6555349,
+      "guard_size": 5,
+      "original": "b958020000",
+      "instruction": "mov ecx, 0x258"
+    },
+    {
+      "address": 6557754,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6557752,
+      "guard_size": 6,
+      "original": "8db158020000",
+      "instruction": "lea esi, [ecx + 0x258]"
+    },
+    {
+      "address": 6557761,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6557759,
+      "guard_size": 6,
+      "original": "8db120030000",
+      "instruction": "lea esi, [ecx + 0x320]"
+    },
+    {
+      "address": 6557769,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6557768,
+      "guard_size": 5,
+      "original": "bed4feffff",
+      "instruction": "mov esi, 0xfffffed4"
+    },
+    {
+      "address": 6557777,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6557776,
+      "guard_size": 5,
+      "original": "be70feffff",
+      "instruction": "mov esi, 0xfffffe70"
+    },
+    {
+      "address": 6560277,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6560274,
+      "guard_size": 7,
+      "original": "c745e020030000",
+      "instruction": "mov dword ptr [ebp - 0x20], 0x320"
+    },
+    {
+      "address": 6560284,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6560281,
+      "guard_size": 7,
+      "original": "c745e458020000",
+      "instruction": "mov dword ptr [ebp - 0x1c], 0x258"
+    },
+    {
+      "address": 6560561,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6560558,
+      "guard_size": 7,
+      "original": "c745dc20030000",
+      "instruction": "mov dword ptr [ebp - 0x24], 0x320"
+    },
+    {
+      "address": 6560571,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6560568,
+      "guard_size": 7,
+      "original": "c745e058020000",
+      "instruction": "mov dword ptr [ebp - 0x20], 0x258"
+    },
+    {
+      "address": 6561634,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6561633,
+      "guard_size": 5,
+      "original": "bb90010000",
+      "instruction": "mov ebx, 0x190"
+    },
+    {
+      "address": 6561737,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6561736,
+      "guard_size": 5,
+      "original": "052c010000",
+      "instruction": "add eax, 0x12c"
+    },
+    {
+      "address": 6561936,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6561935,
+      "guard_size": 5,
+      "original": "2d2c010000",
+      "instruction": "sub eax, 0x12c"
+    },
+    {
+      "address": 6562053,
+      "size": 7,
+      "kind": "Jump",
+      "guard": 6562053,
+      "guard_size": 7,
+      "original": "85c074068b0850",
+      "instruction": "test eax, eax; je 0x64210f; mov ecx, dword ptr [eax]; push eax"
+    },
+    {
+      "address": 6562228,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6562227,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 6732496,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6732494,
+      "guard_size": 6,
+      "original": "81e170feffff",
+      "instruction": "and ecx, 0xfffffe70"
+    },
+    {
+      "address": 7133251,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 7133250,
+      "guard_size": 5,
+      "original": "6890010000",
+      "instruction": "push 0x190"
+    },
+    {
+      "address": 7136172,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 7136171,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 7136455,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 7136454,
+      "guard_size": 5,
+      "original": "6870feffff",
+      "instruction": "push 0xfffffe70"
+    },
+    {
+      "address": 7164121,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 7164120,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 7622055,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 7622054,
+      "guard_size": 5,
+      "original": "be004c1d00",
+      "instruction": "mov esi, 0x1d4c00"
+    },
+    {
+      "address": 7622187,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 7622186,
+      "guard_size": 5,
+      "original": "6800f91500",
+      "instruction": "push 0x15f900"
+    },
+    {
+      "address": 7622212,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 7622211,
+      "guard_size": 5,
+      "original": "bf00530700",
+      "instruction": "mov edi, 0x75300"
+    },
+    {
+      "address": 7622325,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 7622324,
+      "guard_size": 5,
+      "original": "ba20030000",
+      "instruction": "mov edx, 0x320"
+    },
+    {
+      "address": 7622330,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 7622329,
+      "guard_size": 5,
+      "original": "b958020000",
+      "instruction": "mov ecx, 0x258"
+    },
+    {
+      "address": 7648184,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 7648183,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 7648419,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 7648418,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 7649618,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 7649617,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 7649962,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 7649961,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 7826271,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 7826271,
+      "guard_size": 5,
+      "original": "5bc9c20400",
+      "instruction": "pop ebx; leave ; ret 4"
+    },
+    {
+      "address": 8072345,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8072343,
+      "guard_size": 6,
+      "original": "81eb15010000",
+      "instruction": "sub ebx, 0x115"
+    },
+    {
+      "address": 8072376,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8072373,
+      "guard_size": 7,
+      "original": "8d84308d010000",
+      "instruction": "lea eax, [eax + esi + 0x18d]"
+    },
+    {
+      "address": 8072610,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8072608,
+      "guard_size": 6,
+      "original": "81eb15010000",
+      "instruction": "sub ebx, 0x115"
+    },
+    {
+      "address": 8072641,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8072638,
+      "guard_size": 7,
+      "original": "8d84308d010000",
+      "instruction": "lea eax, [eax + esi + 0x18d]"
+    },
+    {
+      "address": 8072867,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8072864,
+      "guard_size": 7,
+      "original": "8d8408e3fcffff",
+      "instruction": "lea eax, [eax + ecx - 0x31d]"
+    },
+    {
+      "address": 8073354,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8073351,
+      "guard_size": 7,
+      "original": "8d8410e3fcffff",
+      "instruction": "lea eax, [eax + edx - 0x31d]"
+    },
+    {
+      "address": 8135986,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8135985,
+      "guard_size": 5,
+      "original": "6808020000",
+      "instruction": "push 0x208"
+    },
+    {
+      "address": 8189072,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8189071,
+      "guard_size": 5,
+      "original": "b858020000",
+      "instruction": "mov eax, 0x258"
+    },
+    {
+      "address": 8189086,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8189085,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 8263103,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8263102,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 8263354,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8263353,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 8263359,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8263358,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 8264140,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8264138,
+      "guard_size": 6,
+      "original": "8d8620030000",
+      "instruction": "lea eax, [esi + 0x320]"
+    },
+    {
+      "address": 8264888,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8264887,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 8265225,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8265223,
+      "guard_size": 6,
+      "original": "8d8620030000",
+      "instruction": "lea eax, [esi + 0x320]"
+    },
+    {
+      "address": 8332671,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8332670,
+      "guard_size": 5,
+      "original": "b958020000",
+      "instruction": "mov ecx, 0x258"
+    },
+    {
+      "address": 8332688,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8332687,
+      "guard_size": 5,
+      "original": "b920030000",
+      "instruction": "mov ecx, 0x320"
+    },
+    {
+      "address": 8410202,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8410201,
+      "guard_size": 5,
+      "original": "ba20030000",
+      "instruction": "mov edx, 0x320"
+    },
+    {
+      "address": 8410221,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8410220,
+      "guard_size": 5,
+      "original": "bf58020000",
+      "instruction": "mov edi, 0x258"
+    },
+    {
+      "address": 8691258,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8691257,
+      "guard_size": 5,
+      "original": "baa7010000",
+      "instruction": "mov edx, 0x1a7"
+    },
+    {
+      "address": 8693176,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8693175,
+      "guard_size": 5,
+      "original": "ba28010000",
+      "instruction": "mov edx, 0x128"
+    },
+    {
+      "address": 8778606,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8778604,
+      "guard_size": 6,
+      "original": "81fa20030000",
+      "instruction": "cmp edx, 0x320"
+    },
+    {
+      "address": 8778613,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8778612,
+      "guard_size": 5,
+      "original": "b9d0020000",
+      "instruction": "mov ecx, 0x2d0"
+    },
+    {
+      "address": 9010101,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9010100,
+      "guard_size": 5,
+      "original": "6801010000",
+      "instruction": "push 0x101"
+    },
+    {
+      "address": 9023205,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9023202,
+      "guard_size": 7,
+      "original": "c745e806000000",
+      "instruction": "mov dword ptr [ebp - 0x18], 6"
+    },
+    {
+      "address": 9023284,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9023283,
+      "guard_size": 5,
+      "original": "6822010000",
+      "instruction": "push 0x122"
+    },
+    {
+      "address": 9023877,
+      "size": 6,
+      "kind": "Jump",
+      "guard": 9023877,
+      "guard_size": 6,
+      "original": "8b471083f806",
+      "instruction": "mov eax, dword ptr [edi + 0x10]; cmp eax, 6"
+    },
+    {
+      "address": 9024199,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9024198,
+      "guard_size": 5,
+      "original": "be22010000",
+      "instruction": "mov esi, 0x122"
+    },
+    {
+      "address": 9024742,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 9024742,
+      "guard_size": 5,
+      "original": "68ff000000",
+      "instruction": "push 0xff"
+    },
+    {
+      "address": 9024867,
+      "size": 7,
+      "kind": "Jump",
+      "guard": 9024867,
+      "guard_size": 7,
+      "original": "05701700006a03",
+      "instruction": "add eax, 0x1770; push 3"
+    },
+    {
+      "address": 9025080,
+      "size": 1,
+      "kind": "Byte",
+      "guard": 9025078,
+      "guard_size": 3,
+      "original": "83e0b2",
+      "instruction": "and eax, 0xffffffb2"
+    },
+    {
+      "address": 9025082,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9025081,
+      "guard_size": 5,
+      "original": "05bb010000",
+      "instruction": "add eax, 0x1bb"
+    },
+    {
+      "address": 9025272,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9025271,
+      "guard_size": 5,
+      "original": "68f8010000",
+      "instruction": "push 0x1f8"
+    },
+    {
+      "address": 9048821,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9048820,
+      "guard_size": 5,
+      "original": "b858020000",
+      "instruction": "mov eax, 0x258"
+    },
+    {
+      "address": 9048835,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9048834,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 9085543,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9085542,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 9085548,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9085547,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 9176736,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9176735,
+      "guard_size": 5,
+      "original": "681e010000",
+      "instruction": "push 0x11e"
+    },
+    {
+      "address": 9176741,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9176740,
+      "guard_size": 5,
+      "original": "68f2000000",
+      "instruction": "push 0xf2"
+    },
+    {
+      "address": 9239884,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9239883,
+      "guard_size": 5,
+      "original": "6842020000",
+      "instruction": "push 0x242"
+    },
+    {
+      "address": 9239889,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9239888,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 9239893,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 9239893,
+      "guard_size": 5,
+      "original": "6a16538bce",
+      "instruction": "push 0x16; push ebx; mov ecx, esi"
+    },
+    {
+      "address": 9246612,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9246611,
+      "guard_size": 5,
+      "original": "0515020000",
+      "instruction": "add eax, 0x215"
+    },
+    {
+      "address": 9246619,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9246618,
+      "guard_size": 5,
+      "original": "6887020000",
+      "instruction": "push 0x287"
+    },
+    {
+      "address": 9248081,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9248080,
+      "guard_size": 5,
+      "original": "6842020000",
+      "instruction": "push 0x242"
+    },
+    {
+      "address": 9248086,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9248085,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 9248613,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 9248613,
+      "guard_size": 5,
+      "original": "6a16a56a00",
+      "instruction": "push 0x16; movsd dword ptr es:[edi], dword ptr [esi]; push 0"
+    },
+    {
+      "address": 9248757,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9248756,
+      "guard_size": 5,
+      "original": "6842020000",
+      "instruction": "push 0x242"
+    },
+    {
+      "address": 9248762,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9248761,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 9249148,
+      "size": 9,
+      "kind": "Jump",
+      "guard": 9249148,
+      "guard_size": 9,
+      "original": "6a16578d8ed00c0000",
+      "instruction": "push 0x16; push edi; lea ecx, [esi + 0xcd0]"
+    },
+    {
+      "address": 9249916,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9249915,
+      "guard_size": 5,
+      "original": "6837020000",
+      "instruction": "push 0x237"
+    },
+    {
+      "address": 9250662,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9250661,
+      "guard_size": 5,
+      "original": "6845020000",
+      "instruction": "push 0x245"
+    },
+    {
+      "address": 9251253,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9251252,
+      "guard_size": 5,
+      "original": "6845020000",
+      "instruction": "push 0x245"
+    },
+    {
+      "address": 9274102,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9274101,
+      "guard_size": 5,
+      "original": "6842020000",
+      "instruction": "push 0x242"
+    },
+    {
+      "address": 9274107,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9274106,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 9276415,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9276414,
+      "guard_size": 5,
+      "original": "6845020000",
+      "instruction": "push 0x245"
+    },
+    {
+      "address": 9278335,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9278334,
+      "guard_size": 5,
+      "original": "6845020000",
+      "instruction": "push 0x245"
+    },
+    {
+      "address": 9280202,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9280201,
+      "guard_size": 5,
+      "original": "6845020000",
+      "instruction": "push 0x245"
+    },
+    {
+      "address": 9281821,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9281820,
+      "guard_size": 5,
+      "original": "6845020000",
+      "instruction": "push 0x245"
+    },
+    {
+      "address": 9300199,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9300197,
+      "guard_size": 6,
+      "original": "8db879fdffff",
+      "instruction": "lea edi, [eax - 0x287]"
+    },
+    {
+      "address": 9300208,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9300206,
+      "guard_size": 6,
+      "original": "8d9855feffff",
+      "instruction": "lea ebx, [eax - 0x1ab]"
+    },
+    {
+      "address": 9300884,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9300883,
+      "guard_size": 5,
+      "original": "6844020000",
+      "instruction": "push 0x244"
+    },
+    {
+      "address": 9301552,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9301551,
+      "guard_size": 5,
+      "original": "6844020000",
+      "instruction": "push 0x244"
+    },
+    {
+      "address": 9303940,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9303938,
+      "guard_size": 6,
+      "original": "81c615020000",
+      "instruction": "add esi, 0x215"
+    },
+    {
+      "address": 9304057,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9304056,
+      "guard_size": 5,
+      "original": "6887020000",
+      "instruction": "push 0x287"
+    },
+    {
+      "address": 9354301,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9354300,
+      "guard_size": 5,
+      "original": "b820030000",
+      "instruction": "mov eax, 0x320"
+    },
+    {
+      "address": 9354329,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9354328,
+      "guard_size": 5,
+      "original": "b858020000",
+      "instruction": "mov eax, 0x258"
+    },
+    {
+      "address": 9384653,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9384652,
+      "guard_size": 5,
+      "original": "b81f030000",
+      "instruction": "mov eax, 0x31f"
+    },
+    {
+      "address": 9384672,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9384671,
+      "guard_size": 5,
+      "original": "b857020000",
+      "instruction": "mov eax, 0x257"
+    },
+    {
+      "address": 9654683,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9654682,
+      "guard_size": 5,
+      "original": "68d4feffff",
+      "instruction": "push 0xfffffed4"
+    },
+    {
+      "address": 9656428,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9656427,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 9656433,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9656432,
+      "guard_size": 5,
+      "original": "682c010000",
+      "instruction": "push 0x12c"
+    },
+    {
+      "address": 9782324,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9782323,
+      "guard_size": 5,
+      "original": "25d4feffff",
+      "instruction": "and eax, 0xfffffed4"
+    },
+    {
+      "address": 9966934,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9966933,
+      "guard_size": 5,
+      "original": "25d4feffff",
+      "instruction": "and eax, 0xfffffed4"
+    },
+    {
+      "address": 9969532,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9969530,
+      "guard_size": 6,
+      "original": "81e6d4feffff",
+      "instruction": "and esi, 0xfffffed4"
+    },
+    {
+      "address": 10033237,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10033236,
+      "guard_size": 5,
+      "original": "b858020000",
+      "instruction": "mov eax, 0x258"
+    },
+    {
+      "address": 10033248,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10033247,
+      "guard_size": 5,
+      "original": "680a010000",
+      "instruction": "push 0x10a"
+    },
+    {
+      "address": 10033256,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10033255,
+      "guard_size": 5,
+      "original": "680b010000",
+      "instruction": "push 0x10b"
+    },
+    {
+      "address": 10038184,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10038183,
+      "guard_size": 5,
+      "original": "682c010000",
+      "instruction": "push 0x12c"
+    },
+    {
+      "address": 10038189,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10038188,
+      "guard_size": 5,
+      "original": "6890010000",
+      "instruction": "push 0x190"
+    },
+    {
+      "address": 10053302,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10053301,
+      "guard_size": 5,
+      "original": "b958020000",
+      "instruction": "mov ecx, 0x258"
+    },
+    {
+      "address": 10053324,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10053322,
+      "guard_size": 6,
+      "original": "81ff20030000",
+      "instruction": "cmp edi, 0x320"
+    },
+    {
+      "address": 10053331,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10053330,
+      "guard_size": 5,
+      "original": "babc020000",
+      "instruction": "mov edx, 0x2bc"
+    },
+    {
+      "address": 10065113,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10065112,
+      "guard_size": 5,
+      "original": "b958020000",
+      "instruction": "mov ecx, 0x258"
+    },
+    {
+      "address": 10065135,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10065133,
+      "guard_size": 6,
+      "original": "81ff20030000",
+      "instruction": "cmp edi, 0x320"
+    },
+    {
+      "address": 10065142,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10065141,
+      "guard_size": 5,
+      "original": "babc020000",
+      "instruction": "mov edx, 0x2bc"
+    },
+    {
+      "address": 10108531,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10108530,
+      "guard_size": 5,
+      "original": "ba20030000",
+      "instruction": "mov edx, 0x320"
+    },
+    {
+      "address": 10108544,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10108543,
+      "guard_size": 5,
+      "original": "ba58020000",
+      "instruction": "mov edx, 0x258"
+    },
+    {
+      "address": 10188480,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10188477,
+      "guard_size": 7,
+      "original": "c745d0d4feffff",
+      "instruction": "mov dword ptr [ebp - 0x30], 0xfffffed4"
+    },
+    {
+      "address": 10188494,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10188491,
+      "guard_size": 7,
+      "original": "c745d82c010000",
+      "instruction": "mov dword ptr [ebp - 0x28], 0x12c"
+    },
+    {
+      "address": 10353907,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10353904,
+      "guard_size": 7,
+      "original": "8d8401e0fcffff",
+      "instruction": "lea eax, [ecx + eax - 0x320]"
+    },
+    {
+      "address": 10354013,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10354012,
+      "guard_size": 5,
+      "original": "b920030000",
+      "instruction": "mov ecx, 0x320"
+    },
+    {
+      "address": 10354283,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10354280,
+      "guard_size": 7,
+      "original": "8d8406a8fdffff",
+      "instruction": "lea eax, [esi + eax - 0x258]"
+    },
+    {
+      "address": 10354387,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10354386,
+      "guard_size": 5,
+      "original": "b958020000",
+      "instruction": "mov ecx, 0x258"
+    },
+    {
+      "address": 10366598,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10366597,
+      "guard_size": 5,
+      "original": "68d4feffff",
+      "instruction": "push 0xfffffed4"
+    },
+    {
+      "address": 10366604,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10366603,
+      "guard_size": 5,
+      "original": "6870feffff",
+      "instruction": "push 0xfffffe70"
+    },
+    {
+      "address": 10447582,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10447581,
+      "guard_size": 5,
+      "original": "682c010000",
+      "instruction": "push 0x12c"
+    },
+    {
+      "address": 10448538,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10448537,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 10448545,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10448544,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 10449017,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10449016,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 10449022,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10449021,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 10451611,
+      "size": 5,
+      "kind": "Bytes",
+      "guard": 10451611,
+      "guard_size": 5,
+      "original": "a1c81abf00",
+      "instruction": "mov eax, dword ptr [0xbf1ac8]"
+    },
+    {
+      "address": 10451742,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10451741,
+      "guard_size": 5,
+      "original": "6858020000",
+      "instruction": "push 0x258"
+    },
+    {
+      "address": 10451748,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10451747,
+      "guard_size": 5,
+      "original": "6820030000",
+      "instruction": "push 0x320"
+    },
+    {
+      "address": 10636556,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 10636555,
+      "guard_size": 5,
+      "original": "680f010000",
+      "instruction": "push 0x10f"
+    },
+    {
+      "address": 12461880,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 12461880,
+      "guard_size": 4,
+      "original": "90010000",
+      "instruction": "data"
+    },
+    {
+      "address": 12461884,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 12461884,
+      "guard_size": 4,
+      "original": "2c010000",
+      "instruction": "data"
+    },
+    {
+      "address": 12463600,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 12463600,
+      "guard_size": 4,
+      "original": "90010000",
+      "instruction": "data"
+    },
+    {
+      "address": 12463604,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 12463604,
+      "guard_size": 4,
+      "original": "2c010000",
+      "instruction": "data"
+    }
+  ]
+}

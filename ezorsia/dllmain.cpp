@@ -206,6 +206,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		}
 
 		WindowScaling::LoadPlacement(iniPath);
+		// Validate and apply executable patches before installing runtime hooks.
+		if (!Client::UpdateResolution()) {
+			ExitProcess(ERROR_BAD_EXE_FORMAT); // Never execute a partially patched client.
+		}
+
 		if (!UpscaleLoader::Install(hModule, reader.GetBoolean("upscaling", "enabled", false)))
 			OutputDebugStringA("BeiDou: upscaling loader unavailable; keeping native graphics\n");
 
@@ -237,7 +242,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Client::UpdateGameStartup();
 
 		std::cout << "Applying resolution " << Client::m_nGameWidth << "x" << Client::m_nGameHeight << std::endl;
-		Client::UpdateResolution();
+
 		Client::FixMouseWheel();
 		Client::Chinese();
 		Client::LongQuickSlot();

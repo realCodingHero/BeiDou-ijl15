@@ -4,7 +4,7 @@ class Client
 public:
 	static void UpdateGameStartup();
 	static void EnableNewIGCipher();
-	static void UpdateResolution();
+	static bool UpdateResolution();
 	static void UpdateLogin();
 	static void FixMouseWheel();
 	static void Chinese();

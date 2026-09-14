@@ -179,6 +179,8 @@
     <ClInclude Include="Client.h" />
     <ClInclude Include="WindowScaling.h" />
     <ClInclude Include="UpscaleLoader.h" />
+    <ClInclude Include="ResolutionPatch.h" />
+    <ClInclude Include="ResolutionPatchSites.h" />
     <ClInclude Include="WindowScalingGeometry.h" />
     <ClInclude Include="WindowPlacementConfig.h" />
     <ClInclude Include="FixBuddy.h" />
@@ -226,6 +228,9 @@
     <ClCompile Include="Client.cpp" />
     <ClCompile Include="WindowScaling.cpp" />
     <ClCompile Include="UpscaleLoader.cpp" />
+    <ClCompile Include="ResolutionPatch.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="ijl15.cpp" />
     <ClCompile Include="ZAllocEx.cpp" />
     <ClCompile Include="dllmain.cpp" />
