@@ -59,4 +59,7 @@ Direct3D [StretchRect](https://learn.microsoft.com/en-us/windows/win32/api/d3d9/
 `backend=single-pass-linear`。启动阶段最大间隔 511.86 ms；随后连续八个五秒区间
 记录 60.0 次呈现/秒，最大间隔 17.20–19.97 ms。此时正式客户端也仍在运行。
 这些是窗口呈现调用统计，不能代替复杂场景的主观流畅度或最终显示帧时间验收。
-目前尚无本候选版全屏分支日志，用户对画质与实际流畅度的反馈仍待确认。
+后续 Alt+Enter 对照已产生全屏日志：`windowed=0, backbuffer=1920x1080,
+device_display=1920x1080@60Hz, CuNNy=no, presentation=native`，窗口返回后恢复
+`backend=single-pass-linear`。这确认游戏确实切换到原生 1080p 全屏；不能由此推断
+GPU 扫描输出之后显示器使用的具体滤波器。用户对画质与实际流畅度的反馈仍待确认。
