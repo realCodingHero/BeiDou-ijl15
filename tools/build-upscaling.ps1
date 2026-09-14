@@ -17,6 +17,8 @@ try {
     $env:INCLUDE = (@((Join-Path $vcRoot 'include')) + @('ucrt','shared','um','winrt' | ForEach-Object { Join-Path $sdkRoot "Include\$sdkVersion\$_" })) -join ';'
     $env:LIB = @((Join-Path $vcRoot 'lib\x86'), (Join-Path $sdkRoot "Lib\$sdkVersion\ucrt\x86"), (Join-Path $sdkRoot "Lib\$sdkVersion\um\x86")) -join ';'
     $common = @('/nologo','/O2','/MD','/EHsc','/std:c++17','/W3','/utf-8','/DWIN32','/D_WINDOWS','/DNOMINMAX','/D_CRT_SECURE_NO_WARNINGS')
+    & $Python -B (Join-Path $repoRoot 'tests\upscaling\DeployConfigTests.py')
+    if ($LASTEXITCODE -ne 0) { throw 'Deployment config tests failed' }
     & $Python -B (Join-Path $repoRoot 'tools\generate-cunny.py') --out (Join-Path $outDir 'shaders')
     if ($LASTEXITCODE -ne 0) { throw 'Shader generation failed' }
     Copy-Item -Path (Join-Path $repoRoot 'upscaling\*.hlsl') -Destination (Join-Path $outDir 'shaders')
@@ -56,7 +58,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'GPU renderer tests failed' }
         & $Python -B (Join-Path $repoRoot 'tests\upscaling\reference.py') (Join-Path $outDir 'reference') compare
         if ($LASTEXITCODE -ne 0) { throw 'Independent reference comparison failed' }
-        foreach ($mode in @('enabled','disabled')) {
+        foreach ($mode in @('enabled','linear','disabled')) {
             & (Join-Path $outDir 'fixture\ProxyTests.exe') (Join-Path $outDir 'BeiDouUpscale.dll') $mode
             if ($LASTEXITCODE -ne 0) { throw "Proxy tests failed: $mode" }
         }

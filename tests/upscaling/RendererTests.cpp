@@ -56,6 +56,30 @@ int main(int argc, char** argv) {
     D3DVIEWPORT9 sentinel{3,5,w-6,h-10,.2f,.8f};
     device->SetViewport(&sentinel); device->SetRenderState(D3DRS_ALPHABLENDENABLE,TRUE);
     device->SetSamplerState(0,D3DSAMP_ADDRESSU,D3DTADDRESS_WRAP);
+    {
+        Renderer direct(device.Get());
+        Settings linearSettings; linearSettings.enabled=true; linearSettings.algorithm=Algorithm::Linear;
+        ULONG linearReferences=0;
+        for (auto size : {std::pair<UINT,UINT>{w,h},{w*3/2,h*3/2},{w/2,h/2},{w*2,h*2},{w*5/3,h*5/3}}) {
+            auto target=Target(device.Get(),size.first,size.second);
+            Check(direct.Render(source.Get(),target.Get(),linearSettings),"single-pass linear");
+            if (size.first==w && size.second==h) {
+                Require(direct.InternalReferences()==0,"identity allocates no renderer resources");
+            } else {
+                const ULONG references=direct.InternalReferences();
+                Require(references>0 && references<=4,"linear retains only one shader and input texture");
+                if (linearReferences) Require(references==linearReferences,"linear resources stable across output sizes");
+                linearReferences=references;
+            }
+            D3DVIEWPORT9 after{}; device->GetViewport(&after);
+            Require(memcmp(&sentinel,&after,sizeof(after))==0,"linear preserves viewport");
+            DWORD state=0; device->GetRenderState(D3DRS_ALPHABLENDENABLE,&state);
+            Require(state==TRUE,"linear preserves blend state");
+            device->GetSamplerState(0,D3DSAMP_ADDRESSU,&state);
+            Require(state==D3DTADDRESS_WRAP,"linear preserves sampler state");
+            Save(device.Get(),target.Get(),folder/("linear-"+std::to_string(size.first)+"x"+std::to_string(size.second)+".bgra"));
+        }
+    }
     for (auto quality : {Quality::Fast,Quality::Balanced}) {
         settings.quality=quality;
         auto target=Target(device.Get(),w*2,h*2);
@@ -80,6 +104,6 @@ int main(int argc, char** argv) {
     Check(device->Reset(&pp),"device reset after neural resources released");
     device->AddRef(); const ULONG refs=device->Release();
     Require(refs==1,"no retained device references");
-    printf("PASS GPU render: two networks, identity, shrink, fractional resize, state restoration, reset and resource release\n");
+    printf("PASS GPU render: lightweight linear resource budget/state, two networks, identity, shrink, fractional resize, reset and resource release\n");
     device.Reset();d3d.Reset();DestroyWindow(window);
 }

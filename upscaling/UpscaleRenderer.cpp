@@ -1,5 +1,6 @@
 #include "UpscaleRenderer.h"
 #include "NeuralShaders.h"
+#include "PresentationPolicy.h"
 #include <algorithm>
 #include <cstring>
 #include <cmath>
@@ -47,10 +48,12 @@ Renderer::~Renderer() { Reset(); }
 ULONG Renderer::References() const { device_->AddRef(); return device_->Release(); }
 
 void Renderer::Reset() {
-    pacer_.Reset();
+    ResetTiming();
     // Call before the underlying Reset; DEFAULT-pool resources and additional
     // swapchains must not keep the old device surfaces alive.
     output_.Reset(); outputWidth_ = outputHeight_ = 0; outputWindow_ = nullptr;
+    requestedInterval_ = outputInterval_ = displayRefresh_ = 0;
+    displayChecked_ = 0;
     input_ = {}; residual_ = {}; doubled_ = {}; horizontal_ = {};
     horizontalWeights_ = {}; verticalWeights_ = {};
     for (auto& bank : groups_) for (auto& texture : bank) texture = {};
@@ -59,9 +62,14 @@ void Renderer::Reset() {
     width_ = height_ = targetWidth_ = targetHeight_ = 0;
     internalReferences_ = 0;
     activeLogged_ = false;
+    fullscreenLogged_ = false;
     disabledUntilReset_ = false;
+}
+
+void Renderer::ResetTiming() {
+    pacer_.Reset();
     profileStart_ = lastFrame_ = renderTotal_ = presentTotal_ = 0;
-    maxGap_ = maxRender_ = maxPresent_ = 0; profileFrames_ = profileReports_ = 0;
+    maxGap_ = maxRender_ = maxPresent_ = 0; profileFrames_ = 0;
 }
 
 void Renderer::CreateWeights(Texture& texture, UINT inputExtent, UINT outputExtent) {
@@ -93,7 +101,7 @@ void Renderer::CreateWeights(Texture& texture, UINT inputExtent, UINT outputExte
 }
 
 void Renderer::RecordFrame(double start, double renderMs, double presentMs) {
-    if (!Configuration().diagnostics || profileReports_ >= 12) return;
+    if (!Configuration().diagnostics) return;
     if (!profileStart_) { profileStart_ = lastFrame_ = start; return; }
     maxGap_ = std::max(maxGap_, start-lastFrame_); lastFrame_ = start;
     renderTotal_ += renderMs; presentTotal_ += presentMs;
@@ -104,7 +112,7 @@ void Renderer::RecordFrame(double start, double renderMs, double presentMs) {
             profileFrames_*1000./(start-profileStart_), maxGap_, renderTotal_/profileFrames_, maxRender_,
             presentTotal_/profileFrames_, maxPresent_);
         profileStart_ = start; renderTotal_ = presentTotal_ = maxGap_ = maxRender_ = maxPresent_ = 0;
-        profileFrames_ = 0; ++profileReports_;
+        profileFrames_ = 0;
     }
 }
 
@@ -131,6 +139,19 @@ HRESULT Renderer::Prepare(UINT w, UINT h, UINT tw, UINT th, const Settings& sett
         return device_->CreatePixelShader(reinterpret_cast<const DWORD*>(code.data), &shader);
     };
     if (!copy_ && FAILED(hr = makeShader(NeuralShaders::Copy, copy_))) return hr;
+    if (settings.algorithm == Algorithm::Linear) {
+        if (w != width_ || h != height_ || !input_.image)
+            if (FAILED(hr = CreateTexture(input_, w, h))) return hr;
+        // Retain only the input texture and one copy shader. In particular, a
+        // linear resize must not prepare CuNNy, 2x targets or Lanczos resources.
+        residual_ = {}; doubled_ = {}; horizontal_ = {};
+        horizontalWeights_ = {}; verticalWeights_ = {};
+        for (auto& bank : groups_) for (auto& texture : bank) texture = {};
+        network_.clear(); resolve_.Reset(); resample_.Reset(); resampleFast_.Reset();
+        width_ = w; height_ = h; targetWidth_ = tw; targetHeight_ = th;
+        preparedSettings_ = settings;
+        return S_OK;
+    }
     if (!resolve_ && FAILED(hr = makeShader(NeuralShaders::Resolve, resolve_))) return hr;
     if (!resample_ && FAILED(hr = makeShader(NeuralShaders::Resample, resample_))) return hr;
     if (!resampleFast_ && FAILED(hr = makeShader(NeuralShaders::ResampleFast, resampleFast_))) return hr;
@@ -197,6 +218,8 @@ HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* desti
     HRESULT hr = source->GetDesc(&src);
     if (FAILED(hr)) return hr;
     if (FAILED(hr = destination->GetDesc(&dst))) return hr;
+    if (settings.algorithm == Algorithm::Linear && src.Width == dst.Width && src.Height == dst.Height)
+        return device_->StretchRect(source, nullptr, destination, nullptr, D3DTEXF_NONE);
     if (FAILED(hr = Prepare(src.Width, src.Height, dst.Width, dst.Height, settings))) return hr;
     if (FAILED(hr = device_->StretchRect(source, nullptr, input_.surface.Get(), nullptr, D3DTEXF_NONE))) return hr;
     StateGuard guard(device_);
@@ -224,6 +247,8 @@ HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* desti
         if (src.Width == dst.Width && src.Height == dst.Height)
             return Draw(destination, copy_.Get(), {input_.image.Get()}, src.Width, src.Height);
         if (settings.algorithm == Algorithm::Linear)
+            // Explicit pixel centers avoid driver-dependent StretchRect
+            // magnification offsets, while still using one bilinear GPU pass.
             return Draw(destination, copy_.Get(), {input_.image.Get()}, src.Width, src.Height, true);
         IDirect3DTexture9* active = input_.image.Get();
         UINT aw = src.Width, ah = src.Height;
@@ -282,57 +307,112 @@ HRESULT Renderer::Render(IDirect3DSurface9* source, IDirect3DSurface9* destinati
 
 bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND overrideWindow, HRESULT& result) {
     double frameStart = Milliseconds();
-    if (!Configuration().enabled || disabledUntilReset_) return false;
+    const auto native = [&]() { ResetTiming(); return false; };
+    if (!Configuration().enabled || disabledUntilReset_) return native();
     ComPtr<IDirect3DSwapChain9> original;
-    if (FAILED(device_->GetSwapChain(0, &original))) return false;
+    if (FAILED(device_->GetSwapChain(0, &original))) return native();
     D3DPRESENT_PARAMETERS params{};
-    if (FAILED(original->GetPresentParameters(&params)) || !params.Windowed) return false;
+    if (FAILED(original->GetPresentParameters(&params))) return native();
+    if (!params.Windowed) {
+        if (!fullscreenLogged_) {
+            ComPtr<IDirect3DSurface9> backbuffer;
+            D3DSURFACE_DESC back{};
+            D3DDISPLAYMODE display{};
+            if (SUCCEEDED(original->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &backbuffer)))
+                backbuffer->GetDesc(&back);
+            device_->GetDisplayMode(0, &display);
+            Log("fullscreen: windowed=0, backbuffer=%ux%u, device_display=%ux%u@%uHz, CuNNy=no, presentation=native, interval=0x%08x",
+                back.Width, back.Height, display.Width, display.Height, display.RefreshRate, params.PresentationInterval);
+            fullscreenLogged_ = true;
+        }
+        return native();
+    }
+    fullscreenLogged_ = false;
     HWND window = overrideWindow ? overrideWindow : params.hDeviceWindow;
     char className[64]{}; GetClassNameA(window, className, sizeof(className));
-    if (strcmp(className, "MapleStoryClass") != 0 || IsIconic(window)) return false;
+    if (strcmp(className, "MapleStoryClass") != 0 || IsIconic(window)) return native();
     RECT client{};
-    if (!GetClientRect(window, &client) || client.right <= 0 || client.bottom <= 0) return false;
+    if (!GetClientRect(window, &client) || client.right <= 0 || client.bottom <= 0) return native();
     ComPtr<IDirect3DSurface9> source;
-    if (FAILED(original->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &source))) return false;
+    if (FAILED(original->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &source))) return native();
     D3DSURFACE_DESC description{}; source->GetDesc(&description);
     // Accept explicit full-surface rectangles as well as the usual null pointers.
     // Partial presents retain the game's original cropping/dirty-region semantics.
     if (sourceRect && (sourceRect->left || sourceRect->top ||
-        sourceRect->right != description.Width || sourceRect->bottom != description.Height)) return false;
-    if (targetRect && !EqualRect(targetRect, &client)) return false;
-    if (FAILED(device_->TestCooperativeLevel())) return false;
-    pacer_.Wait(FrameLimit());
-    frameStart = Milliseconds();
-    if (description.Width == client.right && description.Height == client.bottom) return false;
+        sourceRect->right != description.Width || sourceRect->bottom != description.Height)) return native();
+    if (targetRect && !EqualRect(targetRect, &client)) return native();
+    if (FAILED(device_->TestCooperativeLevel())) return native();
+    const unsigned limit = FrameLimit();
+    const UINT requestedInterval = PresentationPolicy::Interval(limit);
+    const ULONGLONG now = GetTickCount64();
+    if (!displayChecked_ || now - displayChecked_ >= 1000) {
+        D3DDISPLAYMODE display{};
+        device_->GetDisplayMode(0, &display);
+        if (displayRefresh_ != display.RefreshRate) {
+            displayRefresh_ = display.RefreshRate;
+            activeLogged_ = false;
+            ResetTiming();
+        }
+        displayChecked_ = now;
+    }
     // Count only references owned by this renderer, never temporary game surfaces.
     const ULONG external = References() - internalReferences_;
     HRESULT hr = S_OK;
-    if (!output_ || outputWidth_ != client.right || outputHeight_ != client.bottom || outputWindow_ != window) {
+    if (!output_ || outputWidth_ != client.right || outputHeight_ != client.bottom || outputWindow_ != window ||
+        requestedInterval_ != requestedInterval) {
         output_.Reset();
+        activeLogged_ = false;
+        ResetTiming();
         D3DPRESENT_PARAMETERS outputParams{};
         outputParams.Windowed = TRUE; outputParams.hDeviceWindow = window;
         outputParams.BackBufferWidth = client.right; outputParams.BackBufferHeight = client.bottom;
         outputParams.BackBufferFormat = params.BackBufferFormat;
         outputParams.BackBufferCount = 1; outputParams.SwapEffect = D3DSWAPEFFECT_DISCARD;
-        outputParams.PresentationInterval = params.PresentationInterval;
+        outputParams.PresentationInterval = requestedInterval;
         hr = device_->CreateAdditionalSwapChain(&outputParams, &output_);
+        if (FAILED(hr) && requestedInterval == D3DPRESENT_INTERVAL_ONE && hr != D3DERR_DEVICELOST) {
+            Log("window vsync unavailable 0x%08lX; retrying immediate presentation with timer cap", hr);
+            outputParams.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+            hr = device_->CreateAdditionalSwapChain(&outputParams, &output_);
+        }
+        requestedInterval_ = requestedInterval;
+        outputInterval_ = outputParams.PresentationInterval;
+        if (SUCCEEDED(hr)) {
+            D3DPRESENT_PARAMETERS actual{};
+            hr = output_->GetPresentParameters(&actual);
+            if (SUCCEEDED(hr)) outputInterval_ = actual.PresentationInterval;
+        }
         outputWidth_ = client.right; outputHeight_ = client.bottom;
         outputWindow_ = window;
     }
     internalReferences_ = References() - external;
     if (SUCCEEDED(hr)) {
+        const unsigned timerRate = PresentationPolicy::TimerRate(limit, outputInterval_, displayRefresh_);
+        if (loggedLimit_ != limit || loggedTimerRate_ != timerRate) {
+            ResetTiming();
+            activeLogged_ = false;
+            loggedLimit_ = limit; loggedTimerRate_ = timerRate;
+        }
+        pacer_.Wait(timerRate);
+        frameStart = Milliseconds();
         ComPtr<IDirect3DSurface9> target;
         hr = output_->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &target);
         if (SUCCEEDED(hr)) hr = Render(source.Get(), target.Get(), Configuration());
         const double submitEnd = Milliseconds();
         if (SUCCEEDED(hr)) {
             if (!activeLogged_) {
-                Log("active: %ux%u -> %ldx%ld, CuNNy=%s", description.Width, description.Height,
-                    client.right, client.bottom, Configuration().algorithm == Algorithm::Cunny ? "yes" : "no");
+                const bool neural = Configuration().algorithm == Algorithm::Cunny &&
+                    client.right > static_cast<LONG>(description.Width) && client.bottom > static_cast<LONG>(description.Height);
+                Log("active: %ux%u -> %ldx%ld, CuNNy=%s, windowed=1, backend=%s, interval=0x%08x, device_refresh=%uHz, max_fps=%u, timer_fps=%u", description.Width, description.Height,
+                    client.right, client.bottom, neural ? "yes" : "no",
+                    description.Width == client.right && description.Height == client.bottom ? "pixel-copy" :
+                    Configuration().algorithm == Algorithm::Linear ? "single-pass-linear" : "shader-resample",
+                    outputInterval_, displayRefresh_, limit, timerRate);
                 activeLogged_ = true;
             }
             hr = output_->Present(nullptr, nullptr, window, nullptr, 0);
-            RecordFrame(frameStart, submitEnd-frameStart, Milliseconds()-submitEnd);
+            if (SUCCEEDED(hr)) RecordFrame(frameStart, submitEnd-frameStart, Milliseconds()-submitEnd);
+            else ResetTiming();
             // Let the game handle normal device-loss recovery through Reset.
             if (SUCCEEDED(hr) || hr == D3DERR_DEVICELOST) { result = hr; return true; }
         }

@@ -9,12 +9,14 @@ void Check(HRESULT hr, const char* what) { if (FAILED(hr)) { printf("FAIL %s %08
 void Require(bool ok,const char* what) { if (!ok) { printf("FAIL %s\n",what);exit(1); } }
 int main(int argc,char** argv) {
     if(argc!=3)return 2;
-    const bool enabled=std::string(argv[2])=="enabled";
+    const std::string mode=argv[2];
+    const bool enabled=mode=="enabled" || mode=="linear";
+    const bool linear=mode=="linear";
     char exe[MAX_PATH]{};GetModuleFileNameA(nullptr,exe,MAX_PATH);
     const auto directory=std::filesystem::path(exe).parent_path();
     // This executable lives in out/neural/fixture; never touch a game's config.
     Require(directory.filename()=="fixture","isolated config directory");
-    {std::ofstream config(directory/"config.ini");config<<"[upscaling]\nenabled="<<(enabled?"true":"false")<<"\nquality=balanced\n";}
+    {std::ofstream config(directory/"config.ini");config<<"[upscaling]\nenabled="<<(enabled?"true":"false")<<"\nalgorithm="<<(linear?"linear":"cunny")<<"\nquality=balanced\n";}
     HMODULE module=LoadLibraryA(argv[1]);Require(module!=nullptr,"load built DLL");
     auto factory=reinterpret_cast<IDirect3D8*(WINAPI*)(UINT)>(GetProcAddress(module,"Direct3DCreate8"));
     Require(factory!=nullptr,"factory export");
@@ -50,6 +52,16 @@ int main(int argc,char** argv) {
         SetWindowPos(window,nullptr,0,0,64*scale,48*scale,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
         frame();
     }
+    if(enabled) {
+        // Live cap changes must rebuild the output chain when toggling vsync,
+        // without resetting the game's device, state block or managed textures.
+        const std::string configPath=(directory/"config.ini").string();
+        for(const char* cap : {"0", "30", "60"}) {
+            Require(WritePrivateProfileStringA("upscaling","max_fps",cap,configPath.c_str())!=0,"change live frame cap");
+            Sleep(1100);
+            frame();
+        }
+    }
     Check(device->DeleteStateBlock(token),"release game state block");
     for(int cycle=0;cycle<5;++cycle){Check(device->Reset(&pp),"reset");frame();}
     Check(managed->LockRect(0,&lock,nullptr,D3DLOCK_READONLY),"managed after reset");
@@ -60,8 +72,17 @@ int main(int argc,char** argv) {
     if(enabled){
         std::ifstream input(directory/"upscaling.log");
         const std::string log((std::istreambuf_iterator<char>(input)),{});
-        Require(log.find("active:")!=std::string::npos,"neural presentation actually active");
+        Require(log.find("active:")!=std::string::npos,"custom presentation actually active");
         Require(log.find("failed")==std::string::npos,"no silent fallback");
+        Require(log.find("vsync unavailable")==std::string::npos,"driver accepts vsync swap chain");
+        Require(log.find("backend=pixel-copy, interval=0x00000001")!=std::string::npos,"1:1 also uses synchronized output");
+        Require(log.find("interval=0x80000000")!=std::string::npos,"unlimited changes swap chain to immediate");
+        Require(log.find("max_fps=0, timer_fps=0")!=std::string::npos,"unlimited has no software cap");
+        Require(log.find("max_fps=30, timer_fps=30")!=std::string::npos,"explicit lower cap survives vsync");
+        if(linear) {
+            Require(log.find("backend=single-pass-linear")!=std::string::npos,"single-pass linear presentation active");
+            Require(log.find("CuNNy=yes")==std::string::npos,"linear mode never executes CuNNy");
+        }
     }
-    printf("PASS proxy %s: real D3D8 calls, resize, logical dimensions, managed textures, state blocks, reset, final Release\n",enabled?"enabled":"native fallback");
+    printf("PASS proxy %s: real D3D8 calls, resize, 1:1 sync, live cap/swapchain changes, logical dimensions, managed textures, state blocks, reset, final Release\n",argv[2]);
 }

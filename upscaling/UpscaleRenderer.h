@@ -35,6 +35,7 @@ private:
     HRESULT CreateTexture(Texture& texture, UINT width, UINT height, D3DFORMAT format = D3DFMT_A8R8G8B8);
     void CreateWeights(Texture& texture, UINT inputExtent, UINT outputExtent);
     void RecordFrame(double start, double renderMs, double presentMs);
+    void ResetTiming();
     HRESULT Prepare(UINT width, UINT height, UINT targetWidth, UINT targetHeight, const Settings& settings);
     HRESULT Draw(IDirect3DSurface9* target, IDirect3DPixelShader9* shader,
         const std::vector<IDirect3DTexture9*>& inputs, UINT inputWidth, UINT inputHeight,
@@ -53,9 +54,12 @@ private:
     Ptr<IDirect3DSwapChain9> output_;
     UINT outputWidth_ = 0, outputHeight_ = 0;
     HWND outputWindow_ = nullptr;
-    bool disabledUntilReset_ = false, activeLogged_ = false;
+    UINT requestedInterval_ = 0, outputInterval_ = 0, displayRefresh_ = 0;
+    unsigned loggedLimit_ = 0, loggedTimerRate_ = 0;
+    ULONGLONG displayChecked_ = 0;
+    bool disabledUntilReset_ = false, activeLogged_ = false, fullscreenLogged_ = false;
     double profileStart_ = 0, lastFrame_ = 0, renderTotal_ = 0, presentTotal_ = 0;
     double maxGap_ = 0, maxRender_ = 0, maxPresent_ = 0;
-    UINT profileFrames_ = 0, profileReports_ = 0;
+    UINT profileFrames_ = 0;
 };
 }
