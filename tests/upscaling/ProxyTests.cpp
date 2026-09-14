@@ -9,12 +9,14 @@ void Check(HRESULT hr, const char* what) { if (FAILED(hr)) { printf("FAIL %s %08
 void Require(bool ok,const char* what) { if (!ok) { printf("FAIL %s\n",what);exit(1); } }
 int main(int argc,char** argv) {
     if(argc!=3)return 2;
-    const bool enabled=std::string(argv[2])=="enabled";
+    const std::string mode=argv[2];
+    const bool enabled=mode=="enabled" || mode=="linear";
+    const bool linear=mode=="linear";
     char exe[MAX_PATH]{};GetModuleFileNameA(nullptr,exe,MAX_PATH);
     const auto directory=std::filesystem::path(exe).parent_path();
     // This executable lives in out/neural/fixture; never touch a game's config.
     Require(directory.filename()=="fixture","isolated config directory");
-    {std::ofstream config(directory/"config.ini");config<<"[upscaling]\nenabled="<<(enabled?"true":"false")<<"\nquality=balanced\n";}
+    {std::ofstream config(directory/"config.ini");config<<"[upscaling]\nenabled="<<(enabled?"true":"false")<<"\nalgorithm="<<(linear?"linear":"cunny")<<"\nquality=balanced\n";}
     HMODULE module=LoadLibraryA(argv[1]);Require(module!=nullptr,"load built DLL");
     auto factory=reinterpret_cast<IDirect3D8*(WINAPI*)(UINT)>(GetProcAddress(module,"Direct3DCreate8"));
     Require(factory!=nullptr,"factory export");
@@ -62,6 +64,10 @@ int main(int argc,char** argv) {
         const std::string log((std::istreambuf_iterator<char>(input)),{});
         Require(log.find("active:")!=std::string::npos,"neural presentation actually active");
         Require(log.find("failed")==std::string::npos,"no silent fallback");
+        if(linear) {
+            Require(log.find("backend=single-pass-linear")!=std::string::npos,"single-pass linear presentation active");
+            Require(log.find("CuNNy=yes")==std::string::npos,"linear mode never executes CuNNy");
+        }
     }
-    printf("PASS proxy %s: real D3D8 calls, resize, logical dimensions, managed textures, state blocks, reset, final Release\n",enabled?"enabled":"native fallback");
+    printf("PASS proxy %s: real D3D8 calls, resize, logical dimensions, managed textures, state blocks, reset, final Release\n",argv[2]);
 }

@@ -27,9 +27,23 @@ elif sys.argv[2] == 'compare':
     for name in ['linear', 'fast', 'balanced']:
         outputs[name] = Image.frombytes('RGBA', (2560,1440), (folder/(name+'.bgra')).read_bytes(), 'raw', 'BGRA').convert('RGB')
         outputs[name].save(folder/(name+'.png'))
-    panel = Image.new('RGB', (1500, 4*280), 'white')
+    panel = Image.new('RGB', (1500, 4*320), 'white')
     d = ImageDraw.Draw(panel)
     for i, (name, im) in enumerate(outputs.items()):
-        d.text((8, i*280+8), name, fill='black', font=ImageFont.truetype('C:/Windows/Fonts/arial.ttf', 22))
-        panel.paste(im.crop((20,0,1520,246)), (0,i*280+34))
+        d.text((8, i*320+8), name, fill='black', font=ImageFont.truetype('C:/Windows/Fonts/arial.ttf', 22))
+        panel.paste(im.crop((20,0,1520,286)), (0,i*320+34))
     panel.save(folder/'comparison.png')
+    # The game's current window uses a fractional ratio. Inspect that separately
+    # from 2x, where nearest-neighbor pixels have uniform widths by construction.
+    fractional = {
+        'Nearest 1.5x': source.resize((1920,1080), Image.Resampling.NEAREST),
+        'Single-pass linear 1.5x': Image.frombytes('RGBA', (1920,1080),
+            (folder/'linear-1920x1080.bgra').read_bytes(), 'raw', 'BGRA').convert('RGB'),
+        'CuNNy balanced 1.5x': Image.frombytes('RGBA', (1920,1080),
+            (folder/'1920x1080.bgra').read_bytes(), 'raw', 'BGRA').convert('RGB')}
+    panel = Image.new('RGB', (1200, 3*260), 'white')
+    d = ImageDraw.Draw(panel)
+    for i, (name, im) in enumerate(fractional.items()):
+        d.text((8,i*260+5), name, fill='black', font=ImageFont.truetype('C:/Windows/Fonts/arial.ttf',20))
+        panel.paste(im.crop((15,0,1215,224)), (0,i*260+32))
+    panel.save(folder/'comparison-fractional.png')

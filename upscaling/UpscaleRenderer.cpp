@@ -59,9 +59,10 @@ void Renderer::Reset() {
     width_ = height_ = targetWidth_ = targetHeight_ = 0;
     internalReferences_ = 0;
     activeLogged_ = false;
+    fullscreenLogged_ = false;
     disabledUntilReset_ = false;
     profileStart_ = lastFrame_ = renderTotal_ = presentTotal_ = 0;
-    maxGap_ = maxRender_ = maxPresent_ = 0; profileFrames_ = profileReports_ = 0;
+    maxGap_ = maxRender_ = maxPresent_ = 0; profileFrames_ = 0;
 }
 
 void Renderer::CreateWeights(Texture& texture, UINT inputExtent, UINT outputExtent) {
@@ -93,7 +94,7 @@ void Renderer::CreateWeights(Texture& texture, UINT inputExtent, UINT outputExte
 }
 
 void Renderer::RecordFrame(double start, double renderMs, double presentMs) {
-    if (!Configuration().diagnostics || profileReports_ >= 12) return;
+    if (!Configuration().diagnostics) return;
     if (!profileStart_) { profileStart_ = lastFrame_ = start; return; }
     maxGap_ = std::max(maxGap_, start-lastFrame_); lastFrame_ = start;
     renderTotal_ += renderMs; presentTotal_ += presentMs;
@@ -104,7 +105,7 @@ void Renderer::RecordFrame(double start, double renderMs, double presentMs) {
             profileFrames_*1000./(start-profileStart_), maxGap_, renderTotal_/profileFrames_, maxRender_,
             presentTotal_/profileFrames_, maxPresent_);
         profileStart_ = start; renderTotal_ = presentTotal_ = maxGap_ = maxRender_ = maxPresent_ = 0;
-        profileFrames_ = 0; ++profileReports_;
+        profileFrames_ = 0;
     }
 }
 
@@ -131,6 +132,19 @@ HRESULT Renderer::Prepare(UINT w, UINT h, UINT tw, UINT th, const Settings& sett
         return device_->CreatePixelShader(reinterpret_cast<const DWORD*>(code.data), &shader);
     };
     if (!copy_ && FAILED(hr = makeShader(NeuralShaders::Copy, copy_))) return hr;
+    if (settings.algorithm == Algorithm::Linear) {
+        if (w != width_ || h != height_ || !input_.image)
+            if (FAILED(hr = CreateTexture(input_, w, h))) return hr;
+        // Retain only the input texture and one copy shader. In particular, a
+        // linear resize must not prepare CuNNy, 2x targets or Lanczos resources.
+        residual_ = {}; doubled_ = {}; horizontal_ = {};
+        horizontalWeights_ = {}; verticalWeights_ = {};
+        for (auto& bank : groups_) for (auto& texture : bank) texture = {};
+        network_.clear(); resolve_.Reset(); resample_.Reset(); resampleFast_.Reset();
+        width_ = w; height_ = h; targetWidth_ = tw; targetHeight_ = th;
+        preparedSettings_ = settings;
+        return S_OK;
+    }
     if (!resolve_ && FAILED(hr = makeShader(NeuralShaders::Resolve, resolve_))) return hr;
     if (!resample_ && FAILED(hr = makeShader(NeuralShaders::Resample, resample_))) return hr;
     if (!resampleFast_ && FAILED(hr = makeShader(NeuralShaders::ResampleFast, resampleFast_))) return hr;
@@ -197,6 +211,8 @@ HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* desti
     HRESULT hr = source->GetDesc(&src);
     if (FAILED(hr)) return hr;
     if (FAILED(hr = destination->GetDesc(&dst))) return hr;
+    if (settings.algorithm == Algorithm::Linear && src.Width == dst.Width && src.Height == dst.Height)
+        return device_->StretchRect(source, nullptr, destination, nullptr, D3DTEXF_NONE);
     if (FAILED(hr = Prepare(src.Width, src.Height, dst.Width, dst.Height, settings))) return hr;
     if (FAILED(hr = device_->StretchRect(source, nullptr, input_.surface.Get(), nullptr, D3DTEXF_NONE))) return hr;
     StateGuard guard(device_);
@@ -224,6 +240,8 @@ HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* desti
         if (src.Width == dst.Width && src.Height == dst.Height)
             return Draw(destination, copy_.Get(), {input_.image.Get()}, src.Width, src.Height);
         if (settings.algorithm == Algorithm::Linear)
+            // Explicit pixel centers avoid driver-dependent StretchRect
+            // magnification offsets, while still using one bilinear GPU pass.
             return Draw(destination, copy_.Get(), {input_.image.Get()}, src.Width, src.Height, true);
         IDirect3DTexture9* active = input_.image.Get();
         UINT aw = src.Width, ah = src.Height;
@@ -286,7 +304,22 @@ bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND over
     ComPtr<IDirect3DSwapChain9> original;
     if (FAILED(device_->GetSwapChain(0, &original))) return false;
     D3DPRESENT_PARAMETERS params{};
-    if (FAILED(original->GetPresentParameters(&params)) || !params.Windowed) return false;
+    if (FAILED(original->GetPresentParameters(&params))) return false;
+    if (!params.Windowed) {
+        if (!fullscreenLogged_) {
+            ComPtr<IDirect3DSurface9> backbuffer;
+            D3DSURFACE_DESC back{};
+            D3DDISPLAYMODE display{};
+            if (SUCCEEDED(original->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &backbuffer)))
+                backbuffer->GetDesc(&back);
+            device_->GetDisplayMode(0, &display);
+            Log("fullscreen: windowed=0, backbuffer=%ux%u, device_display=%ux%u@%uHz, CuNNy=no, presentation=native",
+                back.Width, back.Height, display.Width, display.Height, display.RefreshRate);
+            fullscreenLogged_ = true;
+        }
+        return false;
+    }
+    fullscreenLogged_ = false;
     HWND window = overrideWindow ? overrideWindow : params.hDeviceWindow;
     char className[64]{}; GetClassNameA(window, className, sizeof(className));
     if (strcmp(className, "MapleStoryClass") != 0 || IsIconic(window)) return false;
@@ -309,6 +342,7 @@ bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND over
     HRESULT hr = S_OK;
     if (!output_ || outputWidth_ != client.right || outputHeight_ != client.bottom || outputWindow_ != window) {
         output_.Reset();
+        activeLogged_ = false;
         D3DPRESENT_PARAMETERS outputParams{};
         outputParams.Windowed = TRUE; outputParams.hDeviceWindow = window;
         outputParams.BackBufferWidth = client.right; outputParams.BackBufferHeight = client.bottom;
@@ -327,8 +361,11 @@ bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND over
         const double submitEnd = Milliseconds();
         if (SUCCEEDED(hr)) {
             if (!activeLogged_) {
-                Log("active: %ux%u -> %ldx%ld, CuNNy=%s", description.Width, description.Height,
-                    client.right, client.bottom, Configuration().algorithm == Algorithm::Cunny ? "yes" : "no");
+                const bool neural = Configuration().algorithm == Algorithm::Cunny &&
+                    client.right > static_cast<LONG>(description.Width) && client.bottom > static_cast<LONG>(description.Height);
+                Log("active: %ux%u -> %ldx%ld, CuNNy=%s, windowed=1, backend=%s", description.Width, description.Height,
+                    client.right, client.bottom, neural ? "yes" : "no",
+                    Configuration().algorithm == Algorithm::Linear ? "single-pass-linear" : "shader-resample");
                 activeLogged_ = true;
             }
             hr = output_->Present(nullptr, nullptr, window, nullptr, 0);

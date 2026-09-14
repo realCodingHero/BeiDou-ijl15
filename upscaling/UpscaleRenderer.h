@@ -53,9 +53,9 @@ private:
     Ptr<IDirect3DSwapChain9> output_;
     UINT outputWidth_ = 0, outputHeight_ = 0;
     HWND outputWindow_ = nullptr;
-    bool disabledUntilReset_ = false, activeLogged_ = false;
+    bool disabledUntilReset_ = false, activeLogged_ = false, fullscreenLogged_ = false;
     double profileStart_ = 0, lastFrame_ = 0, renderTotal_ = 0, presentTotal_ = 0;
     double maxGap_ = 0, maxRender_ = 0, maxPresent_ = 0;
-    UINT profileFrames_ = 0, profileReports_ = 0;
+    UINT profileFrames_ = 0;
 };
 }

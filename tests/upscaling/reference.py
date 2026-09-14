@@ -78,6 +78,26 @@ for quality,model in [('fast','veryfast'),('balanced','fast')]:
 assert (folder/'identity.bgra').read_bytes()==(folder/'input.bgra').read_bytes(), '1:1 output changed pixels'
 print('PASS independent neural reference and pixel-exact identity')
 
+# Independently verify the lightweight GPU path's pixel-center mapping, interpolation,
+# and edge clamping. This also detects accidental nearest-neighbor scaling.
+raw = np.frombuffer((folder/'input.bgra').read_bytes(), np.uint8).reshape(48, 64, 4)
+for width, height in [(64,48), (96,72), (32,24), (128,96), (106,80)]:
+    x = (np.arange(width)+.5)*64/width-.5
+    y = (np.arange(height)+.5)*48/height-.5
+    x0 = np.floor(x).astype(int); y0 = np.floor(y).astype(int)
+    fx = (x-x0)[None,:,None]; fy = (y-y0)[:,None,None]
+    a = raw[np.clip(y0,0,47)[:,None], np.clip(x0,0,63)[None,:]].astype(float)
+    b = raw[np.clip(y0,0,47)[:,None], np.clip(x0+1,0,63)[None,:]].astype(float)
+    c = raw[np.clip(y0+1,0,47)[:,None], np.clip(x0,0,63)[None,:]].astype(float)
+    d = raw[np.clip(y0+1,0,47)[:,None], np.clip(x0+1,0,63)[None,:]].astype(float)
+    expected = np.rint((a*(1-fx)+b*fx)*(1-fy)+(c*(1-fx)+d*fx)*fy)
+    actual = np.frombuffer((folder/f'linear-{width}x{height}.bgra').read_bytes(),np.uint8).reshape(height,width,4)
+    difference = np.abs(expected-actual)
+    assert difference.mean()<.75 and np.percentile(difference,99)<=2, 'GPU filtering differs from bilinear reference'
+    if width==64 and height==48:
+        assert np.array_equal(raw, actual), 'Direct 1:1 copy changed pixels'
+    print(f'PASS independent linear {width}x{height}: mean={difference.mean():.4f}, max={difference.max()}')
+
 
 def resize_axis(pixels, extent, axis):
     # Full wide kernel, independent of the GPU's six-tap/LUT optimization.

@@ -8,7 +8,9 @@ import re
 import shutil
 
 
-def configure(raw, quality):
+def configure(raw, quality, algorithm='cunny', diagnostics=None):
+    if algorithm not in ('cunny', 'linear') or quality not in ('fast', 'balanced'):
+        raise ValueError('Unsupported scaling algorithm or quality')
     if raw.startswith((b'\xff\xfe', b'\xfe\xff')) or b'\x00' in raw:
         raise ValueError('This client requires an ANSI/UTF-8 INI, not UTF-16')
     newline = b'\r\n' if b'\r\n' in raw else b'\n'
@@ -17,13 +19,16 @@ def configure(raw, quality):
     starts = [i for i, line in enumerate(lines) if (m := section.match(line)) and m[1].strip().lower() == b'upscaling']
     if len(starts) > 1:
         raise ValueError('Multiple [upscaling] sections; resolve before deployment')
-    settings = {b'enabled': b'true', b'algorithm': b'cunny', b'quality': quality.encode('ascii')}
+    settings = {b'enabled': b'true', b'algorithm': algorithm.encode('ascii'), b'quality': quality.encode('ascii')}
+    if diagnostics is not None:
+        settings[b'diagnostics'] = b'true' if diagnostics else b'false'
     entries = [key+b'='+value+newline for key, value in settings.items()]
     if not starts:
         return raw + (b'' if not raw or raw.endswith(b'\n') else newline) + newline + b'[upscaling]'+newline+b''.join(entries)
     start = starts[0]
     end = next((i for i in range(start+1, len(lines)) if section.match(lines[i])), len(lines))
-    retained = [line for line in lines[start+1:end] if not re.match(rb'^\s*(enabled|algorithm|quality)\s*=', line, re.I)]
+    changed = re.compile(rb'^\s*(' + b'|'.join(settings) + rb')\s*=', re.I)
+    retained = [line for line in lines[start+1:end] if not changed.match(line)]
     header = lines[start] if lines[start].endswith(b'\n') else lines[start]+newline
     return b''.join(lines[:start]+[header]+entries+retained+lines[end:])
 
@@ -36,6 +41,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--client', type=Path, required=True)
     parser.add_argument('--quality', choices=['fast', 'balanced'], default='balanced')
+    parser.add_argument('--algorithm', choices=['cunny', 'linear'], default='cunny')
+    parser.add_argument('--module-only', action='store_true', help='Keep the accepted ijl15.dll; update only the scaling DLL')
+    parser.add_argument('--diagnostics', action='store_true', default=None, help='Enable continuous five-second timing reports')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     client = args.client.resolve(strict=True)
@@ -46,13 +54,18 @@ def main():
         raise SystemExit('An application-local d3d8.dll conflicts with this client; remove that wrapper first')
     binaries = {'BeiDouUpscale.dll': root/'out/neural/BeiDouUpscale.dll',
                 'ijl15.dll': root/'out/window-scaling/ijl15.dll'}
+    if args.module_only:
+        del binaries['ijl15.dll']
     for name, source in binaries.items():
         binary = source.read_bytes()
         pe = int.from_bytes(binary[60:64], 'little')
         if binary[:2] != b'MZ' or binary[pe:pe+4] != b'PE\0\0' or binary[pe+4:pe+6] != b'\x4c\x01':
             raise SystemExit(f'Expected a built x86 PE DLL: {name}')
+        if (client/name).exists():
+            with (client/name).open('r+b'):  # Check locks without changing bytes.
+                pass
     original = config.read_bytes()
-    updated = configure(original, args.quality)
+    updated = configure(original, args.quality, args.algorithm, args.diagnostics)
     backup = client/'upscaling-backups'/datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     backup.mkdir(parents=True)
     shutil.copy2(config, backup/'config.ini')
@@ -60,7 +73,8 @@ def main():
         if (client/name).exists():
             shutil.copy2(client/name, backup/name)
     manifest = {'client': str(client), 'installed_sha256': {name: sha(source) for name,source in binaries.items()},
-                'config_before_sha256': sha(config), 'source_directory': str(root), 'quality': args.quality}
+                'config_before_sha256': sha(config), 'source_directory': str(root), 'quality': args.quality,
+                'algorithm': args.algorithm, 'module_only': args.module_only}
     notices = client/'upscaling-licenses'
     notices.mkdir(exist_ok=True)
     for source, target in [('LICENSE','BeiDou-AGPL-3.0.txt'), ('third_party/d3d8to9/LICENSE.md','d3d8to9-BSD-2-Clause.txt'),
@@ -74,10 +88,12 @@ def main():
     replaced = []
     try:
         for name, source in binaries.items():
-            shutil.copy2(source, client/name)
             replaced.append(name)
+            shutil.copy2(source, client/name)
+            if sha(client/name) != manifest['installed_sha256'][name]:
+                raise RuntimeError(f'Installed DLL hash mismatch: {name}')
         config.write_bytes(updated)
-    except OSError:
+    except (OSError, RuntimeError):
         # A loaded DLL is normally locked. Restore any completed earlier copy.
         for name in reversed(replaced):
             if (backup/name).exists():

@@ -1,7 +1,7 @@
-# 客户端内置神经网络缩放
+# 客户端内置 GPU 缩放
 
 窗口放大时，低分辨率成品画面中的像素被直接拉大，容易出现笔画粗细不均和方块边缘。
-本功能在游戏进程中对最终画面执行 CuNNy 神经网络推理，再适配窗口大小。
+本功能提供单次 GPU 双线性缩放，以及 CuNNy 神经网络重建后再适配窗口大小两种方式。
 启动游戏后自动生效，无需打开 Lossless Scaling、Magpie 或其他程序。
 
 ## 使用与回退
@@ -17,7 +17,9 @@ max_fps=60
 ```
 
 - `quality=balanced` 使用 CuNNy-fast-NVL；`quality=fast` 使用较小的 CuNNy-veryfast-NVL。
-- `algorithm=linear` 使用双线性缩放，方便比较画面与开销。
+- `algorithm=linear` 使用一次 GPU 双线性绘制，明确对齐像素中心；不加载神经网络着色器，
+  不创建 2× 中间画面或 Lanczos 资源。只保留输入纹理和一个复制着色器。
+  这会减少缩放开销，细小笔画通常比 CuNNy 柔和；需在实际地图和 UI 上验收。
 - `max_fps=60` 使用高精度计时器限制窗口呈现频率，避免每秒重建数百张最终不会显示的画面。
   接受 15–240 的整数；`0` 表示不限制。该项会在约一秒内重新读取，便于运行中对照。
 - `enabled=false` 在下一次启动时直接转发系统原生 DX8。
@@ -30,6 +32,16 @@ max_fps=60
 python -B tools/deploy-upscaling.py --client C:\Game\BeiDou-Client-research
 ```
 
+已有最新 `ijl15.dll` 时，可只更新图形模块并切换到轻量模式：
+
+```powershell
+python -B tools/deploy-upscaling.py --client C:\Game\BeiDou-Client-research --algorithm linear --module-only --diagnostics
+```
+
+`--module-only` 保留现有 `ijl15.dll`；`BeiDouItemEff.dll` 不在本脚本的更新范围。
+默认构建仍包含两种模式，改回 `algorithm=cunny` 并重启即可恢复神经网络效果。
+`--diagnostics` 开启持续的低频帧时间记录，其他配置（包括 1080p 内部渲染与帧率上限）保留。
+
 不要把仓库的配置模板直接覆盖到已配置的客户端。登录信息、Locale Emulator 快捷方式、
 帮助菜单资源和内部渲染尺寸不需要更换。`ijl15.dll` 的这次更新只增加可选的模块加载入口，
 构建基础包含既有的窗口修复和帮助菜单功能。
@@ -39,19 +51,23 @@ python -B tools/deploy-upscaling.py --client C:\Game\BeiDou-Client-research
 - `DX8 -> DX9` 表示已启用内置图形模块。
 - `active: 1920x1080 -> ...` 表示最终呈现已走优化路径。
 - `GPU upscale failed` 表示当前设备已回退原呈现，直到设备重置后才重试，避免每帧反复失败。
+- `backend=single-pass-linear, CuNNy=no`（字段顺序可能不同）表示轻量窗口缩放。
+- `fullscreen: windowed=0, backbuffer=..., device_display=..., CuNNy=no` 表示 Direct3D
+  真正全屏时保留原始呈现。`device_display` 是图形设备报告的模式，不能用它断言
+  显示器物理面板分辨率、驱动/显示器的缩放算法或视觉效果。
 
 窗口尺寸等于内部渲染尺寸时保持原呈现；这时没有 `active` 记录属于正常情况。
 禁用功能后不会写日志，原日志可能是上一次运行留下的。
 
 ## 图形路径与范围
 
-`Gr2D_DX8.dll → ijl15 的可选加载入口 → BeiDouUpscale.dll → d3d8to9 → DX9 → CuNNy → 当前游戏窗口`
+`Gr2D_DX8.dll → ijl15 的可选加载入口 → BeiDouUpscale.dll → d3d8to9 → DX9 → 双线性 / CuNNy → 当前游戏窗口`
 
 旧客户端会在启动时阻止目录中出现 `d3d8.dll`。因此本功能使用专用模块名，
 只处理 `Gr2D_DX8.dll` 发出的 DX8 加载请求，不修改游戏 EXE 的启动检查。
 其他模块加载系统 DX8 的行为不变。未启用或缺少专用 DLL 时保留原生加载路径。
 
-模型移植为预编译的 DX9 Pixel Shader 3.0，与游戏共用图形设备。没有屏幕捕获、
+CuNNy 模型移植为预编译的 DX9 Pixel Shader 3.0，与游戏共用图形设备。没有屏幕捕获、
 CPU 逐帧回读、DX9/DX11 跨设备复制、外部模型下载或额外显示窗口。
 原 DX8 渲染缓冲区大小保持不变，输出使用同一个 HWND 的额外 DX9 交换链。
 
@@ -65,8 +81,9 @@ CPU 逐帧回读、DX9/DX11 跨设备复制、外部模型下载或额外显示�
 | 最终窗口大小 | 处理方式 |
 | --- | --- |
 | 与内部画面相同 | 原样呈现 |
-| 两个方向均放大 | 一次 CuNNy 2×，再按需用带抗振铃限制的 Lanczos2 适配窗口 |
-| 缩小 | 直接用 Lanczos2 缩小 |
+| `linear` 模式放大或缩小 | 一次 GPU 双线性绘制到窗口尺寸 |
+| `cunny` 模式两个方向均放大 | 一次 CuNNy 2×，再按需用带抗振铃限制的 Lanczos2 适配窗口 |
+| `cunny` 模式缩小 | 直接用 Lanczos2 缩小 |
 | 原生独占全屏 | 保留原呈现，不执行神经网络缩放 |
 | 不支持的呈现方式或 GPU 处理失败 | 保留原呈现 |
 
@@ -155,7 +172,10 @@ Alt+Enter、UAC 返回和退出重开。自动测试不能代替这些客户端�
 进程 GPU 3D 引擎采样为 9.28%、10.21%、10.56%。启动阶段仍记录过 238.20 ms
 间隔，因此这些数据不能代表加载、切图或所有游戏操作，也不能代替用户对卡顿的复测。
 
-临时在 `[upscaling]` 加 `diagnostics=true` 并重启，可在 `upscaling.log` 查看前一分钟
-的 FPS、最大帧间隔、CPU 提交和 Present 耗时，每五秒一条。加载/切图会拉高最大间隔。
+临时在 `[upscaling]` 加 `diagnostics=true` 并重启，可在 `upscaling.log` 持续查看窗口模式
+的 FPS、最大帧间隔、CPU 提交和 Present 耗时，每五秒一条；不再限于前一分钟。
+加载/切图会拉高最大间隔。
 这些 CPU 计时不等同于 GPU 执行耗时；它们用于区分游戏循环、提交和等待。
 默认不启用诊断，诊断不会采集画面、键鼠内容或账号信息。
+
+轻量模式的测试数据、与全屏的区别及验收边界见 [轻量缩放验证](lightweight-window-scaling.md)。
