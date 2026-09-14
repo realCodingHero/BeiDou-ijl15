@@ -57,7 +57,7 @@ python -B tools/audit-resolution-patches.py --exe C:\Game\BeiDou-Client\BeiDou.e
   最大化测试仍使用真实显示器工作区，生产窗口代码未改变。
 - 实际 ItemEff 缓存的 407 个条目、20 次资源销毁后 DLL 卸载测试。
 
-## 部署与尚待实机验收
+## 部署与验收
 
 退出目标客户端后运行：
 
@@ -69,9 +69,15 @@ python -B tools/deploy-client-stability.py --client C:\Game\BeiDou-Client-resear
 `BeiDouUpscale.dll`。备份位于目标目录的 `stability-backups`，包含原 DLL、配置
 和部署清单。回退时退出游戏，恢复该次备份中的两个 DLL 即可。
 
-research 已安装候选版本。自动启动被 Locale Emulator 的 UAC 确认阻挡，已取消
-等待；本次尚未获得真实游戏启动成功的证据，正式客户端尚未替换。
+2026-09-14 用户确认 research 客户端测试通过，并授权同步正式版。research 的
+`patch-integrity.log` 在 12:57:13 记录全部签名通过及补丁应用成功。
 
-用户回来后集中验收：通过原中文快捷方式启动 research，查看
-`patch-integrity.log` 的 OK 记录；测试小电视/广播、披风特效的动作切换、切图与
-退出重开；确认清晰度与流畅度正常后再执行同一部署脚本更新正式目录。
+正式目录 `C:\Game\BeiDou-Client` 已通过同一脚本更新，使用 research 实机验收的
+原二进制文件，未重新编译。两个 DLL 的 SHA256 均与 research 一致：
+
+- `ijl15.dll`：`d030dfe1b1be168650a1f86afc9bcab6e5b1a7b20d4c9f6b7f42a3781431ddd7`
+- `BeiDouItemEff.dll`：`f676ed85390df9351feb23792eed87ad8a9631e44c18b4525fb0740f6219a4a3`
+
+正式版 `config.ini` 和 `BeiDouUpscale.dll` 的部署前后哈希保持一致。
+本次正式版备份目录为 `stability-backups/20260914-125937-385088`。
+实机验收来自 research；本次正式版同步完成文件与备份核对，未另行启动正式游戏。
