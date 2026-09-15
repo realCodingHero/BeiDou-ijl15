@@ -157,11 +157,15 @@ int main(int argc,char** argv) {
     WorldViewport::SetContextForTesting(&current,field,{-400,-398,400,600},1920,1080);
     auto narrowFill=make(-1200,-900,int(0xBFFE0000),0xff20d0e0,nullptr,2400,1800);
     auto narrowBar=make(-600,490,int(0xC00615D0),0xffcc00cc,nullptr,1200,40);
+    auto narrowActor=make(-100,-200,int(0xC0000000),0xffff8800);
     Check(gr->raw_UpdateCurrentTime(900),"narrow clock");Check(gr->raw_RenderFrame(),"narrow scene and HUD");
     auto cyan=ColorBounds(0x20d0e0);magenta=ColorBounds(0xcc00cc);
-    printf("narrow pixels: world x=%ld..%ld, HUD x=%ld..%ld; expected 4:3 side margins 240.\n",cyan.left,cyan.right,magenta.left,magenta.right);
-    assert(cyan.left==240 && cyan.right==1679 && cyan.top==0 && cyan.bottom==1079 && magenta.left==360 && magenta.right==1559);
-    narrowFill->Release();narrowBar->Release();
+    printf("narrow pixels: world x=%ld..%ld, HUD x=%ld..%ld; native actor size with margins.\n",cyan.left,cyan.right,magenta.left,magenta.right);
+    assert(cyan.left==568 && cyan.right==1351 && cyan.top==49 && cyan.bottom==1029 && magenta.left==360 && magenta.right==1559);
+    auto orange=ColorBounds(0xff8800);assert(orange.right-orange.left==59 && orange.bottom-orange.top==39);
+    // The original actor at x=560 crosses the new left edge by eight pixels.
+    red=ColorBounds(0xff0000);assert(red.left==568 && red.right==619 && red.bottom-red.top==39);
+    narrowActor->Release();narrowFill->Release();narrowBar->Release();
     // Real GPU integration of the native AquaRoad split (-867..-273..327).
     WorldViewport::SetContextForTesting(&current,field,{-2000,-1200,2000,1200},1920,1080);
     WorldViewport::BeginBackgrounds(field);

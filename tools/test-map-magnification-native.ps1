@@ -1,7 +1,7 @@
 param([string]$Client='C:\Game\BeiDou-Client-research',
  [string]$ToolchainRoot='C:\Game\BeiDou-Server\tools\msvc',
  [string]$WzInclude='C:\Game\BeiDou-Server\tools\kaentake-src\external\WzLib\include',
- [string]$ViewportSource='', [switch]$Baseline, [switch]$BuffRegression, [switch]$ExpectBuffBug)
+ [string]$ViewportSource='', [switch]$Baseline, [switch]$BuffRegression, [switch]$ExpectBuffBug, [string]$FixturePath='')
 $ErrorActionPreference='Stop';$repoRoot=Split-Path -Parent $PSScriptRoot
 if(($Baseline -and $BuffRegression) -or ($ExpectBuffBug -and !$BuffRegression)){throw 'Buff regression uses current scenery metadata; ExpectBuffBug requires BuffRegression'}
 if(!$ViewportSource){$ViewportSource=Join-Path $repoRoot 'ezorsia\WorldViewport.cpp'}
@@ -19,6 +19,7 @@ try{
  Copy-Item -LiteralPath (Join-Path $Client 'BeiDouUpscale.dll') -Destination (Join-Path $out 'BeiDouUpscale.dll') -Force
  $mode=if($BuffRegression){if($ExpectBuffBug){'buff-before'}else{'buff'}}elseif($Baseline){'baseline'}else{'fixed'}
  $fixture=if($BuffRegression){'buff-hud.txt'}elseif($Baseline){'map-magnification.txt'}else{'map-scenery.txt'}
- & "$out\MapMagnificationNativeTests.exe" $Client "$repoRoot\tests\fixtures\$fixture" $mode
+ if(!$FixturePath){$FixturePath="$repoRoot\tests\fixtures\$fixture"}
+ & "$out\MapMagnificationNativeTests.exe" $Client $FixturePath $mode
  if($LASTEXITCODE -ne 0){throw "Map sample fixture failed: $LASTEXITCODE"}
 }finally{$env:PATH,$env:INCLUDE,$env:LIB=$savedPath,$savedInclude,$savedLib}

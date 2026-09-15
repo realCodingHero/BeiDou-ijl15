@@ -157,12 +157,12 @@ int main(int argc,char** argv) {
     WorldViewport::DrawLayerForTesting(&upper,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
     // Aqua plaza: centered on both axes, original viewport restored for HUD.
     auto narrow=WorldViewport::Fit({-400,-398,400,600},1920,1080);
-    assert(std::abs(narrow.scale-1440.0/784)<1e-8 && narrow.clip.left==240 && narrow.clip.right==1680);
-    assert(narrow.clip.top==0 && narrow.clip.bottom==1080);
-    assert(narrow.width==784 && narrow.height==588);
+    assert(narrow.scale==1 && narrow.clip.left==568 && narrow.clip.right==1352);
+    assert(narrow.clip.top==49 && narrow.clip.bottom==1031);
+    assert(narrow.width==784 && narrow.height==982);
     WorldViewport::SetContextForTesting(&current,map,{-400,-398,400,600},1920,1080);
     inputX=123;assert(WorldViewport::MouseMove(nullptr,nullptr,100,540)==0 && inputX==123);
-    for(POINT outside:{POINT{239,540},POINT{1680,540},POINT{960,-1},POINT{960,1080}}) {
+    for(POINT outside:{POINT{567,540},POINT{1352,540},POINT{960,48},POINT{960,1031}}) {
         inputX=123;inputY=456;
         assert(WorldViewport::MouseMove(nullptr,nullptr,outside.x,outside.y)==0);
         WorldViewport::MouseButton(nullptr,nullptr,0x203,7,outside.x,outside.y);
@@ -170,7 +170,7 @@ int main(int argc,char** argv) {
         WorldViewport::DragMove(nullptr,nullptr,2,reinterpret_cast<void*>(9),outside.x,outside.y);
         assert(inputX==123 && inputY==456);
     }
-    for(POINT inside:{POINT{240,0},POINT{1679,1079},POINT{960,540}}) {
+    for(POINT inside:{POINT{568,49},POINT{1351,1030},POINT{960,540}}) {
         assert(WorldViewport::MouseMove(nullptr,nullptr,inside.x,inside.y)==42);
         const auto mapped=WorldViewport::Inverse(inside,1920,1080,narrow.scale);
         assert(inputX==mapped.x && inputY==mapped.y);
@@ -190,7 +190,7 @@ int main(int argc,char** argv) {
     assert(d.viewport.x==0 && d.viewport.width==1920 && !memcmp(&d.projection,&originalProjection,sizeof(Matrix)));
     throwDraw=false;expectedScale=1;
     // Right-edge Buff HUD bypasses both projection and scene clipping, even
-    // at scale 1 (Great Tree I) or outside a tall map's 4:3 scene rectangle.
+    // at scale 1 (Great Tree I) or outside a tall map's scene rectangle.
     for(RECT bounds:{RECT{-1760,370,56,2196},RECT{-360,-2500,440,450},RECT{-809,-633,2765,179}}) {
         WorldViewport::SetContextForTesting(&current,map,bounds,1920,1080);
         for(Layer* layer:{&buff,&cooldown,&buffChild}) for(int fail=0;fail<5;++fail) {

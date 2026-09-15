@@ -1,10 +1,10 @@
 # Actual research map bounds; scenery extrema for Temple come from map-scenery.txt.
 # The two forests are not ShortWide, so scenery collection cannot change their fit.
-map 270010000 -2088 -251 703 288 1.451612903226
+map 270010000 -2088 -251 703 288 1.000000000000
 rect -2092 -423 -1897 -156
 rect 38 177 263 337
 end
 map 101010100 -1760 370 56 2196 1.000000000000
 end
-map 101020001 -360 -2500 440 450 1.836734693878
+map 101020001 -360 -2500 440 450 1.000000000000
 end

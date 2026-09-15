@@ -17,12 +17,13 @@ integer camera center cannot escape a half-pixel edge on odd-sized maps.
 Framing is scoped by the native resolved bounds, independently of output size:
 
 - Audited short landscape maps (even inner height <=540, aspect >=16:9)
-  first extend only vertical bounds to static object/terrain artwork, then
-  proportionally fill height if necessary. Three Doors uses 1.4555x at 1080p
-  after revealing its pillar tops and bridge base, instead of the old 2.3789x.
-- Tall narrow maps (native width <=1280, height >width) use a centered 4:3
-  effective scene. Aqua Central Plaza has x=240..1679, y=0..1079 at 1920x1080.
-  The world is scaled equally on both axes; the camera can still move vertically.
+  extend only vertical bounds to static object/terrain artwork and retain 1x
+  actor size, matching Henesys at 1080p. Three Doors has a 742px scene height
+  with 169px top/bottom margins instead of magnifying actors to fill height.
+- Tall narrow maps (native width <=1280, height >width) also retain 1x actor
+  size and use only the available scene width/height, without imposing 4:3.
+  Aqua Central Plaza has x=568..1351, y=49..1030 at 1920x1080. Taller maps
+  still scroll vertically while retaining the same native actor size.
 - All other maps retain the accepted height-fit rule and original VR bounds.
 
 The local 5,363-map scan classifies 43 short landscape, 1,200 tall narrow and
@@ -31,7 +32,9 @@ is no map-ID patch list or WZ mutation. HUD spans the full framebuffer.
 Guarded LoadObjects/MakeObjLayer entries collect all static animation frames;
 LoadTile also collects canvas dimensions and origins. Only numeric rectangles
 survive the load. Failed metadata makes short maps fall back to 1x margins.
-Moving actors, moving objects and repeating decorative backs cannot enlarge
+Both special classes keep their native actor scale at other render sizes too;
+the final window scaler still applies to the whole frame. Moving actors,
+moving objects and repeating decorative backs cannot enlarge
 the map extent. See [sample results](map-magnification-samples.md).
 
 ### Ground coverage and the camera bottom
@@ -191,7 +194,7 @@ linear/vsync path and full internal resolution.
   supported v83 EXE and retain transactional startup validation/rollback.
 - Eighteen map-scenery samples render the actual NPC 2140000 sprite through
   PCOM/Gr2D/D3D8-to-9. Its footprint follows the selected proportional scale;
-  Three Doors changes from 152x217 to 93x133. Full-window HUD and scene margins
+  Three Doors changes from 93x133 to 64x91, matching Henesys. Full-window HUD and scene margins
   are checked in the same frames. See [sample results](map-magnification-samples.md)
   for provenance, reproduction, and limits of this component test.
 - The real EXE fixture covers 64 configurations, camera clamps and all 26
@@ -217,10 +220,11 @@ linear/vsync path and full internal resolution.
   not 2,221 in-game visits.
 - Real PCOM/Gr2D/Canvas integration with the deployed D3D8-to-9 module verifies
   GPU pixels: world and equipment scale together, a native negative-Z HUD
-  stays 1200x40, narrow scene bounds are x=529..1390 while HUD spans x=360..1559,
+  stays 1200x40, narrow scene bounds are x=568..1351 while HUD spans x=360..1559,
   and stage exit restores a 60x40 world layer. Adjacent texture fixtures
-  reproduce 17 seam pixels with old linear or point UVs, then zero after
-  correction in horizontal/vertical scans. Joined AquaRoad pieces have no
+  reproduce 12 seam pixels with old point UVs, then zero after correction.
+  Forced native linear filtering retains its accepted 24-pixel ceiling.
+  Joined AquaRoad pieces have no
   gap. It also checks 800-layer timing;
   that synthetic workload is not a game-wide performance guarantee.
 - Real PCOM Property/Canvas alpha reads and Gr2D zero-size terrain layers
