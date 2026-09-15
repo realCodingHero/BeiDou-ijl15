@@ -186,6 +186,15 @@
       "instruction": "mov eax, 0x320"
     },
     {
+      "address": 4766659,
+      "size": 7,
+      "kind": "Jump",
+      "guard": 4766659,
+      "guard_size": 7,
+      "original": "8bc65ec9c20400",
+      "instruction": "mov eax, esi; pop esi; leave ; ret 4"
+    },
+    {
       "address": 4894991,
       "size": 14,
       "kind": "Jump",
@@ -1590,13 +1599,13 @@
       "instruction": "sub eax, 0x12c"
     },
     {
-      "address": 6562053,
+      "address": 6562027,
       "size": 7,
-      "kind": "Jump",
-      "guard": 6562053,
+      "kind": "Fill",
+      "guard": 6562027,
       "guard_size": 7,
-      "original": "85c074068b0850",
-      "instruction": "test eax, eax; je 0x64210f; mov ecx, dword ptr [eax]; push eax"
+      "original": "03c1992bc2d1f8",
+      "instruction": "add eax, ecx; cdq ; sub eax, edx; sar eax, 1"
     },
     {
       "address": 6562228,
@@ -2290,6 +2299,24 @@
       "guard_size": 6,
       "original": "8d9855feffff",
       "instruction": "lea ebx, [eax - 0x1ab]"
+    },
+    {
+      "address": 9300213,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9300212,
+      "guard_size": 5,
+      "original": "beb42dbe00",
+      "instruction": "mov esi, 0xbe2db4"
+    },
+    {
+      "address": 9300264,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 9300262,
+      "guard_size": 6,
+      "original": "81fef42dbe00",
+      "instruction": "cmp esi, 0xbe2df4"
     },
     {
       "address": 9300884,

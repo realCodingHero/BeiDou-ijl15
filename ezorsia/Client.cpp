@@ -188,10 +188,13 @@ bool Client::UpdateResolution() {
 	try {
 	ResolutionPatch::Batch patches;
 	nStatusBarY = Client::m_nGameHeight - 578;
+	nStatusBarX = StatusBarLayout::Left(m_nGameWidth);
+	const int statusBarWidth = StatusBarLayout::Width(m_nGameWidth);
 
 	patches.CodeCave(AdjustStatusBar, dwStatusBarVPos, 5);
 	patches.CodeCave(AdjustStatusBarBG, dwStatusBarBackgroundVPos, 5);
 	patches.CodeCave(AdjustStatusBarInput, dwStatusBarInputVPos, 9);
+	patches.CodeCave(CenterStatusBarOrigin, 0x0048BBC3, 7);
 
 	patches.WriteInt(dwApplicationHeight + 1, m_nGameHeight);//push 600
 	patches.WriteInt(dwApplicationWidth + 1, m_nGameWidth);	//push 800 ; CWvsApp::InitializeGr2D
@@ -218,8 +221,12 @@ bool Client::UpdateResolution() {
 	patches.WriteInt(dwQuickSlotInitHPos + 1, 815); //push 647 //hd800
 	patches.WriteInt(dwQuickSlotVPos + 2, m_nGameHeight + 1);//add esi,533
 	patches.WriteInt(dwQuickSlotHPos + 1, 815); //push 647 //hd800
-	patches.WriteInt(dwQuickSlotCWndVPos + 2, (600 - m_nGameHeight) / 2 - 427 - 20); //lea edi,[eax-427]
+	// Both CWnd and quickslot are bottom-anchored: their relative distance is
+	// constant at every render height (578 - 79 + 8 = 507).
+	patches.WriteInt(dwQuickSlotCWndVPos + 2, -507);
 	patches.WriteInt(dwQuickSlotCWndHPos + 2, -815); //lea ebx,[eax-647]
+	patches.WriteInt(0x008DE8F4 + 1, (DWORD)&Array_ptShortKeyPos_Fixed_Tooltips + 4);
+	patches.WriteInt(0x008DE926 + 2, (DWORD)&Array_ptShortKeyPos_Fixed_Tooltips + 4 + sizeof(Array_ptShortKeyPos_Fixed_Tooltips));
 
 	//patches.WriteInt(dwByteAvatarMegaHPos + 1, m_nGameWidth + 100); //push 800 ; CAvatarMegaphone::ByeAvatarMegaphone ; IWzVector2D::RelMove ##BAK
 	patches.WriteInt(dwByteAvatarMegaHPos + 1, m_nGameWidth); //push 800 ; CAvatarMegaphone::ByeAvatarMegaphone ; IWzVector2D::RelMove
@@ -315,7 +322,7 @@ bool Client::UpdateResolution() {
 	patches.WriteInt(0x0080546C + 1, m_nGameHeight);//mov edi,600
 	patches.WriteInt(0x00805459 + 1, m_nGameWidth);	//mov edx,800 ; CUIEventAlarm::CreateEventAlarm
 	patches.WriteInt(0x008CFD4B + 1, m_nGameHeight - 22);	//push 578
-	patches.WriteInt(0x008CFD50 + 1, m_nGameWidth);	//push 800
+	patches.WriteInt(0x008CFD50 + 1, statusBarWidth); // CUIStatusBar::CreateWnd, local hit bounds
 	patches.WriteInt(0x0053836D + 1, (unsigned int)floor(-m_nGameHeight / 2));//push -300
 	patches.WriteInt(0x00538373 + 1, (unsigned int)floor(-m_nGameWidth / 2));	//push -400	; RelMove?
 	patches.WriteInt(0x0055BB2F + 1, (unsigned int)floor(-m_nGameHeight / 2));//push -300
@@ -383,9 +390,9 @@ bool Client::UpdateResolution() {
 	patches.WriteInt(0x008D937E + 1, m_nGameHeight - 19);	//push 581 //008D9373  move mana bar outline? //ty rynyan
 	patches.WriteInt(0x008D9AC9 + 1, m_nGameHeight - 19);	//push
 	patches.WriteInt(0x008D1D50 + 1, m_nGameHeight - 22);	//push 578
-	patches.WriteInt(0x008D1D55 + 1, m_nGameWidth);	//push 800
+	patches.WriteInt(0x008D1D55 + 1, statusBarWidth); // status bar canvas
 	patches.WriteInt(0x008D1FF4 + 1, m_nGameHeight - 22);	//push 578
-	patches.WriteInt(0x008D1FF9 + 1, m_nGameWidth);	//push 800 ; CUIStatusBar
+	patches.WriteInt(0x008D1FF9 + 1, statusBarWidth); // status bar input canvas
 	patches.WriteInt(0x0062F5DF + 1, m_nGameHeight);//push 600
 	patches.WriteInt(0x0062F5E4 + 1, m_nGameWidth);	//push 800 ; (UI/Logo/Nexon)
 	patches.WriteInt(0x004EDB89 + 1, m_nGameWidth);	//mov ecx,800
@@ -635,8 +642,16 @@ bool Client::UpdateResolution() {
 	//patches.WriteInt(0x0064202F + 2, (unsigned int)floor(m_nGameWidth / 2));	//mov ebc,400 ;  VRright		//camera movement	//crashes
 	patches.WriteInt(0x0064208F + 1, (unsigned int)floor(m_nGameHeight / 2));	//add eax,300  ; VRbottom //camera movement //not working for most maps
 
-	myAlwaysViewRestoreFixOffset = myHeight; //parameters for fix view restore all maps number ?????working????!!!
-	patches.CodeCave(AlwaysViewRestoreFix, dwAlwaysViewRestoreFix, dwAlwaysViewRestoreFixNOPs);	//fix view restora on all maps, currently does nothing; i likely looked in the wrong area
+	// RestoreViewRange already reads each map's VR (or foothold bounds). For
+	// shorter maps, keep the bottom camera limit instead of averaging it with
+	// the top limit. This keeps ground/foreground at their authored lower edge
+	// at 1080p+, without moving/scaling individual map objects. The <=720p
+	// presentation remains compatible. Wide/tall maps retain native scrolling.
+	if (m_nGameHeight > 720) {
+		patches.FillBytes(0x006420EB, 0x90, 7); // add eax,ecx; cdq; sub eax,edx; sar eax,1
+	}
+	// 0x00642105 is a nullable COM Release, not a viewport adjustment. Leave
+	// the original null branch intact; the old cave could dereference height/2.
 
 	if (CustomLoginFrame) {
 		patches.WriteInt(0x005F481E + 1, (unsigned int)floor(-m_nGameHeight / 2));//push -300				!!game login frame!! turn this on if you edit UI.wz and use a frame that matches your res
@@ -832,9 +847,8 @@ void Client::LongQuickSlot() {
 	Memory::WriteInt(0x008DE955 + 2, (DWORD)&Array_ptShortKeyPos + 4);
 	Memory::WriteByte(0x008DE941 + 2, 0x1A); //change cmp 8 --> cmp 26
 
-	//CUIStatusBar::GetShortCutIndexByPos
-	Memory::WriteInt(0x008DE8F4 + 1, (DWORD)&Array_ptShortKeyPos_Fixed_Tooltips + 4);
-	Memory::WriteByte(0x008DE926 + 1, 0x3E);
+	// GetShortCutIndexByPos's table and end pointer are installed atomically in
+	// UpdateResolution. Preserve cmp esi,imm32; cmp [esi],imm32 overran the array.
 
 	//CUIStatusBar::CQuickSlot::DrawSkillCooltime
 	Memory::WriteByte(0x008E099F + 3, 0x1A);
