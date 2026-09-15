@@ -653,6 +653,8 @@ bool Client::UpdateResolution() {
 	// All world layers and world input share that transform; HUD stays separate.
 	// Keep bottom anchoring as the fallback when the guarded renderer is absent.
 	if (m_nGameHeight > 720) {
+		patches.CodeCave(AdaptiveTerrainBegin, 0x0063A100, 5);
+		patches.CodeCave(AdaptiveTerrainTile, 0x0063A843, 5);
 		patches.CodeCave(AdaptiveBackgroundBegin, 0x0063CBBA, 5);
 		patches.CodeCave(AdaptiveBackground, 0x0063D2F2, 6);
 		patches.CodeCave(AdaptiveWorldCamera, 0x00642094, 6);

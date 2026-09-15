@@ -2,10 +2,12 @@
 #include "detours.h"
 #include <algorithm>
 #include <cmath>
+#include <climits>
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
 #include <vector>
+#include <map>
 
 namespace {
 int renderWidth = 800, renderHeight = 600;
@@ -14,6 +16,12 @@ const void* activeMap = nullptr; // Identity only; no retained game/COM objects.
 WorldViewport::View activeView;
 const void* loadingMap=nullptr;
 std::vector<int> loadingBackdrops, activeBackdrops;
+const void* terrainMap=nullptr;
+bool terrainValid=false;
+std::vector<WorldViewport::GroundTile> groundTiles;
+struct GroundCanvas { int width=0,originX=0,originY=0,solidRows=0; };
+// Borrowed identity keys only during LoadTiles; native layers own the canvases.
+std::map<void*,GroundCanvas> groundCanvases;
 uintptr_t layerVtable = 0;
 bool graphicsReady = false;
 using DrawLayer = void (__thiscall*)(void*, void*);
@@ -219,6 +227,97 @@ View Fit(RECT bounds, int width, int height) {
         LONG(std::floor(bounds.right-hw+epsilon)), LONG(std::floor(bounds.bottom-hh+epsilon))};
     return view;
 }
+bool ConstrainGround(View& view, RECT bounds, const std::vector<GroundTile>& tiles) try {
+    if (view.width<=0 || view.height<=0 || view.camera.top>=view.camera.bottom) return false;
+    std::map<std::pair<int,int>,std::vector<GroundTile>> rows;
+    for (const auto& tile:tiles) {
+        if (tile.right>tile.left && tile.solidBottom>tile.top)
+            rows[{tile.layer,tile.top}].push_back(tile);
+    }
+    int bestBottom=INT_MIN;
+    const double oldBottom=view.camera.bottom+view.height/2;
+    for (auto& entry:rows) {
+        auto& row=entry.second;
+        std::sort(row.begin(),row.end(),[](const GroundTile& a,const GroundTile& b){return a.left<b.left;});
+        int left=row[0].left,right=row[0].right,solidBottom=row[0].solidBottom;
+        int edgeWidth=row[0].right-row[0].left, count=1;
+        auto consider=[&]() {
+            // The native fallback adds 100 below the foothold MBR. Correct
+            // only that near-boundary band, not intentional deep empty space.
+            const int bottom=solidBottom-1; // Keep the first transparent row outside.
+            if (count<2 || right-left<view.width ||
+                left>bounds.left+edgeWidth/2 || right<bounds.right-edgeWidth/2 ||
+                bottom>=oldBottom || oldBottom-bottom>100) return;
+            bestBottom=(std::max)(bestBottom,bottom);
+        };
+        for (size_t i=1;i<row.size();++i) {
+            if (row[i].left>right) {consider();left=row[i].left;right=row[i].right;solidBottom=row[i].solidBottom;edgeWidth=row[i].right-row[i].left;count=1;}
+            else {right=(std::max)(right,row[i].right);solidBottom=(std::min)(solidBottom,row[i].solidBottom);edgeWidth=(std::min)(edgeWidth,row[i].right-row[i].left);++count;}
+        }
+        consider();
+    }
+    if (bestBottom==INT_MIN) return false;
+    const int limit=int(std::floor(bestBottom-view.height/2));
+    // Preserve both magnification and the existing upper limit. A scene with
+    // insufficient vertical camera travel cannot be fixed by moving it alone.
+    if (limit<view.camera.top || limit>=view.camera.bottom) return false;
+    view.camera.bottom=limit;
+    return true;
+} catch (...) {
+    // Allocation failure during a map load must keep the existing camera.
+    return false;
+}
+void __cdecl BeginTerrain(void* map) {
+    terrainMap=map;terrainValid=graphicsReady && renderHeight>720;
+    groundTiles.clear();groundCanvases.clear();
+}
+void CollectTerrainTile(void* map,int layer,void* property,void* canvas,int x,int y) {
+    if (!terrainValid || terrainMap!=map || !property || !canvas || layer<0 || layer>7) return;
+    VARIANT type{};BSTR name=SysAllocString(L"u");
+    if (!name) {terrainValid=false;return;}
+    using Item=HRESULT (__stdcall*)(void*,BSTR,VARIANT*);
+    const HRESULT hr=Method<Item>(property,0x14)(property,name,&type);
+    SysFreeString(name);
+    const bool end=SUCCEEDED(hr) && type.vt==VT_BSTR && type.bstrVal && wcscmp(type.bstrVal,L"enH1")==0;
+    VariantClear(&type);
+    if (FAILED(hr)) {terrainValid=false;return;}
+    if (!end) return;
+    try {
+        auto found=groundCanvases.find(canvas);
+        if (found==groundCanvases.end()) {
+            GroundCanvas meta;unsigned width=0,height=0;
+            using Size=HRESULT (__stdcall*)(void*,unsigned*);
+            using Origin=HRESULT (__stdcall*)(void*,int*);
+            using Pixel=HRESULT (__stdcall*)(void*,int,int,unsigned*);
+            if (FAILED(Method<Size>(canvas,0x40)(canvas,&width)) ||
+                FAILED(Method<Size>(canvas,0x48)(canvas,&height)) ||
+                FAILED(Method<Origin>(canvas,0x6C)(canvas,&meta.originX)) ||
+                FAILED(Method<Origin>(canvas,0x74)(canvas,&meta.originY))) {terrainValid=false;return;}
+            // Bound load-time inspection. Unknown/oversized end caps are not
+            // evidence that a map has a safe continuous bottom edge.
+            if (!width || width>512 || !height || height>512) {terrainValid=false;return;}
+            meta.width=int(width);
+            for (unsigned row=0;row<height;++row) {
+                bool solid=true;
+                for (unsigned col=0;col<width;++col) {
+                    unsigned color=0;
+                    if (FAILED(Method<Pixel>(canvas,0x88)(canvas,int(col),int(row),&color))) {terrainValid=false;return;}
+                    if ((color>>24)!=255) {solid=false;break;}
+                }
+                if (!solid) break;
+                ++meta.solidRows;
+            }
+            found=groundCanvases.emplace(canvas,meta).first;
+        }
+        const auto& m=found->second;
+        if (m.solidRows) groundTiles.push_back({layer,x-m.originX,y-m.originY,x-m.originX+m.width,y-m.originY+m.solidRows});
+    } catch (...) {terrainValid=false;groundTiles.clear();groundCanvases.clear();}
+}
+void __cdecl RecordTerrainTile(int* frame,int y) {
+    // Guarded CMapLoadable::LoadTile at 63A843, before CreateLayer.
+    CollectTerrainTile(reinterpret_cast<void*>(frame[-0x24/4]),frame[2],
+        reinterpret_cast<void*>(frame[4]),reinterpret_cast<void*>(frame[-0x14/4]),frame[-0x20/4],y);
+}
 POINT Inverse(POINT screen, int width, int height, double scale) {
     if (!std::isfinite(scale) || scale <= 1.0) return screen;
     return {LONG(std::lround(width/2.0+(screen.x-width/2.0)/scale)),
@@ -227,6 +326,7 @@ POINT Inverse(POINT screen, int width, int height, double scale) {
 void Configure(int width, int height) {
     renderWidth=width; renderHeight=height; activeMap=nullptr; activeView={};
     loadingMap=nullptr; loadingBackdrops.clear(); activeBackdrops.clear();
+    terrainMap=nullptr;terrainValid=false;groundTiles.clear();groundCanvases.clear();
 }
 bool InstallGraphics(HMODULE module) {
     if (graphicsReady) return true;
@@ -277,12 +377,14 @@ void __cdecl AdjustCamera(void* map) {
         camera->right+renderWidth/2,camera->bottom+renderHeight/2};
     auto view=Fit(bounds,renderWidth,renderHeight);
     if (view.width<=0 || view.height<=0 || bounds.right-bounds.left<=16 || bounds.bottom-bounds.top<=16) return;
+    const bool groundAdjusted=terrainMap==map && terrainValid && ConstrainGround(view,bounds,groundTiles);
+    groundCanvases.clear(); // Never retain canvas identities beyond the load.
     *camera=view.camera; activeView=view; activeMap=map;
     if (loadingMap==map) activeBackdrops=loadingBackdrops;
-    char line[320]; sprintf_s(line,"bounds=(%ld,%ld,%ld,%ld) view=%.2fx%.2f zoom=%.4f camera=(%ld,%ld,%ld,%ld) clip=(%ld,%ld,%ld,%ld) backdrops=%u",
+    char line[360]; sprintf_s(line,"bounds=(%ld,%ld,%ld,%ld) view=%.2fx%.2f zoom=%.4f camera=(%ld,%ld,%ld,%ld) clip=(%ld,%ld,%ld,%ld) backdrops=%u groundCamera=%d",
         bounds.left,bounds.top,bounds.right,bounds.bottom,view.width,view.height,view.scale,
         camera->left,camera->top,camera->right,camera->bottom,
-        view.clip.left,view.clip.top,view.clip.right,view.clip.bottom,unsigned(activeBackdrops.size())); Log(line);
+        view.clip.left,view.clip.top,view.clip.right,view.clip.bottom,unsigned(activeBackdrops.size()),groundAdjusted); Log(line);
 }
 void __cdecl AdjustWorldCursor(POINT* screen) { if (screen) *screen=MapPoint(screen->x,screen->y); }
 void __cdecl BeginBackgrounds(void* map) {

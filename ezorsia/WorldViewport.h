@@ -1,5 +1,6 @@
 #pragma once
 #include <windows.h>
+#include <vector>
 
 namespace WorldViewport {
 struct View {
@@ -9,6 +10,11 @@ struct View {
     RECT clip{};
 };
 View Fit(RECT bounds, int width, int height);
+struct GroundTile { int layer,left,top,right,solidBottom; };
+bool ConstrainGround(View& view, RECT bounds, const std::vector<GroundTile>& tiles);
+void __cdecl BeginTerrain(void* map);
+void __cdecl RecordTerrainTile(int* frame,int y);
+void CollectTerrainTile(void* map,int layer,void* property,void* canvas,int x,int y);
 POINT Inverse(POINT screen, int width, int height, double scale);
 void Configure(int width, int height);
 bool InstallGraphics(HMODULE module);
