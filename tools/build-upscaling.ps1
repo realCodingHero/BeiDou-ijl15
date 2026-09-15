@@ -41,7 +41,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Proxy fixture build failed' }
     & $compiler @common /LD (Join-Path $repoRoot 'tests\upscaling\LoaderCaller.cpp') ('/Fo' + $outDir + '\') /link /MACHINE:X86 user32.lib ('/IMPLIB:' + (Join-Path $outDir 'fixture\LoaderCaller.lib')) ('/OUT:' + (Join-Path $outDir 'fixture\Gr2D_DX8.dll'))
     if ($LASTEXITCODE -ne 0) { throw 'Loader caller build failed' }
-    & $compiler @common (Join-Path $repoRoot 'tests\upscaling\LoaderTests.cpp') (Join-Path $repoRoot 'ezorsia\UpscaleLoader.cpp') ('/Fo' + $outDir + '\') /link /MACHINE:X86 (Join-Path $repoRoot 'detours\detours.lib') user32.lib ('/OUT:' + (Join-Path $outDir 'fixture\LoaderTests.exe'))
+    & $compiler @common (Join-Path $repoRoot 'tests\upscaling\LoaderTests.cpp') (Join-Path $repoRoot 'ezorsia\UpscaleLoader.cpp') (Join-Path $repoRoot 'ezorsia\WorldViewport.cpp') ('/Fo' + $outDir + '\') /link /MACHINE:X86 (Join-Path $repoRoot 'detours\detours.lib') oleaut32.lib user32.lib ('/OUT:' + (Join-Path $outDir 'fixture\LoaderTests.exe'))
     if ($LASTEXITCODE -ne 0) { throw 'Loader fixture build failed' }
     & (Join-Path $outDir 'fixture\LoaderTests.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Scoped loader tests failed' }

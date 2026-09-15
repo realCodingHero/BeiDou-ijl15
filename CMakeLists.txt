@@ -19,6 +19,7 @@ add_library(ijl15 SHARED
     ezorsia/ResolutionPatch.cpp
     ezorsia/StatusBarLayout.cpp
     ezorsia/AdaptiveLayout.cpp
+    ezorsia/WorldViewport.cpp
     ezorsia/ijl15.cpp
     ezorsia/ZAllocEx.cpp
     ezorsia/dllmain.cpp

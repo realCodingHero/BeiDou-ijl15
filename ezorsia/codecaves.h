@@ -2,6 +2,40 @@
 #include "WindowScaling.h"
 #include "StatusBarLayout.h"
 #include "AdaptiveLayout.h"
+#include "WorldViewport.h"
+
+DWORD worldCameraResume = 0x0064209A;
+__declspec(naked) void AdaptiveWorldCamera() {
+    __asm {
+        mov [esi + 0xFC], eax
+        pushfd
+        pushad
+        push esi
+        call WorldViewport::AdjustCamera
+        add esp, 4
+        popad
+        popfd
+        jmp dword ptr[worldCameraResume]
+    }
+}
+DWORD worldCursorResume = 0x009E313A;
+DWORD worldCursorSkip = 0x009E317B;
+__declspec(naked) void AdaptiveWorldCursor() {
+    __asm {
+        cmp dword ptr[esp + 0x10], 0
+        je screenCoordinates
+        pushfd
+        pushad
+        push esi
+        call WorldViewport::AdjustWorldCursor
+        add esp, 4
+        popad
+        popfd
+        jmp dword ptr[worldCursorResume]
+    screenCoordinates:
+        jmp dword ptr[worldCursorSkip]
+    }
+}
 
 DWORD loginFrameResume = 0x005F4829;
 __declspec(naked) void AdaptiveLoginFrame() {
