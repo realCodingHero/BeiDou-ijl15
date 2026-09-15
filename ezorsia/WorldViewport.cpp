@@ -141,7 +141,7 @@ struct ProjectionScope {
             cropped.y+=(savedViewport.height-cropped.height)/2;
             if (FAILED(Method<SetViewport>(dev,0xA0)(dev,&cropped))) return;
             viewportApplied=true;
-            // A narrower viewport must clip, not squeeze the world in X.
+            // A smaller viewport clips both axes without squeezing the world.
             sx*=double(savedViewport.width)/cropped.width;
             sy*=double(savedViewport.height)/cropped.height;
         }
@@ -215,12 +215,15 @@ View Fit(RECT bounds, int width, int height) {
     const double innerWidth=2*std::floor((bw-16)/2), innerHeight=2*std::floor((bh-16)/2);
     if (innerWidth<=0 || innerHeight<=0) return view;
     bounds.right=bounds.left+LONG(innerWidth); bounds.bottom=bounds.top+LONG(innerHeight);
-    // Fit vertically. A narrow map uses a centered, narrower drawing region
-    // instead of forcing the entire window width to be filled by zooming in.
-    view.scale = (std::max)(1.0, double(height)/innerHeight);
-    view.width = (std::min)(width/view.scale,innerWidth); view.height = height/view.scale;
-    const int visibleWidth=(std::min)(width,2*int(std::floor((view.width*view.scale+1e-8)/2)));
-    view.clip={(width-visibleWidth)/2,0,(width-visibleWidth)/2+visibleWidth,height};
+    // Keep actors, terrain and interactive objects at the same pixel scale
+    // across maps. Filling a short map vertically magnifies the entire world
+    // (Three Doors reached 2.38x). Center the authored region on either axis
+    // that cannot cover the render surface; the HUD keeps the full viewport.
+    view.width = (std::min)(double(width),innerWidth);
+    view.height = (std::min)(double(height),innerHeight);
+    const int visibleWidth=int(view.width),visibleHeight=int(view.height);
+    const int left=(width-visibleWidth)/2,top=(height-visibleHeight)/2;
+    view.clip={left,top,left+visibleWidth,top+visibleHeight};
     const double hw=view.width/2, hh=view.height/2;
     constexpr double epsilon=1e-8; // Floating-point roundoff at an integer limit.
     view.camera = {LONG(std::ceil(bounds.left+hw-epsilon)), LONG(std::ceil(bounds.top+hh-epsilon)),
@@ -364,7 +367,7 @@ bool InstallGraphics(HMODULE module) {
     }
     if (DetourTransactionCommit() != NO_ERROR) return false;
     layerVtable=base+0x2E3F0; graphicsReady=true;
-    Log("World viewport ready: vertical fit, side margins, independent HUD, aligned texels.");
+    Log("World viewport ready: uniform world size, centered margins, independent HUD, aligned texels.");
     return true;
 }
 void __cdecl AdjustCamera(void* map) {

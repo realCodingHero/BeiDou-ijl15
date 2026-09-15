@@ -52,11 +52,12 @@ void __fastcall Drag(void*,void*,int s,void* p,int x,int y) {
 int __fastcall IsField(void*,void*,const void* rtti) { assert(rtti==reinterpret_cast<void*>(0xBED758));return 1; }
 void CheckBounds(RECT r,int width,int height) {
     auto v=WorldViewport::Fit(r,width,height);
-    assert(v.scale>=1 && std::isfinite(v.scale));
-    assert(std::abs(v.height*v.scale-height)<1e-8);
-    assert(v.width*v.scale<=width+1e-8);
-    assert(v.clip.left>=0 && v.clip.right<=width && v.clip.bottom==height);
+    assert(v.scale==1);
+    assert(v.height<=height && v.width<=width);
+    assert(v.clip.right-v.clip.left==v.width && v.clip.bottom-v.clip.top==v.height);
+    assert(v.clip.left>=0 && v.clip.right<=width && v.clip.top>=0 && v.clip.bottom<=height);
     assert(std::abs(v.clip.left-(width-v.clip.right))<=1);
+    assert(std::abs(v.clip.top-(height-v.clip.bottom))<=1);
     assert(v.camera.left<=v.camera.right && v.camera.top<=v.camera.bottom);
     for(LONG x:{v.camera.left,v.camera.right}) for(LONG y:{v.camera.top,v.camera.bottom}) {
         assert(x-v.width/2>=r.left+8-1e-8 && x+v.width/2<=r.right-8+1e-8);
@@ -74,11 +75,16 @@ void CheckBounds(RECT r,int width,int height) {
 int main(int argc,char** argv) {
     static_assert(sizeof(void*)==4,"Native x86 ABI");
     for(RECT r: {RECT{-809,-633,2765,179},RECT{-2740,-748,809,179},RECT{-400,-300,400,300},
-        RECT{-3600,-1700,2700,255},RECT{-400,-6000,400,595}})
-        for(auto size:{POINT{1920,1080},POINT{2560,1440},POINT{3840,2160}}) CheckBounds(r,size.x,size.y);
+        RECT{-3600,-1700,2700,255},RECT{-400,-6000,400,595},RECT{-3045,-183,1326,287},
+        RECT{-449,-274,989,114},RECT{-9,-9,9,9}})
+        for(auto size:{POINT{1920,1080},POINT{2560,1440},POINT{3840,2160},POINT{1919,1079}}) CheckBounds(r,size.x,size.y);
     assert(WorldViewport::Fit({-3600,-1700,2700,255},1920,1080).scale==1);
     auto flight=WorldViewport::Fit({-809,-633,2765,179},1920,1080);
     assert(std::abs(flight.height-796)<1e-8 && flight.camera.top==-227 && flight.camera.bottom==-227);
+    assert(flight.clip.top==142 && flight.clip.bottom==938 && flight.clip.right==1920);
+    auto doors=WorldViewport::Fit({-3045,-183,1326,287},1920,1080);
+    assert(doors.scale==1 && doors.width==1920 && doors.height==454);
+    assert(doors.clip.top==313 && doors.clip.bottom==767);
     assert(WorldViewport::Fit({1,2,1,2},1920,1080).scale==1);
     void* stageMethods[19]{};
     struct { void* base=nullptr; void** handler; } stage{nullptr,stageMethods};
@@ -103,7 +109,8 @@ int main(int argc,char** argv) {
         WorldViewport::DrawLayerForTesting(layer,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
         assert(calls==1 && !memcmp(&d.projection,&originalProjection,sizeof(Matrix)));
         assert(*reinterpret_cast<int*>(layer->bytes+0x4C)==1);
-        assert(d.writes==(expectedScale>1 ? 2:0));
+        assert(d.writes==(!fail && (layer==&world || layer==&equipment) ? 2:0));
+        assert(d.viewport.x==0 && d.viewport.y==0 && d.viewport.width==1920 && d.viewport.height==1080);
     }
     d.failure=0; expectedScale=flight.scale; throwDraw=true;
     try { WorldViewport::DrawLayerForTesting(&world,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw)); assert(false); }
@@ -143,12 +150,24 @@ int main(int argc,char** argv) {
     WorldViewport::DrawLayerForTesting(&lower,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
     WorldViewport::RegisterBackground(map,2,0,-5);expectedScale=1.8;
     WorldViewport::DrawLayerForTesting(&upper,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
-    // Narrow Aqua plaza: vertical scale about 1.10, centered side margins,
-    // same pixel scale in X/Y, original viewport restored before native HUD.
+    // Aqua plaza: centered on both axes, original viewport restored for HUD.
     auto narrow=WorldViewport::Fit({-400,-398,400,600},1920,1080);
-    assert(narrow.scale<1.11 && narrow.clip.left==529 && narrow.clip.right==1391);
+    assert(narrow.scale==1 && narrow.clip.left==568 && narrow.clip.right==1352);
+    assert(narrow.clip.top==49 && narrow.clip.bottom==1031);
     WorldViewport::SetContextForTesting(&current,map,{-400,-398,400,600},1920,1080);
     inputX=123;assert(WorldViewport::MouseMove(nullptr,nullptr,100,540)==0 && inputX==123);
+    for(POINT outside:{POINT{567,540},POINT{1352,540},POINT{960,48},POINT{960,1031}}) {
+        inputX=123;inputY=456;
+        assert(WorldViewport::MouseMove(nullptr,nullptr,outside.x,outside.y)==0);
+        WorldViewport::MouseButton(nullptr,nullptr,0x203,7,outside.x,outside.y);
+        assert(WorldViewport::MouseWheel(nullptr,nullptr,outside.x,outside.y,120)==0);
+        WorldViewport::DragMove(nullptr,nullptr,2,reinterpret_cast<void*>(9),outside.x,outside.y);
+        assert(inputX==123 && inputY==456);
+    }
+    for(POINT inside:{POINT{568,49},POINT{1351,1030},POINT{960,540}}) {
+        assert(WorldViewport::MouseMove(nullptr,nullptr,inside.x,inside.y)==42);
+        assert(inputX==inside.x && inputY==inside.y);
+    }
     assert(WorldViewport::MouseMove(nullptr,nullptr,960,540)==42 && inputX==960);
     for(int fail=0;fail<5;++fail) {
         d.failure=fail;d.viewportWrites=0;expectedScale=fail ? 1:narrow.scale;
