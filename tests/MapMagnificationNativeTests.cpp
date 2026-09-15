@@ -42,7 +42,8 @@ void Save(const std::filesystem::path& path){
 }
 }
 int main(int argc,char** argv){
- if(argc!=4)return 2;const bool baseline=std::string(argv[3])=="baseline";
+ if(argc!=4)return 2;const std::string mode=argv[3];const bool baseline=mode=="baseline";
+ const bool buffTest=mode=="buff"||mode=="buff-before",expectBuffBug=mode=="buff-before";
  setvbuf(stdout,nullptr,_IONBF,0);SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX);
  wchar_t exe[MAX_PATH];GetModuleFileNameW(nullptr,exe,MAX_PATH);const auto out=std::filesystem::path(exe).parent_path();
  assert(out.filename()==L"world-native");assert(SetCurrentDirectoryW(out.c_str()));assert(SetDllDirectoryA(argv[1]));
@@ -79,6 +80,14 @@ int main(int argc,char** argv){
  }
  auto actor=layer(npc,-header[0]/2,-header[1]/2,int(0xC0000000));
  auto hud=layer(bar,-600,490,int(0xC00615D0));marker=layer(dot,900,530,0x7ffffffd);
+ // Two 32px screen icons and a separate cooldown layer at the real native Z.
+ // The middle marker straddles Great Tree I's right scene clip (x=1860).
+ const DWORD buffColors[]={0xff00ff,0xff0000,0x00ff00};
+ const int buffX[]={1885,1853,1817};std::vector<IWzGr2DLayer*> buffLayers;
+ if(buffTest)for(int i=0;i<3;++i){
+  auto c=canvas(32,32,0xff000000|buffColors[i]);
+  buffLayers.push_back(layer(c,buffX[i]-960,23-540,int(0xC006156C)));c->Release();
+ }
  alignas(4) unsigned char field[0x110]{};void* methods[19]{};methods[18]=reinterpret_cast<void*>(&IsField);*reinterpret_cast<void***>(field+4)=methods;void* current=field;
  std::ifstream input(argv[2]);assert(input);std::string line;int count=0,tick=100;
  std::vector<Sample> samples;Sample sample;
@@ -90,6 +99,8 @@ int main(int argc,char** argv){
   else if(kind=="end")samples.push_back(sample);
  }
  std::ofstream csv(out/(baseline ? L"magnification-before.csv":L"magnification-after.csv"));csv<<"map,scale,npcWidth,npcHeight,clipLeft,clipTop,clipRight,clipBottom\n";
+ std::ofstream buffCsv;
+ if(buffTest){buffCsv.open(out/(expectBuffBug ? L"buff-before.csv":L"buff-after.csv"));buffCsv<<"map,scale,iconRightWidth,iconNextWidth,cooldownWidth\n";}
  for(const auto& s:samples){
   const auto& id=s.id;const RECT bounds=s.bounds;
   WorldViewport::SetContextForTesting(&current,field,bounds,1920,1080);auto v=WorldViewport::Fit(bounds,1920,1080);
@@ -123,6 +134,20 @@ int main(int argc,char** argv){
   int w=visible.right-visible.left+1,h=visible.bottom-visible.top+1;
   assert(std::abs(w-(header[4]-header[2])*v.scale)<=2&&std::abs(h-(header[5]-header[3])*v.scale)<=2);
   const auto hb=Bounds(0x0000ff);assert(hb.left==360&&hb.right==1559&&hb.top==1030&&hb.bottom==1069);
+  if(buffTest){
+   int widths[3]{};
+   for(int i=0;i<3;++i){
+    const auto b=Bounds(buffColors[i]);widths[i]=std::max(0L,b.right-b.left+1);
+    if(!expectBuffBug)assert(b.left==buffX[i]&&b.right==buffX[i]+31&&b.top==23&&b.bottom==54);
+   }
+   if(expectBuffBug){
+    if(id=="101010100")assert(widths[0]==0&&widths[1]==7&&widths[2]==32);
+    else assert(widths[0]==0&&widths[1]==0&&widths[2]==0);
+   }
+   printf("Buff %s %s: right=%d next=%d cooldown=%d (full width=32)\n",expectBuffBug ? "before":"after",id.c_str(),widths[0],widths[1],widths[2]);
+   buffCsv<<id<<','<<v.scale<<','<<widths[0]<<','<<widths[1]<<','<<widths[2]<<'\n';
+   Save(out/(id+(expectBuffBug ? "-buff-before.bmp":"-buff-after.bmp")));
+  }
   // The full-window HUD may cover the last few scene rows on a narrow map.
   const int worldBottom=v.clip.left>=360&&v.clip.right<=1560&&v.clip.bottom>1030&&v.clip.bottom<=1070 ? 1029:v.clip.bottom-1;
   const auto fb=Bounds(0x20d0e0);assert(fb.left==v.clip.left&&fb.right==v.clip.right-1&&fb.top==v.clip.top&&fb.bottom==worldBottom);
@@ -135,7 +160,7 @@ int main(int argc,char** argv){
   csv<<id<<','<<v.scale<<','<<w<<','<<h<<','<<v.clip.left<<','<<v.clip.top<<','<<v.clip.right<<','<<v.clip.bottom<<'\n';++count;
   if(id=="270000000"||id=="260010402")Save(out/(id+(baseline ? "-before.bmp":"-after.bmp")));
  }
- assert(count==(baseline ? 14:18));marker->Release();hud->Release();actor->Release();for(auto tile:tiles)tile->Release();npc->Release();bar->Release();dot->Release();
+ assert(count==(buffTest ? 3:baseline ? 14:18));for(auto buff:buffLayers)buff->Release();marker->Release();hud->Release();actor->Release();for(auto tile:tiles)tile->Release();npc->Release();bar->Release();dot->Release();
  Check(gr->raw_Uninitialize(),"uninitialize");gr->Release();term();DestroyWindow(hwnd);
  printf("PASS %d sampled map bounds through real Gr2D + NPC 2140000, scene clips and independent HUD.\n",count);
 }

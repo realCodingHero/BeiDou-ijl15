@@ -186,10 +186,11 @@ struct ProjectionScope {
 };
 void __fastcall RenderLayer(void* layer, void*, void* context) {
     auto root=RootLayer(layer);
-    // Native status bar (8CFD46) is C00615D0, screen messages C0061634,
-    // windows C00616FC. They are negative too. World effects stop below HUD.
+    // Screen roots are negative too. TemporaryStatView creates both its icon
+    // (7B406D) and cooldown (7B4310) at C006156C, 100 below the status bar.
+    // Exclude that HUD band explicitly; lower field-effect bands remain world.
     const int z=root ? *reinterpret_cast<int*>(static_cast<unsigned char*>(root)+0x44):0;
-    const bool world=root && z<int(0xC00615D0u) && context && HasScene();
+    const bool world=root && z<int(0xC00615D0u) && z!=int(0xC006156Cu) && context && HasScene();
     double scale=world ? DrawScale():1.0;
     if (world && std::find(activeBackdrops.begin(),activeBackdrops.end(),z)!=activeBackdrops.end())
         scale=(std::max)(scale,renderHeight/600.0);

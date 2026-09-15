@@ -308,6 +308,10 @@ int main(int argc, char** argv) {
     for (unsigned i=0; i<nt->FileHeader.NumberOfSections; ++i)
         memcpy(mapped+sections[i].VirtualAddress, bytes.data()+sections[i].PointerToRawData, sections[i].SizeOfRawData);
     original = Snapshot();
+    // Both native TemporaryStatView screen roots sit below StatusBar's Z.
+    // Guard the EXE evidence used by the world/HUD classifier.
+    assert(memcmp(At(0x007B406D), "\x68\x6C\x15\x06\xC0", 5) == 0);
+    assert(memcmp(At(0x007B4310), "\x68\x6C\x15\x06\xC0", 5) == 0);
     Reset();
     const unsigned dimensions[][2] = {{800,600},{1280,720},{1920,1080},{2560,1440}};
     for (unsigned options=0; options<16; ++options) {
@@ -329,6 +333,12 @@ int main(int argc, char** argv) {
             assert(*reinterpret_cast<unsigned*>(At(0x0064059B)) == size[0]/2-10);
             assert(*reinterpret_cast<unsigned*>(At(0x006405BC)) == size[1]-10);
             assert(*reinterpret_cast<unsigned*>(At(0x006406FC)) == size[1]/2);
+            assert(*reinterpret_cast<int*>(At(0x007B2EA3)) == -int(size[0])+6); // tooltip
+            assert(*reinterpret_cast<int*>(At(0x007B308A)) == -int(size[0])+6); // hit test
+            assert(*reinterpret_cast<int*>(At(0x007B2C99)) == int(size[1])/2-23);
+            assert(*reinterpret_cast<int*>(At(0x007B2CB8)) == int(size[0])/2-3);
+            assert(*reinterpret_cast<int*>(At(0x007B2DA2)) == int(size[1])/2-23);
+            assert(*reinterpret_cast<int*>(At(0x007B2DC1)) == int(size[0])/2-3);
             assert(memcmp(At(0x0064061D), original.data()+0x0064061D-kImageBase, 5) == 0);
             assert(memcmp(At(0x00A5FC2B), original.data()+0x00A5FC2B-kImageBase, 5) == 0);
         }
