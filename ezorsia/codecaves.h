@@ -1,6 +1,37 @@
 #pragma once
 #include "WindowScaling.h"
 #include "StatusBarLayout.h"
+#include "AdaptiveLayout.h"
+
+DWORD loginFrameResume = 0x005F4829;
+__declspec(naked) void AdaptiveLoginFrame() {
+    __asm {
+        push nLoginFrameY
+        movsd
+        push nLoginFrameX
+        jmp dword ptr[loginFrameResume]
+    }
+}
+DWORD backgroundLayoutResume = 0x0063D2F8;
+void __cdecl AdjustBackgroundLayout(int* frame, int front) {
+    AdaptiveLayout::AdjustBackground(frame, front);
+}
+__declspec(naked) void AdaptiveBackground() {
+    __asm {
+        pushfd
+        pushad
+        push esi
+        push ebp
+        call AdjustBackgroundLayout
+        add esp, 8
+        popad
+        popfd
+        mov [ebp - 0x34], eax
+        mov [ebp - 0x3c], ebx
+        jmp dword ptr[backgroundLayoutResume]
+    }
+}
+
 int nStatusBarX = 0;
 int nStatusBarY = 0;
 __declspec(naked) void AdjustStatusBar() {

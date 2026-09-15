@@ -9,6 +9,7 @@
 #include "ResolutionPatch.h"
 #include "ResolutionPatchSites.h"
 #include "StatusBarLayout.h"
+#include "AdaptiveLayout.h"
 
 using namespace ResolutionPatch;
 static unsigned char* mapped;
@@ -106,6 +107,8 @@ static void ExecuteMapAndHotkeyInstructions(unsigned width, unsigned height) {
     }
     assert(*reinterpret_cast<unsigned*>(At(0x008CFD51)) == StatusBarLayout::Width(width));
     const int left = StatusBarLayout::Left(width), top = int(height)-578;
+    assert(*reinterpret_cast<int*>(At(0x00849E40)) == 666+left);
+    assert(*reinterpret_cast<int*>(At(0x0084A5BE)) == 707+left);
     // Start from screen coordinates of the DRAWN keys, then let the native
     // handler consume coordinates local to the translated CWnd.
     for (int row=0; row<2; ++row) for (int col=0; col<13; ++col) {
@@ -119,6 +122,69 @@ static void ExecuteMapAndHotkeyInstructions(unsigned width, unsigned height) {
         for (int x : {-100,0,814,815,1280,2000}) assert(hit(x,y) == -1);
     assert(memcmp(At(0x00642105), original.data()+0x00642105-kImageBase, 10) == 0);
     assert(VirtualFree(code, 0, MEM_RELEASE));
+}
+
+
+extern void AdaptiveBackground();
+extern void AdaptiveLoginFrame();
+extern DWORD backgroundLayoutResume, loginFrameResume;
+static int observedX, observedY;
+static DWORD observedEax, observedEbx;
+__declspec(naked) void BackgroundReturnFixture() { __asm { ret } }
+__declspec(naked) void LoginReturnFixture() {
+    __asm { pop observedX }
+    __asm { pop observedY }
+    __asm { ret }
+}
+static void ExecuteLayoutCaves() {
+    int storage[64]{};
+    int* frame = storage+48;
+    uintptr_t field = 0x00400000;
+    frame[-0x48/4] = reinterpret_cast<int>(&field);
+    frame[-0x74/4] = -226; frame[-0x70/4] = -13; frame[-0x68/4] = 0;
+    DWORD resume = backgroundLayoutResume;
+    backgroundLayoutResume = reinterpret_cast<DWORD>(&BackgroundReturnFixture);
+    __asm {
+        push ebp
+        push ebx
+        push esi
+        mov ecx, frame
+        mov ebp, ecx
+        xor esi, esi
+        mov eax, 0x12345678
+        mov ebx, 0x76543210
+        call AdaptiveBackground
+        mov observedEax, eax
+        mov observedEbx, ebx
+        pop esi
+        pop ebx
+        pop ebp
+    }
+    backgroundLayoutResume = resume;
+    assert(frame[-0x74/4] == -497);
+    assert(frame[-0x34/4] == 0x12345678 && frame[-0x3c/4] == 0x76543210);
+    assert(observedEax == 0x12345678 && observedEbx == 0x76543210);
+
+    AdaptiveLayout::ConfigureLogin(true); BeiDouEnableLoginViewportV1();
+    DWORD source = 0x98765432, destination = 0;
+    resume = loginFrameResume;
+    loginFrameResume = reinterpret_cast<DWORD>(&LoginReturnFixture);
+    __asm {
+        push esi
+        push edi
+        lea esi, source
+        lea edi, destination
+        mov eax, 0x12345678
+        cld
+        call AdaptiveLoginFrame
+        mov observedEax, eax
+        pop edi
+        pop esi
+    }
+    loginFrameResume = resume;
+    assert(observedX == -640 && observedY == -360);
+    assert(destination == source && observedEax == 0x12345678);
+    AdaptiveLayout::ConfigureLogin(false);
 }
 
 int main(int argc, char** argv) {
@@ -159,7 +225,7 @@ int main(int argc, char** argv) {
             assert(memcmp(At(0x00A5FC2B), original.data()+0x00A5FC2B-kImageBase, 5) == 0);
         }
     }
-    assert(Apply(1920,1080)); ExecuteRegressionInstructions();
+    assert(Apply(1920,1080)); ExecuteRegressionInstructions(); ExecuteLayoutCaves();
     // Corruption late in the manifest must reject the whole batch without earlier writes.
     Reset(); Change(0x009F7B1D, 0x90);
     auto before = Snapshot(); assert(!Apply(1920,1080)); assert(before == Snapshot());

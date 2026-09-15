@@ -1,6 +1,7 @@
 // Application-local D3D8 entry points. Initialization happens outside DllMain.
 #include "d3d8.hpp"
 #include "UpscaleRenderer.h"
+#include "LoginViewportBridge.h"
 #include <string>
 extern "C" IDirect3D8* WINAPI CreateTranslatedD3D8(UINT sdkVersion);
 namespace {
@@ -22,6 +23,7 @@ extern "C" IDirect3D8* WINAPI Direct3DCreate8(UINT sdkVersion) {
             auto* d3d = CreateTranslatedD3D8(sdkVersion);
             FreeLibrary(d3dx);
             if (d3d) {
+                LoginViewportBridge::Enable();
                 NeuralUpscale::Log("BeiDou built-in upscaling: DX8 -> DX9, algorithm=%s, quality=%s",
                     NeuralUpscale::Configuration().algorithm == NeuralUpscale::Algorithm::Linear ? "linear" : "cunny",
                     NeuralUpscale::Configuration().quality == NeuralUpscale::Quality::Fast ? "fast" : "balanced");

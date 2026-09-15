@@ -1,5 +1,6 @@
 #pragma once
 #include "AutoTypes.h"
+#include "AdaptiveLayout.h"
 
 static bool ownLoginFrame;
 static bool ownCashShopFrame;
@@ -2111,6 +2112,10 @@ bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //t
 		{
 			case 1307:	//1307_UI_LOGINIMG_COMMON_FRAME = 51Bh
 				if (EzorsiaV2WzIncluded && !ownLoginFrame) {
+                    if (AdaptiveLayout::UseWideLoginFrame()) {
+                        *ret = "UI/MapleEzorsiaV2wzfiles.img/Common/frame1280";
+                        break;
+                    }
 					switch (Client::m_nGameWidth)
 					{
 						case 1280:	//ty teto for the suggestion to use ZXString<char>::Assign and showing me available resources

@@ -187,6 +187,7 @@ void Client::UpdateGameStartup() {
 bool Client::UpdateResolution() {
 	try {
 	ResolutionPatch::Batch patches;
+	AdaptiveLayout::SetRenderSize(m_nGameWidth, m_nGameHeight);
 	nStatusBarY = Client::m_nGameHeight - 578;
 	nStatusBarX = StatusBarLayout::Left(m_nGameWidth);
 	const int statusBarWidth = StatusBarLayout::Width(m_nGameWidth);
@@ -536,7 +537,9 @@ bool Client::UpdateResolution() {
 	//patches.WriteInt(0x008D311F + 1, m_nGameHeight - 57);
 	//patches.WriteInt(0x008D31E7 + 1, m_nGameHeight - 57);//bottom 4 large buttons
 	patches.WriteInt(0x00849E39 + 1, m_nGameHeight - 177); //system menu pop up
+	patches.WriteInt(0x00849E3F + 1, 666 + nStatusBarX); // all three slide X positions
 	patches.WriteInt(0x0084A5B7 + 1, m_nGameHeight - 281); //shortcuts pop up	//0x84A5BD -  System Options "X" Position. if needed
+	patches.WriteInt(0x0084A5BD + 1, 707 + nStatusBarX); // also used by the Help popup
 
 	patches.WriteInt(0x00522C73 + 1, m_nGameHeight - 92 - 10);// ??various requests like party, guild, friend, family, invites that pop up
 	patches.WriteInt(0x00522E65 + 1, m_nGameHeight - 92 - 10); // ??various requests like party, guild, friend, family, invites that pop up
@@ -648,14 +651,14 @@ bool Client::UpdateResolution() {
 	// at 1080p+, without moving/scaling individual map objects. The <=720p
 	// presentation remains compatible. Wide/tall maps retain native scrolling.
 	if (m_nGameHeight > 720) {
+		patches.CodeCave(AdaptiveBackground, 0x0063D2F2, 6);
 		patches.FillBytes(0x006420EB, 0x90, 7); // add eax,ecx; cdq; sub eax,edx; sar eax,1
 	}
 	// 0x00642105 is a nullable COM Release, not a viewport adjustment. Leave
 	// the original null branch intact; the old cave could dereference height/2.
 
 	if (CustomLoginFrame) {
-		patches.WriteInt(0x005F481E + 1, (unsigned int)floor(-m_nGameHeight / 2));//push -300				!!game login frame!! turn this on if you edit UI.wz and use a frame that matches your res
-		patches.WriteInt(0x005F4824 + 1, (unsigned int)floor(-m_nGameWidth / 2));	//push -400 ; RelMove?				!!game login frame!! turn this on if you edit UI.wz and use a frame that matches your res
+		patches.CodeCave(AdaptiveLoginFrame, 0x005F481E, 11);
 	}
 	//nHeightOfsettedloginFrameFix = 0 + myHeight; nWidthOfsettedloginFrameFix = 0 + myWidth;
 	//nTopOfsettedloginFrameFix = 0 + myHeight; nLeftOfsettedloginFrameFix = 0 + myWidth; //parameters for fix cash preview

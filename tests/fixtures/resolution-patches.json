@@ -1086,22 +1086,13 @@
       "instruction": "mov eax, 0x285"
     },
     {
-      "address": 6244383,
-      "size": 4,
-      "kind": "Integer",
+      "address": 6244382,
+      "size": 11,
+      "kind": "Jump",
       "guard": 6244382,
-      "guard_size": 5,
-      "original": "68d4feffff",
-      "instruction": "push 0xfffffed4"
-    },
-    {
-      "address": 6244389,
-      "size": 4,
-      "kind": "Integer",
-      "guard": 6244388,
-      "guard_size": 5,
-      "original": "6870feffff",
-      "instruction": "push 0xfffffe70"
+      "guard_size": 11,
+      "original": "68d4feffffa56870feffff",
+      "instruction": "push 0xfffffed4; movsd dword ptr es:[edi], dword ptr [esi]; push 0xfffffe70"
     },
     {
       "address": 6251743,
@@ -1372,6 +1363,15 @@
       "guard_size": 5,
       "original": "6820030000",
       "instruction": "push 0x320"
+    },
+    {
+      "address": 6542066,
+      "size": 6,
+      "kind": "Jump",
+      "guard": 6542066,
+      "guard_size": 6,
+      "original": "8945cc895dc4",
+      "instruction": "mov dword ptr [ebp - 0x34], eax; mov dword ptr [ebp - 0x3c], ebx"
     },
     {
       "address": 6554687,
@@ -1932,6 +1932,15 @@
       "instruction": "mov edx, 0x1a7"
     },
     {
+      "address": 8691264,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8691263,
+      "guard_size": 5,
+      "original": "b99a020000",
+      "instruction": "mov ecx, 0x29a"
+    },
+    {
       "address": 8693176,
       "size": 4,
       "kind": "Integer",
@@ -1939,6 +1948,15 @@
       "guard_size": 5,
       "original": "ba28010000",
       "instruction": "mov edx, 0x128"
+    },
+    {
+      "address": 8693182,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 8693181,
+      "guard_size": 5,
+      "original": "b9c3020000",
+      "instruction": "mov ecx, 0x2c3"
     },
     {
       "address": 8778606,

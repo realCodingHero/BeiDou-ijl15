@@ -10,13 +10,17 @@ void Require(bool ok,const char* what) { if (!ok) { printf("FAIL %s\n",what);exi
 int main(int argc,char** argv) {
     if(argc!=3)return 2;
     const std::string mode=argv[2];
-    const bool enabled=mode=="enabled" || mode=="linear";
-    const bool linear=mode=="linear";
+    const bool enabled=mode=="enabled" || mode=="linear" || mode=="login";
+    const bool linear=mode=="linear" || mode=="login";
     char exe[MAX_PATH]{};GetModuleFileNameA(nullptr,exe,MAX_PATH);
     const auto directory=std::filesystem::path(exe).parent_path();
     // This executable lives in out/neural/fixture; never touch a game's config.
     Require(directory.filename()=="fixture","isolated config directory");
     {std::ofstream config(directory/"config.ini");config<<"[upscaling]\nenabled="<<(enabled?"true":"false")<<"\nalgorithm="<<(linear?"linear":"cunny")<<"\nquality=balanced\n";}
+    HMODULE contract = mode=="login" ? LoadLibraryW((directory/L"ijl15.dll").c_str()) : nullptr;
+    using SetLogin = void (__cdecl*)(BOOL);
+    auto setLogin = contract ? reinterpret_cast<SetLogin>(GetProcAddress(contract,"SetFixtureLogin")) : nullptr;
+    if (mode=="login") Require(setLogin!=nullptr,"load login contract fixture");
     HMODULE module=LoadLibraryA(argv[1]);Require(module!=nullptr,"load built DLL");
     auto factory=reinterpret_cast<IDirect3D8*(WINAPI*)(UINT)>(GetProcAddress(module,"Direct3DCreate8"));
     Require(factory!=nullptr,"factory export");
@@ -41,6 +45,20 @@ int main(int argc,char** argv) {
         D3DSURFACE_DESC8 desc{};Check(back->GetDesc(&desc),"description");back->Release();
         Require(desc.Width==pp.BackBufferWidth && desc.Height==pp.BackBufferHeight,"logical backbuffer unchanged");
     };
+    if (setLogin) {
+        const wchar_t* property=L"BeiDou.LoginViewport.v1";
+        frame(); Require(GetPropW(window,property)!=nullptr,"version handshake activates login crop and input");
+        setLogin(FALSE); frame(); Require(GetPropW(window,property)==nullptr,"enter field removes login crop/input");
+        setLogin(TRUE); frame(); Require(GetPropW(window,property)!=nullptr,"return to login restores crop");
+        RECT partial{0,0,32,24};
+        Check(device->Present(&partial,nullptr,nullptr,nullptr),"partial present fallback");
+        Require(GetPropW(window,property)==nullptr,"fallback clears input flag");
+        frame(); Require(GetPropW(window,property)!=nullptr,"full present resumes mapping");
+        Check(device->Reset(&pp),"login device reset");
+        Require(GetPropW(window,property)==nullptr,"reset clears input flag before next frame");
+        frame(); Require(GetPropW(window,property)!=nullptr,"login crop survives device reset");
+        setLogin(FALSE); frame();
+    }
     // Managed texture semantics must survive adding the upscaler.
     IDirect3DTexture8* managed=nullptr;
     Check(device->CreateTexture(16,16,1,0,D3DFMT_A8R8G8B8,D3DPOOL_MANAGED,&managed),"managed texture");
@@ -68,7 +86,7 @@ int main(int argc,char** argv) {
     Require(*static_cast<DWORD*>(lock.pBits)==0xff123456,"managed contents survive reset");managed->UnlockRect(0);
     managed->Release();
     Require(device->Release()==0,"device released including upscaler resources");
-    d3d->Release();DestroyWindow(window);FreeLibrary(module);
+    d3d->Release();DestroyWindow(window);FreeLibrary(module); if(contract) FreeLibrary(contract);
     if(enabled){
         std::ifstream input(directory/"upscaling.log");
         const std::string log((std::istreambuf_iterator<char>(input)),{});
