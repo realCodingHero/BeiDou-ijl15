@@ -9,7 +9,13 @@ struct View {
     RECT camera{};
     RECT clip{};
 };
+enum class MapShape { Normal, ShortWide, TallNarrow };
+MapShape Classify(RECT bounds);
 View Fit(RECT bounds, int width, int height);
+View FitScenery(RECT bounds, int width, int height, const std::vector<RECT>& scenery);
+void __cdecl BeginObjects(void* map);
+void __cdecl RecordSceneObject(int* stack, void* map);
+void CollectSceneObject(void* map, void* property, int x, int y, bool flip, int moveType);
 struct GroundTile { int layer,left,top,right,solidBottom; };
 bool ConstrainGround(View& view, RECT bounds, const std::vector<GroundTile>& tiles);
 void __cdecl BeginTerrain(void* map);

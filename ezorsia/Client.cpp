@@ -655,6 +655,8 @@ bool Client::UpdateResolution() {
 	if (m_nGameHeight > 720) {
 		patches.CodeCave(AdaptiveTerrainBegin, 0x0063A100, 5);
 		patches.CodeCave(AdaptiveTerrainTile, 0x0063A843, 5);
+		patches.CodeCave(AdaptiveObjectsBegin, 0x0063AA7E, 5);
+		patches.CodeCave(AdaptiveSceneObject, 0x0063C212, 5);
 		patches.CodeCave(AdaptiveBackgroundBegin, 0x0063CBBA, 5);
 		patches.CodeCave(AdaptiveBackground, 0x0063D2F2, 6);
 		patches.CodeCave(AdaptiveWorldCamera, 0x00642094, 6);

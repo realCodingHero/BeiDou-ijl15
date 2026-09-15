@@ -1383,6 +1383,24 @@
       "instruction": "push 0xbf6300"
     },
     {
+      "address": 6531710,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 6531710,
+      "guard_size": 5,
+      "original": "b8acd4a900",
+      "instruction": "mov eax, 0xa9d4ac"
+    },
+    {
+      "address": 6537746,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 6537746,
+      "guard_size": 5,
+      "original": "b853d8a900",
+      "instruction": "mov eax, 0xa9d853"
+    },
+    {
       "address": 6540218,
       "size": 5,
       "kind": "Jump",

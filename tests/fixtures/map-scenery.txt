@@ -1,0 +1,94 @@
+# Static scenery metadata sampled from research Data, 2026-09-15.
+# Per map: native/resolved VR, independently calculated 1080p scale;
+# rect rows are actual upper/lower extremal tiles/objects intersecting VR X.
+# No pixels, NPC placements, WZ edits or live-game claims. See docs/map-magnification-samples.md.
+# 270000000: 93 placements inspected; class=1
+map 270000000 -3045 -183 1326 287 1.455525606469
+rect -2661 -422 -2466 -155
+rect -53 176 172 336
+end
+# 270010000: 73 placements inspected; class=1
+map 270010000 -2088 -251 703 288 1.451612903226
+rect -2092 -423 -1897 -156
+rect 38 177 263 337
+end
+# 260010402: 18 placements inspected; class=1
+map 260010402 -449 -274 989 114 2.727272727273
+rect 485 -211 987 55
+rect 165 -211 333 139
+end
+# 600010001: 11 placements inspected; class=1
+map 600010001 -592 -385 605 86 1.849315068493
+rect -592 -451 608 149
+rect -592 -451 608 149
+end
+# 680000002: 10 placements inspected; class=0
+map 680000002 -396 -271 403 263 2.084942084942
+rect -457 -302 283 -175
+rect -401 -300 399 300
+end
+# 103000300: 10 placements inspected; class=1
+map 103000300 -573 -296 521 174 2.084942084942
+rect -583 -361 617 170
+rect -583 -361 617 170
+end
+# 220060400: 29 placements inspected; class=1
+map 220060400 -2211 -376 764 94 2.317596566524
+rect -2138 -302 -1839 -14
+rect 733 -20 778 107
+end
+# 250020000: 118 placements inspected; class=1
+map 250020000 -1070 -309 980 161 1.592920353982
+rect 71 -496 367 -133
+rect -810 180 -720 198
+end
+# 270040000: 52 placements inspected; class=1
+map 270040000 -1520 -401 1662 69 1.455525606469
+rect -1529 -640 -1129 -373
+rect -409 -42 -184 118
+end
+# 270040100: 18 placements inspected; class=1
+map 270040100 -1520 -401 254 69 1.451612903226
+rect -169 -643 226 -539
+rect -409 -42 -184 118
+end
+# 270020211: 36 placements inspected; class=1
+map 270020211 -708 -251 474 289 1.451612903226
+rect -122 -422 83 -155
+rect 80 178 305 338
+end
+# 200090500: 84 placements inspected; class=0
+map 200090500 -809 -633 2765 179 1.356783919598
+rect -810 -633 -474 -303
+rect -810 180 -720 205
+end
+# 200090510: 85 placements inspected; class=0
+map 200090510 -2740 -748 809 179 1.186813186813
+rect 688 -748 810 -319
+rect 180 180 270 205
+end
+# 230000001: 44 placements inspected; class=2
+map 230000001 -400 -398 400 600 1.836734693878
+rect 260 -325 395 -171
+rect -400 426 21 531
+end
+# 270010100: 278 placements inspected; class=0
+map 270010100 -1169 -1273 1230 333 1.000000000000
+rect 1059 -1273 1190 -1003
+rect -947 180 -722 340
+end
+# 100000000: 1103 placements inspected; class=0
+map 100000000 -1018 -587 6328 770 1.000000000000
+rect 6051 -511 6292 -171
+rect 2520 660 2610 682
+end
+# 103000000: 1294 placements inspected; class=0
+map 103000000 -2500 -1443 2645 800 1.000000000000
+rect 1592 -1087 1635 -1012
+rect 2205 690 2295 730
+end
+# 230010400: 330 placements inspected; class=0
+map 230010400 -2150 -380 309 750 1.000000000000
+rect -1924 -496 -1714 -20
+rect -810 960 -720 1001
+end
