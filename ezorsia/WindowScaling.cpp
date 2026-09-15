@@ -3,6 +3,7 @@
 #include <intrin.h>
 #include "WindowScaling.h"
 #include "WindowScalingGeometry.h"
+#include "AdaptiveLayout.h"
 #include "WindowPlacementConfig.h"
 #include "detours.h"
 
@@ -376,8 +377,12 @@ ULONG_PTR ClientCallerOffset(void* caller) {
 
 POINT ScaleInput(HWND window, POINT point, bool toRender) {
     RECT rect{};
-    if (window != gameWindow || !IsWindowed(window) || !GetClientRect(window, &rect)) return point;
+    if (window != gameWindow || !GetClientRect(window, &rect)) return point;
     const SIZE physical{rect.right, rect.bottom};
+    RECT login{};
+    if (AdaptiveLayout::LoginInputRect(window, login))
+        return WindowScalingGeometry::MapViewport(point, physical, login, toRender);
+    if (!IsWindowed(window)) return point;
     const SIZE logical{Client::m_nGameWidth, Client::m_nGameHeight};
     return WindowScalingGeometry::MapPoint(point, toRender ? physical : logical, toRender ? logical : physical);
 }

@@ -22,7 +22,7 @@ class Renderer {
 public:
     explicit Renderer(IDirect3DDevice9* device) : device_(device) {}
     ~Renderer();
-    HRESULT Render(IDirect3DSurface9* source, IDirect3DSurface9* destination, const Settings& settings);
+    HRESULT Render(IDirect3DSurface9* source, IDirect3DSurface9* destination, const Settings& settings, const RECT* viewport = nullptr);
     bool Present(const RECT* source, const RECT* target, HWND overrideWindow, HRESULT& result);
     void Reset();
     ULONG InternalReferences() const { return internalReferences_; }
@@ -40,7 +40,9 @@ private:
     HRESULT Draw(IDirect3DSurface9* target, IDirect3DPixelShader9* shader,
         const std::vector<IDirect3DTexture9*>& inputs, UINT inputWidth, UINT inputHeight,
         bool linear = false, const float* axis = nullptr);
-    HRESULT RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* destination, const Settings& settings);
+    HRESULT RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* destination, const Settings& settings, const RECT* viewport);
+    void SetLoginPresentation(HWND window, bool active);
+    HWND loginWindow_ = nullptr;
     ULONG References() const;
     IDirect3DDevice9* device_; // Non-owning: renderer is owned by the device wrapper.
     FramePacer pacer_;

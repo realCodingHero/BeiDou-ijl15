@@ -31,6 +31,18 @@ foreach ($path in $files) {
             # links. Do not pretend an offline partial rectangle is authoritative.
             $row.status = 'native-fallback-or-link'
         }
+        $row.upperParallaxLayers = @()
+        if ($null -ne $img['back']) {
+            foreach ($back in $img['back'].WzProperties) {
+                $front = if ($null -ne $back['front']) { [int]$back['front'].Value } else { 0 }
+                $y = if ($null -ne $back['y']) { [int]$back['y'].Value } else { 0 }
+                $ry = if ($null -ne $back['ry']) { [int]$back['ry'].Value } else { 0 }
+                $type = if ($null -ne $back['type']) { [int]$back['type'].Value } else { 0 }
+                if (!$front -and $y -lt 0 -and $ry -gt -100 -and $ry -le 0 -and $type -in @(0,1,4)) {
+                    $row.upperParallaxLayers += [pscustomobject]@{layer=$back.Name;y=$y;ry=$ry;type=$type}
+                }
+            }
+        }
         $rows.Add([pscustomobject]$row)
     } catch {
         $rows.Add([pscustomobject]@{map=[IO.Path]::GetFileNameWithoutExtension($path); status='parse-error'; error=$_.Exception.Message})
@@ -46,6 +58,8 @@ $summary = [ordered]@{
     nativeFallbackOrLink=@($rows | Where-Object status -eq 'native-fallback-or-link').Count
     invalidRange=@($rows | Where-Object status -eq 'invalid-range').Count
     parseErrors=@($rows | Where-Object status -eq 'parse-error').Count
+    mapsWithUpperParallax=@($rows | Where-Object {$_.upperParallaxLayers.Count -gt 0}).Count
+    upperParallaxLayers=($rows | ForEach-Object {$_.upperParallaxLayers.Count} | Measure-Object -Sum).Sum
 }
 $parent = Split-Path -Parent ([IO.Path]::GetFullPath($OutputPath))
 [IO.Directory]::CreateDirectory($parent) | Out-Null

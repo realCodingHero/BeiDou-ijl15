@@ -28,6 +28,34 @@ void Save(IDirect3DDevice9* device, IDirect3DSurface9* source, const std::filesy
     for (UINT y = 0; y < desc.Height; ++y) output.write(static_cast<char*>(locked.pBits)+y*locked.Pitch, desc.Width*4);
     staging->UnlockRect();
 }
+void TestLoginCrop(IDirect3DDevice9* device) {
+    Renderer renderer(device);
+    Settings linear; linear.enabled = true; linear.algorithm = Algorithm::Linear;
+    const RECT crop{8,6,24,18};
+    auto source = Target(device,32,24);
+    Check(device->ColorFill(source.Get(),nullptr,0xFFFF0000),"crop border");
+    Check(device->ColorFill(source.Get(),&crop,0xFF2080C0),"crop interior");
+    // Covers window scaling and in-place fullscreen backbuffer composition.
+    for (bool inPlace : {false,true}) {
+        auto output = inPlace ? source : Target(device,48,27);
+        Check(renderer.Render(source.Get(),output.Get(),linear,&crop),"login viewport render");
+        D3DSURFACE_DESC desc{}; output->GetDesc(&desc);
+        auto read = Target(device,desc.Width,desc.Height,true);
+        Check(device->GetRenderTargetData(output.Get(),read.Get()),"crop readback");
+        D3DLOCKED_RECT lock{}; Check(read->LockRect(&lock,nullptr,D3DLOCK_READONLY),"crop lock");
+        for (UINT y=0;y<desc.Height;++y) for (UINT x=0;x<desc.Width;++x) {
+            const DWORD pixel = reinterpret_cast<const DWORD*>(static_cast<const char*>(lock.pBits)+y*lock.Pitch)[x];
+            Require((pixel&0xFFFFFF)==0x2080C0,"no black border or outside pixels in crop");
+        }
+        read->UnlockRect();
+        Require(renderer.InternalReferences() > 0 && renderer.InternalReferences() <= 4,"crop stays in linear resource budget");
+    }
+    RECT invalid{-1,0,16,16};
+    Require(renderer.Render(source.Get(),source.Get(),linear,&invalid)==E_INVALIDARG,"reject out-of-range viewport");
+    invalid={0,0,0,16};
+    Require(renderer.Render(source.Get(),source.Get(),linear,&invalid)==E_INVALIDARG,"reject empty viewport");
+    puts("PASS GPU: window/fullscreen crop pixels, invalid bounds and linear resource budget");
+}
 int main(int argc, char** argv) {
     if (argc < 2) return 2;
     const std::filesystem::path folder(argv[1]);
@@ -44,6 +72,7 @@ int main(int argc, char** argv) {
     pp.BackBufferWidth=w; pp.BackBufferHeight=h; pp.BackBufferFormat=D3DFMT_X8R8G8B8;
     ComPtr<IDirect3DDevice9> device;
     Check(d3d->CreateDevice(0,D3DDEVTYPE_HAL,window,D3DCREATE_SOFTWARE_VERTEXPROCESSING,&pp,&device), "create device");
+    TestLoginCrop(device.Get());
     auto source=Target(device.Get(),w,h), upload=Target(device.Get(),w,h,true);
     std::ifstream input(folder/"input.bgra",std::ios::binary);
     Require(input.good(), "input fixture");

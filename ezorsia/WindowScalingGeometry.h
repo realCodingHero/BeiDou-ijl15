@@ -3,6 +3,14 @@
 #include <windows.h>
 
 namespace WindowScalingGeometry {
+inline POINT MapViewport(POINT point, SIZE physical, RECT viewport, bool toRender) {
+    const LONG width = viewport.right - viewport.left, height = viewport.bottom - viewport.top;
+    if (physical.cx <= 0 || physical.cy <= 0 || width <= 0 || height <= 0) return point;
+    if (toRender) return {viewport.left + MulDiv(point.x, width, physical.cx),
+        viewport.top + MulDiv(point.y, height, physical.cy)};
+    return {MulDiv(point.x - viewport.left, physical.cx, width),
+        MulDiv(point.y - viewport.top, physical.cy, height)};
+}
 inline POINT MapPoint(POINT point, SIZE from, SIZE to) {
     if (from.cx > 0 && from.cy > 0 && to.cx > 0 && to.cy > 0) {
         point.x = MulDiv(point.x, to.cx, from.cx);

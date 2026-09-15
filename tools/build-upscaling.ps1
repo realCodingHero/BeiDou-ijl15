@@ -35,6 +35,8 @@ try {
     & $compiler @common (Join-Path $repoRoot 'tests\upscaling\RendererTests.cpp') (Join-Path $outDir 'UpscaleRenderer.obj') (Join-Path $outDir 'UpscaleConfig.obj') ('/Fo' + $outDir + '\') /link /MACHINE:X86 d3d9.lib user32.lib ('/OUT:' + (Join-Path $outDir 'RendererTests.exe'))
     if ($LASTEXITCODE -ne 0) { throw 'Renderer fixture build failed' }
     New-Item -ItemType Directory -Force -Path (Join-Path $outDir 'fixture') | Out-Null
+    & $compiler @common /LD (Join-Path $repoRoot 'tests\upscaling\LoginContractFixture.cpp') ('/Fo' + $outDir + '\') /link /MACHINE:X86 ('/IMPLIB:' + (Join-Path $outDir 'fixture\LoginContractFixture.lib')) ('/OUT:' + (Join-Path $outDir 'fixture\ijl15.dll'))
+    if ($LASTEXITCODE -ne 0) { throw 'Login contract fixture build failed' }
     & $compiler @common (Join-Path $repoRoot 'tests\upscaling\ProxyTests.cpp') ('/Fo' + $outDir + '\') /link /MACHINE:X86 user32.lib ('/OUT:' + (Join-Path $outDir 'fixture\ProxyTests.exe'))
     if ($LASTEXITCODE -ne 0) { throw 'Proxy fixture build failed' }
     & $compiler @common /LD (Join-Path $repoRoot 'tests\upscaling\LoaderCaller.cpp') ('/Fo' + $outDir + '\') /link /MACHINE:X86 user32.lib ('/IMPLIB:' + (Join-Path $outDir 'fixture\LoaderCaller.lib')) ('/OUT:' + (Join-Path $outDir 'fixture\Gr2D_DX8.dll'))
@@ -58,7 +60,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'GPU renderer tests failed' }
         & $Python -B (Join-Path $repoRoot 'tests\upscaling\reference.py') (Join-Path $outDir 'reference') compare
         if ($LASTEXITCODE -ne 0) { throw 'Independent reference comparison failed' }
-        foreach ($mode in @('enabled','linear','disabled')) {
+        foreach ($mode in @('enabled','linear','disabled','login')) {
             & (Join-Path $outDir 'fixture\ProxyTests.exe') (Join-Path $outDir 'BeiDouUpscale.dll') $mode
             if ($LASTEXITCODE -ne 0) { throw "Proxy tests failed: $mode" }
         }

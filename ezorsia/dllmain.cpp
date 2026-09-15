@@ -205,6 +205,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 			AutoLogin::Init(autoLogin, autoLoginUsername, autoLoginPassword, autoLoginWorld, autoLoginChannel);
 		}
 
+		AdaptiveLayout::ConfigureLogin(reader.GetBoolean("upscaling", "enabled", false) &&
+            Client::CustomLoginFrame && EzorsiaV2WzIncluded && !ownLoginFrame);
 		WindowScaling::LoadPlacement(iniPath);
 		// Validate and apply executable patches before installing runtime hooks.
 		if (!Client::UpdateResolution()) {

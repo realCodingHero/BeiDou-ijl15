@@ -1,4 +1,5 @@
 #include "UpscaleRenderer.h"
+#include "LoginViewportBridge.h"
 #include "NeuralShaders.h"
 #include "PresentationPolicy.h"
 #include <algorithm>
@@ -48,6 +49,7 @@ Renderer::~Renderer() { Reset(); }
 ULONG Renderer::References() const { device_->AddRef(); return device_->Release(); }
 
 void Renderer::Reset() {
+    SetLoginPresentation(nullptr, false);
     ResetTiming();
     // Call before the underlying Reset; DEFAULT-pool resources and additional
     // swapchains must not keep the old device surfaces alive.
@@ -213,15 +215,22 @@ HRESULT Renderer::Draw(IDirect3DSurface9* target, IDirect3DPixelShader9* shader,
     return device_->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, vertices, sizeof(Vertex));
 }
 
-HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* destination, const Settings& settings) {
+HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* destination, const Settings& settings, const RECT* viewport) {
     D3DSURFACE_DESC src{}, dst{};
     HRESULT hr = source->GetDesc(&src);
     if (FAILED(hr)) return hr;
     if (FAILED(hr = destination->GetDesc(&dst))) return hr;
-    if (settings.algorithm == Algorithm::Linear && src.Width == dst.Width && src.Height == dst.Height)
-        return device_->StretchRect(source, nullptr, destination, nullptr, D3DTEXF_NONE);
+    if (viewport) {
+        if (viewport->left < 0 || viewport->top < 0 || viewport->right > static_cast<LONG>(src.Width) ||
+            viewport->bottom > static_cast<LONG>(src.Height) || viewport->left >= viewport->right ||
+            viewport->top >= viewport->bottom) return E_INVALIDARG;
+        src.Width = viewport->right - viewport->left;
+        src.Height = viewport->bottom - viewport->top;
+    }
+    if (settings.algorithm == Algorithm::Linear && src.Width == dst.Width && src.Height == dst.Height && source != destination)
+        return device_->StretchRect(source, viewport, destination, nullptr, D3DTEXF_NONE);
     if (FAILED(hr = Prepare(src.Width, src.Height, dst.Width, dst.Height, settings))) return hr;
-    if (FAILED(hr = device_->StretchRect(source, nullptr, input_.surface.Get(), nullptr, D3DTEXF_NONE))) return hr;
+    if (FAILED(hr = device_->StretchRect(source, viewport, input_.surface.Get(), nullptr, D3DTEXF_NONE))) return hr;
     StateGuard guard(device_);
     if (!guard.Valid()) return E_FAIL;
     if (FAILED(hr = device_->BeginScene())) return hr;
@@ -295,39 +304,46 @@ HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* desti
     return FAILED(hr) ? hr : end;
 }
 
-HRESULT Renderer::Render(IDirect3DSurface9* source, IDirect3DSurface9* destination, const Settings& settings) {
+HRESULT Renderer::Render(IDirect3DSurface9* source, IDirect3DSurface9* destination, const Settings& settings, const RECT* viewport) {
     if (!source || !destination) return E_POINTER;
     const ULONG external = References() - internalReferences_;
     HRESULT result = E_FAIL;
-    try { result = RenderImpl(source, destination, settings); }
+    try { result = RenderImpl(source, destination, settings, viewport); }
     catch (...) { result = E_OUTOFMEMORY; }
     internalReferences_ = References() - external;
     return result;
 }
 
+void Renderer::SetLoginPresentation(HWND window, bool active) {
+    if (loginWindow_ && (!active || loginWindow_ != window)) {
+        RemovePropW(loginWindow_, LoginViewportBridge::kProperty);
+        loginWindow_ = nullptr;
+        Log("login viewport: native render coordinates restored");
+    }
+    if (active && window && loginWindow_ != window) {
+        if (SetPropW(window, LoginViewportBridge::kProperty, reinterpret_cast<HANDLE>(1))) {
+            loginWindow_ = window;
+            Log("login viewport: centered 1280x720 -> full output, linear; mouse mapping active");
+        }
+    }
+}
+
 bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND overrideWindow, HRESULT& result) {
     double frameStart = Milliseconds();
-    const auto native = [&]() { ResetTiming(); return false; };
+    const auto native = [&]() { SetLoginPresentation(nullptr, false); ResetTiming(); return false; };
     if (!Configuration().enabled || disabledUntilReset_) return native();
     ComPtr<IDirect3DSwapChain9> original;
     if (FAILED(device_->GetSwapChain(0, &original))) return native();
     D3DPRESENT_PARAMETERS params{};
     if (FAILED(original->GetPresentParameters(&params))) return native();
-    if (!params.Windowed) {
+    RECT fullscreenLogin{};
+    if (!params.Windowed && !LoginViewportBridge::Query(params.BackBufferWidth, params.BackBufferHeight, &fullscreenLogin)) {
         if (!fullscreenLogged_) {
-            ComPtr<IDirect3DSurface9> backbuffer;
-            D3DSURFACE_DESC back{};
-            D3DDISPLAYMODE display{};
-            if (SUCCEEDED(original->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &backbuffer)))
-                backbuffer->GetDesc(&back);
-            device_->GetDisplayMode(0, &display);
-            Log("fullscreen: windowed=0, backbuffer=%ux%u, device_display=%ux%u@%uHz, CuNNy=no, presentation=native, interval=0x%08x",
-                back.Width, back.Height, display.Width, display.Height, display.RefreshRate, params.PresentationInterval);
+            Log("fullscreen: %ux%u, presentation=native, CuNNy=no", params.BackBufferWidth, params.BackBufferHeight);
             fullscreenLogged_ = true;
         }
-        return native();
+        return native(); // Keep ordinary fullscreen gameplay on the native fast path.
     }
-    fullscreenLogged_ = false;
     HWND window = overrideWindow ? overrideWindow : params.hDeviceWindow;
     char className[64]{}; GetClassNameA(window, className, sizeof(className));
     if (strcmp(className, "MapleStoryClass") != 0 || IsIconic(window)) return native();
@@ -342,6 +358,24 @@ bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND over
         sourceRect->right != description.Width || sourceRect->bottom != description.Height)) return native();
     if (targetRect && !EqualRect(targetRect, &client)) return native();
     if (FAILED(device_->TestCooperativeLevel())) return native();
+    RECT login{};
+    const bool crop = LoginViewportBridge::Query(description.Width, description.Height, &login);
+    if (!params.Windowed) {
+        if (crop) {
+            Settings linear = Configuration(); linear.algorithm = Algorithm::Linear;
+            const HRESULT hr = Render(source.Get(), source.Get(), linear, &login);
+            SetLoginPresentation(window, SUCCEEDED(hr));
+            ResetTiming();
+            // The game's own fullscreen Present still submits the modified buffer.
+            return false;
+        }
+        if (!fullscreenLogged_) {
+            Log("fullscreen: %ux%u, presentation=native, CuNNy=no", description.Width, description.Height);
+            fullscreenLogged_ = true;
+        }
+        return native();
+    }
+    fullscreenLogged_ = false;
     const unsigned limit = FrameLimit();
     const UINT requestedInterval = PresentationPolicy::Interval(limit);
     const ULONGLONG now = GetTickCount64();
@@ -397,7 +431,9 @@ bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND over
         frameStart = Milliseconds();
         ComPtr<IDirect3DSurface9> target;
         hr = output_->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &target);
-        if (SUCCEEDED(hr)) hr = Render(source.Get(), target.Get(), Configuration());
+        Settings settings = Configuration();
+        if (crop) settings.algorithm = Algorithm::Linear;
+        if (SUCCEEDED(hr)) hr = Render(source.Get(), target.Get(), settings, crop ? &login : nullptr);
         const double submitEnd = Milliseconds();
         if (SUCCEEDED(hr)) {
             if (!activeLogged_) {
@@ -411,6 +447,7 @@ bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND over
                 activeLogged_ = true;
             }
             hr = output_->Present(nullptr, nullptr, window, nullptr, 0);
+            SetLoginPresentation(window, SUCCEEDED(hr) && crop);
             if (SUCCEEDED(hr)) RecordFrame(frameStart, submitEnd-frameStart, Milliseconds()-submitEnd);
             else ResetTiming();
             // Let the game handle normal device-loss recovery through Reset.
