@@ -159,6 +159,8 @@ const Site kSites[] = {
     {0x0062FE69, 4, Kind::Integer, 0x0062FE68, 5, "\x68\x20\x03\x00\x00", "0x0062FE69"},
     {0x0063A100, 5, Kind::Jump, 0x0063A100, 5, "\xb8\x83\xd3\xa9\x00", "0x0063A100"},
     {0x0063A843, 5, Kind::Jump, 0x0063A843, 5, "\x68\x00\x63\xbf\x00", "0x0063A843"},
+    {0x0063AA7E, 5, Kind::Jump, 0x0063AA7E, 5, "\xb8\xac\xd4\xa9\x00", "0x0063AA7E"},
+    {0x0063C212, 5, Kind::Jump, 0x0063C212, 5, "\xb8\x53\xd8\xa9\x00", "0x0063C212"},
     {0x0063CBBA, 5, Kind::Jump, 0x0063CBBA, 5, "\xb8\x5c\xd9\xa9\x00", "0x0063CBBA"},
     {0x0063D2F2, 6, Kind::Jump, 0x0063D2F2, 6, "\x89\x45\xcc\x89\x5d\xc4", "0x0063D2F2"},
     {0x0064043F, 4, Kind::Integer, 0x0064043E, 5, "\xbf\x90\x01\x00\x00", "0x0064043F"},

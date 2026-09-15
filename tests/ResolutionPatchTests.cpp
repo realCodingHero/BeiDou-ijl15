@@ -136,6 +136,9 @@ extern DWORD backgroundBeginResume;
 extern void AdaptiveTerrainBegin();
 extern void AdaptiveTerrainTile();
 extern DWORD terrainBeginResume,terrainTileResume;
+extern void AdaptiveObjectsBegin();
+extern void AdaptiveSceneObject();
+extern DWORD objectsBeginResume,sceneObjectResume;
 static int observedX, observedY;
 static DWORD observedEax, observedEbx;
 __declspec(naked) void BackgroundReturnFixture() { __asm { ret } }
@@ -268,6 +271,24 @@ static void ExecuteLayoutCaves() {
     }
     terrainTileResume=savedTile;
     assert(observedX==0x00BF6300 && observedEax==0x12345678 && observedEbx==690);
+    savedBegin=objectsBeginResume;objectsBeginResume=reinterpret_cast<DWORD>(&BackgroundReturnFixture);
+    __asm {lea ecx,map}
+    __asm {call AdaptiveObjectsBegin}
+    __asm {mov observedEax,eax}
+    __asm {mov observedEbx,ecx}
+    objectsBeginResume=savedBegin;
+    assert(observedEax==0x00A9D4AC && observedEbx==reinterpret_cast<DWORD>(map));
+    savedBegin=sceneObjectResume;sceneObjectResume=reinterpret_cast<DWORD>(&BackgroundReturnFixture);
+    __asm {
+        sub esp,52
+        lea ecx,map
+        call AdaptiveSceneObject
+        mov observedEax,eax
+        mov observedEbx,ecx
+        add esp,52
+    }
+    sceneObjectResume=savedBegin;
+    assert(observedEax==0x00A9D853 && observedEbx==reinterpret_cast<DWORD>(map));
 }
 
 int main(int argc, char** argv) {

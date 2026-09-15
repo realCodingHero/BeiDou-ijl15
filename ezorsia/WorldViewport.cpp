@@ -22,6 +22,11 @@ std::vector<WorldViewport::GroundTile> groundTiles;
 struct GroundCanvas { int width=0,originX=0,originY=0,solidRows=0; };
 // Borrowed identity keys only during LoadTiles; native layers own the canvases.
 std::map<void*,GroundCanvas> groundCanvases;
+const void* sceneryMap=nullptr;
+bool sceneryValid=false;
+std::vector<RECT> sceneryTiles,sceneryObjects;
+// Only value metadata survives a map load; COM identities are borrowed keys.
+std::map<void*,RECT> sceneryCanvases,sceneryAnimations;
 uintptr_t layerVtable = 0;
 bool graphicsReady = false;
 using DrawLayer = void (__thiscall*)(void*, void*);
@@ -69,6 +74,25 @@ void (*drawObserver)(void*,void*,double) = nullptr;
 #endif
 template<class T> T Method(void* object, unsigned offset) {
     return reinterpret_cast<T>((*static_cast<void***>(object))[offset / 4]);
+}
+bool CanvasBounds(void* canvas,RECT& bounds) {
+    const auto cached=sceneryCanvases.find(canvas);
+    if(cached!=sceneryCanvases.end()){bounds=cached->second;return true;}
+    using Size=HRESULT (__stdcall*)(void*,unsigned*);
+    using Origin=HRESULT (__stdcall*)(void*,int*);
+    unsigned w=0,h=0;int x=0,y=0;
+    if(FAILED(Method<Size>(canvas,0x40)(canvas,&w)) || FAILED(Method<Size>(canvas,0x48)(canvas,&h)) ||
+        FAILED(Method<Origin>(canvas,0x6C)(canvas,&x)) || FAILED(Method<Origin>(canvas,0x74)(canvas,&y)) ||
+        !w || !h || w>8192 || h>8192 || x<-1000000 || x>1000000 || y<-1000000 || y>1000000) return false;
+    bounds={-x,-y,int(w)-x,int(h)-y};sceneryCanvases.emplace(canvas,bounds);return true;
+}
+void AddScenery(std::vector<RECT>& destination,RECT local,int x,int y,bool flip) {
+    if(x<-1000000 || x>1000000 || y<-1000000 || y>1000000 || destination.size()>=32768) {
+        sceneryValid=false;return;
+    }
+    const LONG left=flip ? x-local.right:x+local.left;
+    const LONG right=flip ? x-local.left:x+local.right;
+    destination.push_back({left,y+local.top,right,y+local.bottom});
 }
 bool IsField(const void* map) {
     if (!map) return false;
@@ -202,7 +226,20 @@ void Log(const char* message) {
 }
 
 namespace WorldViewport {
-View Fit(RECT bounds, int width, int height) {
+MapShape Classify(RECT bounds) {
+    const int64_t w=int64_t(bounds.right)-bounds.left,h=int64_t(bounds.bottom)-bounds.top;
+    if(w<=16 || h<=16) return MapShape::Normal;
+    const int64_t iw=(w-16)/2*2,ih=(h-16)/2*2;
+    // Match the audited >=2x-at-1080p landscape candidates, independent of
+    // window/render resolution. Square rooms and ordinary flight maps stay out.
+    if(ih<=540 && iw*9>=ih*16) return MapShape::ShortWide;
+    // Narrower than the established 720p world width, and actually taller
+    // than wide. A small 800x600 room is not a tall map.
+    if(w<=1280 && h>w) return MapShape::TallNarrow;
+    return MapShape::Normal;
+}
+namespace {
+View FitRegion(RECT bounds,int width,int height,MapShape shape,bool expand) {
     View view;
     const double bw = double(bounds.right)-bounds.left, bh = double(bounds.bottom)-bounds.top;
     if (width <= 0 || height <= 0 || bw <= 16 || bh <= 16) return view;
@@ -215,13 +252,26 @@ View Fit(RECT bounds, int width, int height) {
     const double innerWidth=2*std::floor((bw-16)/2), innerHeight=2*std::floor((bh-16)/2);
     if (innerWidth<=0 || innerHeight<=0) return view;
     bounds.right=bounds.left+LONG(innerWidth); bounds.bottom=bounds.top+LONG(innerHeight);
-    // Keep actors, terrain and interactive objects at the same pixel scale
-    // across maps. Filling a short map vertically magnifies the entire world
-    // (Three Doors reached 2.38x). Center the authored region on either axis
-    // that cannot cover the render surface; the HUD keeps the full viewport.
-    view.width = (std::min)(double(width),innerWidth);
-    view.height = (std::min)(double(height),innerHeight);
-    const int visibleWidth=int(view.width),visibleHeight=int(view.height);
+    int visibleWidth=width,visibleHeight=height;
+    if(shape==MapShape::TallNarrow) {
+        const int unit=(std::min)(width/4,height/3);
+        if(unit<=0) return {};
+        visibleWidth=unit*4;visibleHeight=unit*3;
+        view.scale=(std::max)(1.0,(std::max)(visibleWidth/innerWidth,visibleHeight/innerHeight));
+        view.width=visibleWidth/view.scale;view.height=visibleHeight/view.scale;
+    } else if(shape==MapShape::ShortWide && !expand) {
+        // Unknown/incomplete artwork: keep the research framing rather than
+        // infer a complete map from partial metadata and zoom aggressively.
+        view.width=(std::min)(double(width),innerWidth);
+        view.height=(std::min)(double(height),innerHeight);
+        visibleWidth=int(view.width);visibleHeight=int(view.height);
+    } else {
+        // Accepted normal-map framing. On an audited short map this is used
+        // only AFTER its authored scenery has extended the vertical bounds.
+        view.scale=(std::max)(1.0,height/innerHeight);
+        view.width=(std::min)(width/view.scale,innerWidth);view.height=height/view.scale;
+        visibleWidth=(std::min)(width,2*int(std::floor((view.width*view.scale+1e-8)/2)));
+    }
     const int left=(width-visibleWidth)/2,top=(height-visibleHeight)/2;
     view.clip={left,top,left+visibleWidth,top+visibleHeight};
     const double hw=view.width/2, hh=view.height/2;
@@ -229,6 +279,18 @@ View Fit(RECT bounds, int width, int height) {
     view.camera = {LONG(std::ceil(bounds.left+hw-epsilon)), LONG(std::ceil(bounds.top+hh-epsilon)),
         LONG(std::floor(bounds.right-hw+epsilon)), LONG(std::floor(bounds.bottom-hh+epsilon))};
     return view;
+}
+}
+View Fit(RECT bounds,int width,int height) {return FitRegion(bounds,width,height,Classify(bounds),false);}
+View FitScenery(RECT bounds,int width,int height,const std::vector<RECT>& scenery) {
+    const auto shape=Classify(bounds);
+    if(shape!=MapShape::ShortWide) return Fit(bounds,width,height);
+    bool found=false;
+    for(const auto& r:scenery) {
+        if(r.left>=r.right || r.top>=r.bottom || r.right<=bounds.left || r.left>=bounds.right) continue;
+        found=true;bounds.top=(std::min)(bounds.top,r.top);bounds.bottom=(std::max)(bounds.bottom,r.bottom);
+    }
+    return FitRegion(bounds,width,height,shape,found);
 }
 bool ConstrainGround(View& view, RECT bounds, const std::vector<GroundTile>& tiles) try {
     if (view.width<=0 || view.height<=0 || view.camera.top>=view.camera.bottom) return false;
@@ -273,8 +335,61 @@ bool ConstrainGround(View& view, RECT bounds, const std::vector<GroundTile>& til
 void __cdecl BeginTerrain(void* map) {
     terrainMap=map;terrainValid=graphicsReady && renderHeight>720;
     groundTiles.clear();groundCanvases.clear();
+    sceneryMap=map;sceneryValid=terrainValid;
+    sceneryTiles.clear();sceneryObjects.clear();sceneryCanvases.clear();sceneryAnimations.clear();
+}
+void __cdecl BeginObjects(void* map) {
+    if(sceneryMap!=map) {
+        sceneryMap=map;sceneryTiles.clear();sceneryCanvases.clear();
+        sceneryValid=graphicsReady && renderHeight>720;
+    }
+    sceneryObjects.clear();sceneryAnimations.clear();
+}
+void CollectSceneObject(void* map,void* property,int x,int y,bool flip,int moveType) try {
+    if(!sceneryValid || sceneryMap!=map || !property || moveType) return;
+    auto found=sceneryAnimations.find(property);
+    if(found==sceneryAnimations.end()) {
+        using Count=HRESULT (__stdcall*)(void*,unsigned*);
+        using Item=HRESULT (__stdcall*)(void*,BSTR,VARIANT*);
+        unsigned count=0;
+        if(FAILED(Method<Count>(property,0x20)(property,&count)) || !count || count>1024){sceneryValid=false;return;}
+        const GUID canvasId={0x7600dc6c,0x9328,0x4bff,{0x96,0x24,0x5b,0x0f,0x5c,0x01,0x17,0x9e}};
+        RECT total{};bool any=false;
+        for(unsigned i=0;i<count;++i) {
+            wchar_t number[16];swprintf_s(number,L"%u",i);BSTR key=SysAllocString(number);
+            if(!key){sceneryValid=false;return;}
+            VARIANT frame{};const HRESULT hr=Method<Item>(property,0x14)(property,key,&frame);SysFreeString(key);
+            if(FAILED(hr)){VariantClear(&frame);sceneryValid=false;return;}
+            IUnknown* value=frame.vt==VT_UNKNOWN ? frame.punkVal:frame.vt==VT_DISPATCH ? frame.pdispVal:nullptr;
+            if(!value){VariantClear(&frame);break;}
+            IUnknown* canvas=nullptr;RECT box{};
+            const bool ok=SUCCEEDED(value->QueryInterface(canvasId,reinterpret_cast<void**>(&canvas)));
+            bool readable=false;
+            // Release both owned references even if a metadata allocation fails.
+            try {if(ok)readable=CanvasBounds(canvas,box);}
+            catch (...) {if(canvas)canvas->Release();VariantClear(&frame);throw;}
+            if(canvas)canvas->Release();VariantClear(&frame);
+            if(!readable){sceneryValid=false;return;}
+            if(!any)total=box;
+            else {total.left=(std::min)(total.left,box.left);total.top=(std::min)(total.top,box.top);
+                total.right=(std::max)(total.right,box.right);total.bottom=(std::max)(total.bottom,box.bottom);}
+            any=true;
+        }
+        if(!any){sceneryValid=false;return;}
+        found=sceneryAnimations.emplace(property,total).first;
+    }
+    AddScenery(sceneryObjects,found->second,x,y,flip);
+} catch (...) {sceneryValid=false;}
+void __cdecl RecordSceneObject(int* stack,void* map) {
+    // CMapLoadable::MakeObjLayer entry 63C212: return address, sret,
+    // resolved animation property, layer, x, y, z, flip, rx, ry, moveType...
+    CollectSceneObject(map,reinterpret_cast<void*>(stack[2]),stack[4],stack[5],stack[7]!=0,stack[10]);
 }
 void CollectTerrainTile(void* map,int layer,void* property,void* canvas,int x,int y) {
+    if(sceneryValid && sceneryMap==map && canvas && layer>=0 && layer<=7) {
+        try {RECT box{};if(CanvasBounds(canvas,box))AddScenery(sceneryTiles,box,x,y,false);else sceneryValid=false;}
+        catch (...) {sceneryValid=false;}
+    }
     if (!terrainValid || terrainMap!=map || !property || !canvas || layer<0 || layer>7) return;
     VARIANT type{};BSTR name=SysAllocString(L"u");
     if (!name) {terrainValid=false;return;}
@@ -330,6 +445,8 @@ void Configure(int width, int height) {
     renderWidth=width; renderHeight=height; activeMap=nullptr; activeView={};
     loadingMap=nullptr; loadingBackdrops.clear(); activeBackdrops.clear();
     terrainMap=nullptr;terrainValid=false;groundTiles.clear();groundCanvases.clear();
+    sceneryMap=nullptr;sceneryValid=false;sceneryTiles.clear();sceneryObjects.clear();
+    sceneryCanvases.clear();sceneryAnimations.clear();
 }
 bool InstallGraphics(HMODULE module) {
     if (graphicsReady) return true;
@@ -367,7 +484,7 @@ bool InstallGraphics(HMODULE module) {
     }
     if (DetourTransactionCommit() != NO_ERROR) return false;
     layerVtable=base+0x2E3F0; graphicsReady=true;
-    Log("World viewport ready: uniform world size, centered margins, independent HUD, aligned texels.");
+    Log("World viewport ready: scoped scenery fit, tall-map 4:3, normal framing, independent HUD.");
     return true;
 }
 void __cdecl AdjustCamera(void* map) {
@@ -379,15 +496,23 @@ void __cdecl AdjustCamera(void* map) {
     RECT bounds = {camera->left-renderWidth/2,camera->top-renderHeight/2,
         camera->right+renderWidth/2,camera->bottom+renderHeight/2};
     auto view=Fit(bounds,renderWidth,renderHeight);
+    size_t artCount=0;
+    if(sceneryValid && sceneryMap==map && Classify(bounds)==MapShape::ShortWide) {
+        try {
+            auto rectangles=sceneryTiles;rectangles.insert(rectangles.end(),sceneryObjects.begin(),sceneryObjects.end());
+            view=FitScenery(bounds,renderWidth,renderHeight,rectangles);artCount=rectangles.size();
+        } catch (...) {sceneryValid=false;}
+    }
     if (view.width<=0 || view.height<=0 || bounds.right-bounds.left<=16 || bounds.bottom-bounds.top<=16) return;
     const bool groundAdjusted=terrainMap==map && terrainValid && ConstrainGround(view,bounds,groundTiles);
     groundCanvases.clear(); // Never retain canvas identities beyond the load.
+    sceneryCanvases.clear();sceneryAnimations.clear();
     *camera=view.camera; activeView=view; activeMap=map;
     if (loadingMap==map) activeBackdrops=loadingBackdrops;
-    char line[360]; sprintf_s(line,"bounds=(%ld,%ld,%ld,%ld) view=%.2fx%.2f zoom=%.4f camera=(%ld,%ld,%ld,%ld) clip=(%ld,%ld,%ld,%ld) backdrops=%u groundCamera=%d",
+    char line[400]; sprintf_s(line,"bounds=(%ld,%ld,%ld,%ld) view=%.2fx%.2f zoom=%.4f camera=(%ld,%ld,%ld,%ld) clip=(%ld,%ld,%ld,%ld) backdrops=%u groundCamera=%d shape=%d scenery=%u",
         bounds.left,bounds.top,bounds.right,bounds.bottom,view.width,view.height,view.scale,
         camera->left,camera->top,camera->right,camera->bottom,
-        view.clip.left,view.clip.top,view.clip.right,view.clip.bottom,unsigned(activeBackdrops.size()),groundAdjusted); Log(line);
+        view.clip.left,view.clip.top,view.clip.right,view.clip.bottom,unsigned(activeBackdrops.size()),groundAdjusted,int(Classify(bounds)),unsigned(artCount)); Log(line);
 }
 void __cdecl AdjustWorldCursor(POINT* screen) { if (screen) *screen=MapPoint(screen->x,screen->y); }
 void __cdecl BeginBackgrounds(void* map) {

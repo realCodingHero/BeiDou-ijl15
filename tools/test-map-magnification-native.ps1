@@ -12,10 +12,12 @@ try{
  $env:PATH="$vc\bin\Hostx64\x86;"+$env:PATH
  $env:INCLUDE=(@("$vc\include")+@('ucrt','shared','um','winrt' | ForEach-Object {"$sdk\Include\$version\$_"})) -join ';'
  $env:LIB=@("$vc\lib\x86","$sdk\Lib\$version\ucrt\x86","$sdk\Lib\$version\um\x86") -join ';'
- & "$vc\bin\Hostx64\x86\cl.exe" /nologo /O2 /MD /EHsc /std:c++17 /DNOMINMAX /DWORLD_VIEWPORT_TESTING /D_CRT_SECURE_NO_WARNINGS /I"$repoRoot\ezorsia" /I"$repoRoot\third_party\d3d8to9\source" /I"$WzInclude" "$repoRoot\tests\MapMagnificationNativeTests.cpp" $ViewportSource "$repoRoot\ezorsia\UpscaleLoader.cpp" /Fo"$out\" /link /MACHINE:X86 "$repoRoot\detours\detours.lib" user32.lib oleaut32.lib ole32.lib comsuppw.lib /OUT:"$out\MapMagnificationNativeTests.exe"
+ [string[]]$extra=@(if(!$Baseline){'/DVIEWPORT_SCENERY_FIXED'})
+ & "$vc\bin\Hostx64\x86\cl.exe" /nologo /O2 /MD /EHsc /std:c++17 /DNOMINMAX /DWORLD_VIEWPORT_TESTING /D_CRT_SECURE_NO_WARNINGS @extra /I"$repoRoot\ezorsia" /I"$repoRoot\third_party\d3d8to9\source" /I"$WzInclude" "$repoRoot\tests\MapMagnificationNativeTests.cpp" $ViewportSource "$repoRoot\ezorsia\UpscaleLoader.cpp" /Fo"$out\" /link /MACHINE:X86 "$repoRoot\detours\detours.lib" user32.lib oleaut32.lib ole32.lib comsuppw.lib /OUT:"$out\MapMagnificationNativeTests.exe"
  if($LASTEXITCODE -ne 0){throw 'Map sample fixture build failed'}
  Copy-Item -LiteralPath (Join-Path $Client 'BeiDouUpscale.dll') -Destination (Join-Path $out 'BeiDouUpscale.dll') -Force
  $mode=if($Baseline){'baseline'}else{'fixed'}
- & "$out\MapMagnificationNativeTests.exe" $Client "$repoRoot\tests\fixtures\map-magnification.txt" $mode
+ $fixture=if($Baseline){'map-magnification.txt'}else{'map-scenery.txt'}
+ & "$out\MapMagnificationNativeTests.exe" $Client "$repoRoot\tests\fixtures\$fixture" $mode
  if($LASTEXITCODE -ne 0){throw "Map sample fixture failed: $LASTEXITCODE"}
 }finally{$env:PATH,$env:INCLUDE,$env:LIB=$savedPath,$savedInclude,$savedLib}

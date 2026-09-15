@@ -3,6 +3,7 @@
 #include "d3d8.hpp"
 #include "WzLib/IWzGr2D.h"
 #include "WzLib/IWzCanvas.h"
+#include "WzLib/IWzProperty.h"
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -12,6 +13,7 @@
 #include <vector>
 
 namespace {
+struct Sample {std::string id;RECT bounds{};double expected=1;std::vector<RECT> art;};
 std::vector<DWORD> pixels;
 IWzGr2DLayer* marker=nullptr;
 void Check(HRESULT hr,const char* name){if(FAILED(hr)){printf("FAIL %s %08lX\n",name,hr);exit(1);}}
@@ -69,17 +71,50 @@ int main(int argc,char** argv){
  std::ifstream runs(out/L"temple-keeper.runs",std::ios::binary);assert(runs);int header[7];runs.read(reinterpret_cast<char*>(header),sizeof(header));
  auto npc=canvas(header[0],header[1],0);
  for(int n=0;n<header[6];++n){int r[4];runs.read(reinterpret_cast<char*>(r),sizeof(r));assert(runs);Check(npc->raw_DrawRectangle(r[0],r[1],r[2],1,unsigned(r[3])),"NPC pixels");}
- auto fill=canvas(1920,1080,0xff20d0e0),bar=canvas(1200,40,0xff0000ff),dot=canvas(1,1,0xffffffff);
- auto background=layer(fill,-960,-540,int(0xBFFE0000)),actor=layer(npc,-header[0]/2,-header[1]/2,int(0xC0000000));
+ auto bar=canvas(1200,40,0xff0000ff),dot=canvas(1,1,0xffffffff);
+ std::vector<IWzGr2DLayer*> tiles;
+ for(int i=0;i<400;++i){
+  auto tile=canvas(120,80,0xff20d0e0);
+  tiles.push_back(layer(tile,-1200+(i%20)*120,-800+(i/20)*80,int(0xBFFE0000)));tile->Release();
+ }
+ auto actor=layer(npc,-header[0]/2,-header[1]/2,int(0xC0000000));
  auto hud=layer(bar,-600,490,int(0xC00615D0));marker=layer(dot,900,530,0x7ffffffd);
  alignas(4) unsigned char field[0x110]{};void* methods[19]{};methods[18]=reinterpret_cast<void*>(&IsField);*reinterpret_cast<void***>(field+4)=methods;void* current=field;
  std::ifstream input(argv[2]);assert(input);std::string line;int count=0,tick=100;
- std::ofstream csv(out/(baseline ? L"magnification-before.csv":L"magnification-after.csv"));csv<<"map,scale,npcWidth,npcHeight,clipLeft,clipTop,clipRight,clipBottom\n";
+ std::vector<Sample> samples;Sample sample;
  while(std::getline(input,line)){
-  if(line.empty()||line[0]=='#')continue;std::istringstream row(line);std::string id,evidence;RECT bounds;double oldScale;
-  row>>id>>bounds.left>>bounds.top>>bounds.right>>bounds.bottom>>oldScale>>evidence;assert(row);
+  if(line.empty()||line[0]=='#')continue;std::istringstream row(line);std::string kind;row>>kind;
+  if(baseline){sample={};sample.id=kind;row>>sample.bounds.left>>sample.bounds.top>>sample.bounds.right>>sample.bounds.bottom>>sample.expected;assert(row);samples.push_back(sample);}
+  else if(kind=="map"){sample={};row>>sample.id>>sample.bounds.left>>sample.bounds.top>>sample.bounds.right>>sample.bounds.bottom>>sample.expected;assert(row);}
+  else if(kind=="rect"){RECT r;row>>r.left>>r.top>>r.right>>r.bottom;assert(row);sample.art.push_back(r);}
+  else if(kind=="end")samples.push_back(sample);
+ }
+ std::ofstream csv(out/(baseline ? L"magnification-before.csv":L"magnification-after.csv"));csv<<"map,scale,npcWidth,npcHeight,clipLeft,clipTop,clipRight,clipBottom\n";
+ for(const auto& s:samples){
+  const auto& id=s.id;const RECT bounds=s.bounds;
   WorldViewport::SetContextForTesting(&current,field,bounds,1920,1080);auto v=WorldViewport::Fit(bounds,1920,1080);
-  assert(std::abs(v.scale-(baseline ? oldScale:1.0))<1e-6);
+#ifdef VIEWPORT_SCENERY_FIXED
+  WorldViewport::BeginTerrain(field);WorldViewport::BeginObjects(field);
+  std::vector<IWzProperty*> properties;std::vector<IWzCanvas*> canvases;
+  for(const RECT& r:s.art){
+   // Real PCOM metadata, non-zero origins and native entry-stack arguments.
+   auto c=canvas(r.right-r.left,r.bottom-r.top,0);
+   Check(c->put_cx(5),"scenery origin X");Check(c->put_cy(7),"scenery origin Y");
+   assert(SetCurrentDirectoryA(argv[1]));IWzProperty* property=nullptr;
+   Check(create(L"Property",&__uuidof(IWzProperty),reinterpret_cast<void**>(&property),nullptr),"scenery property");
+   assert(SetCurrentDirectoryW(out.c_str()));VARIANT frame{},empty{};frame.vt=VT_UNKNOWN;frame.punkVal=c;
+   BSTR key=SysAllocString(L"0");Check(property->raw_Add(key,frame,empty),"scenery frame");SysFreeString(key);
+   int stack[14]{};stack[2]=reinterpret_cast<int>(property);stack[3]=3;stack[4]=r.left+5;stack[5]=r.top+7;
+   WorldViewport::RecordSceneObject(stack,field);
+   properties.push_back(property);canvases.push_back(c);
+  }
+  *reinterpret_cast<RECT*>(field+0xF0)={bounds.left+960,bounds.top+540,bounds.right-960,bounds.bottom-540};
+  WorldViewport::AdjustCamera(field);v=WorldViewport::FitScenery(bounds,1920,1080,s.art);
+  assert(!memcmp(field+0xF0,&v.camera,sizeof(RECT)));
+  // Only metadata values remain after the native map load completes.
+  for(auto property:properties)property->Release();for(auto c:canvases)c->Release();
+#endif
+  assert(std::abs(v.scale-s.expected)<1e-6);
   tick+=20;Check(gr->raw_UpdateCurrentTime(tick),"clock");Check(gr->raw_RenderFrame(),"frame");
   RECT visible{1920,1080,-1,-1};
   for(int y=std::max(300L,v.clip.top);y<std::min(780L,v.clip.bottom);++y)
@@ -91,13 +126,16 @@ int main(int argc,char** argv){
   // The full-window HUD may cover the last few scene rows on a narrow map.
   const int worldBottom=v.clip.left>=360&&v.clip.right<=1560&&v.clip.bottom>1030&&v.clip.bottom<=1070 ? 1029:v.clip.bottom-1;
   const auto fb=Bounds(0x20d0e0);assert(fb.left==v.clip.left&&fb.right==v.clip.right-1&&fb.top==v.clip.top&&fb.bottom==worldBottom);
+  // Independent native textures must stay joined at each actual map scale.
+  for(int x=v.clip.left;x<v.clip.right;++x)assert(Pixel(x,200)==0x20d0e0);
+  for(int y=50;y<1000;++y)assert(Pixel(std::min(1400L,v.clip.right-10),y)==0x20d0e0);
   for(POINT p:{POINT{100,v.clip.top-1},POINT{100,v.clip.bottom},POINT{v.clip.left-1,540},POINT{v.clip.right,540}})
    if(p.x>=0&&p.x<1920&&p.y>=0&&p.y<1020)assert(Pixel(p.x,p.y)==0);
   printf("%s %s: NPC=%dx%d, scale=%.4f, world=(%ld,%ld)-(%ld,%ld), HUD=1200x40\n",baseline ? "before":"after",id.c_str(),w,h,v.scale,v.clip.left,v.clip.top,v.clip.right,v.clip.bottom);
   csv<<id<<','<<v.scale<<','<<w<<','<<h<<','<<v.clip.left<<','<<v.clip.top<<','<<v.clip.right<<','<<v.clip.bottom<<'\n';++count;
   if(id=="270000000"||id=="260010402")Save(out/(id+(baseline ? "-before.bmp":"-after.bmp")));
  }
- assert(count==14);marker->Release();hud->Release();actor->Release();background->Release();npc->Release();fill->Release();bar->Release();dot->Release();
+ assert(count==(baseline ? 14:18));marker->Release();hud->Release();actor->Release();for(auto tile:tiles)tile->Release();npc->Release();bar->Release();dot->Release();
  Check(gr->raw_Uninitialize(),"uninitialize");gr->Release();term();DestroyWindow(hwnd);
  printf("PASS %d sampled map bounds through real Gr2D + NPC 2140000, scene clips and independent HUD.\n",count);
 }

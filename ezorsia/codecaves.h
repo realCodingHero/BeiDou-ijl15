@@ -4,6 +4,37 @@
 #include "AdaptiveLayout.h"
 #include "WorldViewport.h"
 
+DWORD objectsBeginResume = 0x0063AA83;
+__declspec(naked) void AdaptiveObjectsBegin() {
+    __asm {
+        pushfd
+        pushad
+        push ecx
+        call WorldViewport::BeginObjects
+        add esp,4
+        popad
+        popfd
+        mov eax,0x00A9D4AC
+        jmp dword ptr[objectsBeginResume]
+    }
+}
+DWORD sceneObjectResume = 0x0063C217;
+__declspec(naked) void AdaptiveSceneObject() {
+    __asm {
+        pushfd
+        pushad
+        lea eax,[esp+36]
+        push ecx
+        push eax
+        call WorldViewport::RecordSceneObject
+        add esp,8
+        popad
+        popfd
+        mov eax,0x00A9D853
+        jmp dword ptr[sceneObjectResume]
+    }
+}
+
 DWORD terrainBeginResume = 0x0063A105;
 __declspec(naked) void AdaptiveTerrainBegin() {
     __asm {
