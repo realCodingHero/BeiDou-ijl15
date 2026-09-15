@@ -105,13 +105,16 @@ int main(int argc,char** argv) {
     Device d; for(int i=0;i<16;++i) d.projection.m[i]=float(i+1)/16; originalProjection=d.projection;
     Device* context=&d;
     Layer world(int(0xC0000000)), equipment(5,&world), ui(int(0xC00615D0)), uiChild(-1,&ui), cursorLayer(0x7ffffffd);
-    for(Layer* layer:{&world,&equipment,&ui,&uiChild,&cursorLayer}) for(int fail=0;fail<3;++fail) {
+    Layer buff(int(0xC006156C)), cooldown(int(0xC006156C)), buffChild(int(0xC0000000),&buff);
+    Layer worldChild(int(0xC006156C),&world), fieldEffect(int(0xC0061508)), adjacentWorld(int(0xC006156B));
+    for(Layer* layer:{&world,&equipment,&worldChild,&fieldEffect,&adjacentWorld,&ui,&uiChild,&cursorLayer,&buff,&cooldown,&buffChild}) for(int fail=0;fail<3;++fail) {
         d.failure=fail;d.writes=0;calls=0;
-        expectedScale=(!fail && (layer==&world || layer==&equipment)) ? flight.scale:1;
+        const bool isWorld=layer==&world || layer==&equipment || layer==&worldChild || layer==&fieldEffect || layer==&adjacentWorld;
+        expectedScale=(!fail && isWorld) ? flight.scale:1;
         WorldViewport::DrawLayerForTesting(layer,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
         assert(calls==1 && !memcmp(&d.projection,&originalProjection,sizeof(Matrix)));
         assert(*reinterpret_cast<int*>(layer->bytes+0x4C)==1);
-        assert(d.writes==(!fail && (layer==&world || layer==&equipment) ? 2:0));
+        assert(d.writes==(!fail && isWorld ? 2:0));
         assert(d.viewport.x==0 && d.viewport.y==0 && d.viewport.width==1920 && d.viewport.height==1080);
     }
     d.failure=0; expectedScale=flight.scale; throwDraw=true;
@@ -186,6 +189,18 @@ int main(int argc,char** argv) {
     catch(const std::runtime_error&) {}
     assert(d.viewport.x==0 && d.viewport.width==1920 && !memcmp(&d.projection,&originalProjection,sizeof(Matrix)));
     throwDraw=false;expectedScale=1;
+    // Right-edge Buff HUD bypasses both projection and scene clipping, even
+    // at scale 1 (Great Tree I) or outside a tall map's 4:3 scene rectangle.
+    for(RECT bounds:{RECT{-1760,370,56,2196},RECT{-360,-2500,440,450},RECT{-809,-633,2765,179}}) {
+        WorldViewport::SetContextForTesting(&current,map,bounds,1920,1080);
+        for(Layer* layer:{&buff,&cooldown,&buffChild}) for(int fail=0;fail<5;++fail) {
+            d.failure=fail;d.writes=0;d.viewportWrites=0;calls=0;
+            WorldViewport::DrawLayerForTesting(layer,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
+            assert(calls==1 && d.writes==0 && d.viewportWrites==0);
+            assert(d.viewport.x==0 && d.viewport.y==0 && d.viewport.width==1920 && d.viewport.height==1080);
+        }
+    }
+    d.failure=0;
     WorldViewport::Configure(1920,1080); // Explicit new stage setup ends the held fade projection.
     WorldViewport::DrawLayerForTesting(&world,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
     int maps=0;

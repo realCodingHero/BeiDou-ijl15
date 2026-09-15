@@ -84,8 +84,13 @@ so relatively positive face/equipment sublayers still follow their world
 parent. Negative children of HUD roots retain HUD coordinates. Native avatar
 assembly, physics, server positions, skills and portals are unchanged.
 The native HUD also has negative Z: StatusBar::CreateWnd pushes C00615D0,
-screen messages use C0061634 and ordinary windows C00616FC. Only roots below
-the native status-bar boundary are world layers; a bare Z<0 test loses the HUD.
+screen messages use C0061634 and ordinary windows C00616FC. TemporaryStatView
+creates both Buff icons and cooldown overlays at C006156C (EXE 7B406D and
+7B4310), below the status bar. Explicitly exclude this screen-root band from
+world classification; other roots below the status-bar boundary retain their
+world transform. Checking only Z<0 or only the status-bar boundary loses HUD
+layers. Follow overlay ancestry before applying this rule, so children inherit
+their root's classification. See [Buff regression evidence](buff-hud-clipping.md).
 Projection and viewport state are restored after each draw, including failure
 and exception paths. The native point/automatic filter is preserved.
 
