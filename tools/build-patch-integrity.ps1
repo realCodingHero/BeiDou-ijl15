@@ -19,7 +19,7 @@ try {
     [IO.File]::WriteAllBytes($encoded, [byte[]](@(0xEF,0xBB,0xBF)+$bytes))
     $compiler = Join-Path $vcRoot 'bin\Hostx64\x86\cl.exe'
     $patchCompilerArgs = @('/nologo','/O2','/Gy','/Gw','/MD','/EHsc','/std:c++17','/W3','/source-charset:gbk','/execution-charset:gbk','/DWIN32','/D_WINDOWS','/DNOMINMAX','/D_CRT_SECURE_NO_WARNINGS','/DRESOLUTION_PATCH_TESTING',('/I'+(Join-Path $repoRoot 'ezorsia')))
-    & $compiler @patchCompilerArgs (Join-Path $repoRoot 'tests\ResolutionPatchTests.cpp') $encoded (Join-Path $repoRoot 'ezorsia\ResolutionPatch.cpp') (Join-Path $repoRoot 'ezorsia\StatusBarLayout.cpp') (Join-Path $repoRoot 'ezorsia\Memory.cpp') (Join-Path $repoRoot 'ezorsia\WindowScaling.cpp') (Join-Path $repoRoot 'ezorsia\AdaptiveLayout.cpp') ('/Fo'+$out+'\') /link /MACHINE:X86 /OPT:REF /OPT:ICF user32.lib ws2_32.lib imm32.lib (Join-Path $repoRoot 'detours\detours.lib') ('/OUT:'+(Join-Path $out 'ResolutionPatchTests.exe'))
+    & $compiler @patchCompilerArgs (Join-Path $repoRoot 'tests\ResolutionPatchTests.cpp') $encoded (Join-Path $repoRoot 'ezorsia\ResolutionPatch.cpp') (Join-Path $repoRoot 'ezorsia\StatusBarLayout.cpp') (Join-Path $repoRoot 'ezorsia\Memory.cpp') (Join-Path $repoRoot 'ezorsia\WindowScaling.cpp') (Join-Path $repoRoot 'ezorsia\AdaptiveLayout.cpp') (Join-Path $repoRoot 'ezorsia\WorldViewport.cpp') ('/Fo'+$out+'\') /link /MACHINE:X86 /OPT:REF /OPT:ICF oleaut32.lib user32.lib ws2_32.lib imm32.lib (Join-Path $repoRoot 'detours\detours.lib') ('/OUT:'+(Join-Path $out 'ResolutionPatchTests.exe'))
     if ($LASTEXITCODE -ne 0) { throw 'Patch integrity fixture build failed' }
     & (Join-Path $out 'ResolutionPatchTests.exe') --exe $ClientExe
     if ($LASTEXITCODE -ne 0) { throw 'Patch integrity tests failed' }

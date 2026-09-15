@@ -128,6 +128,9 @@ static void ExecuteMapAndHotkeyInstructions(unsigned width, unsigned height) {
 extern void AdaptiveBackground();
 extern void AdaptiveLoginFrame();
 extern DWORD backgroundLayoutResume, loginFrameResume;
+extern void AdaptiveWorldCamera();
+extern void AdaptiveWorldCursor();
+extern DWORD worldCameraResume, worldCursorResume, worldCursorSkip;
 static int observedX, observedY;
 static DWORD observedEax, observedEbx;
 __declspec(naked) void BackgroundReturnFixture() { __asm { ret } }
@@ -185,6 +188,48 @@ static void ExecuteLayoutCaves() {
     assert(observedX == -640 && observedY == -360);
     assert(destination == source && observedEax == 0x12345678);
     AdaptiveLayout::ConfigureLogin(false);
+
+    // The camera cave must replay the original store before running C++ and
+    // preserve the caller's registers; exercise its actual compiled x86 ABI.
+    unsigned char map[0x110]{};
+    DWORD savedCamera=worldCameraResume;
+    worldCameraResume=reinterpret_cast<DWORD>(&BackgroundReturnFixture);
+    __asm {
+        push esi
+        lea esi, map
+        mov eax, 179
+        mov ecx, 0x12345678
+        call AdaptiveWorldCamera
+        mov observedEax, eax
+        mov observedEbx, ecx
+        pop esi
+    }
+    worldCameraResume=savedCamera;
+    assert(*reinterpret_cast<int*>(map+0xFC)==179 && observedEax==179 && observedEbx==0x12345678);
+
+    // CWndMan::GetCursorPos has three stack slots above bWorld; test both
+    // destinations and stack/register preservation. Graphics are unavailable
+    // in this EXE-memory fixture, so native points must remain unchanged.
+    DWORD savedCursor=worldCursorResume,savedSkip=worldCursorSkip;
+    worldCursorResume=worldCursorSkip=reinterpret_cast<DWORD>(&BackgroundReturnFixture);
+    POINT point{555,666};
+    for(int world:{0,1}) {
+        __asm {
+            push esi
+            push world
+            push 0
+            push 0
+            push 0
+            lea esi, point
+            mov ecx, 0x76543210
+            call AdaptiveWorldCursor
+            mov observedEbx, ecx
+            add esp, 16
+            pop esi
+        }
+        assert(point.x==555 && point.y==666 && observedEbx==0x76543210);
+    }
+    worldCursorResume=savedCursor;worldCursorSkip=savedSkip;
 }
 
 int main(int argc, char** argv) {
@@ -221,6 +266,10 @@ int main(int argc, char** argv) {
             assert(*reinterpret_cast<unsigned*>(At(0x004D59B4)) == size[1]);
             assert(memcmp(At(0x004CC160), "\xC7\x45\xF0", 3) == 0);
             assert(*reinterpret_cast<unsigned*>(At(0x004CC163)) == size[0]);
+            assert(*reinterpret_cast<unsigned*>(At(0x0055B885)) == size[1]);
+            assert(*reinterpret_cast<unsigned*>(At(0x0064059B)) == size[0]/2-10);
+            assert(*reinterpret_cast<unsigned*>(At(0x006405BC)) == size[1]-10);
+            assert(*reinterpret_cast<unsigned*>(At(0x006406FC)) == size[1]/2);
             assert(memcmp(At(0x0064061D), original.data()+0x0064061D-kImageBase, 5) == 0);
             assert(memcmp(At(0x00A5FC2B), original.data()+0x00A5FC2B-kImageBase, 5) == 0);
         }

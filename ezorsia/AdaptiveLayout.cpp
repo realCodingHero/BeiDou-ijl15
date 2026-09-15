@@ -1,4 +1,5 @@
 #include "AdaptiveLayout.h"
+#include "WorldViewport.h"
 #include <cstdlib>
 
 int nLoginFrameX = -400, nLoginFrameY = -300;
@@ -32,7 +33,7 @@ void __cdecl AdjustBackground(int* frame, int front) {
     // CMapLoadable::LoadBack, after all WZ properties were read. These locals
     // feed both static/animated layers and the native MakeGrid implementation.
     const void* map = reinterpret_cast<void*>(frame[-0x48 / 4]);
-    frame[-0x74 / 4] = BackgroundY(renderHeight, IsLogin(map), front,
+    frame[-0x74 / 4] = BackgroundY(WorldViewport::BackgroundHeight(map,renderHeight), IsLogin(map), front,
         frame[-0x74 / 4], frame[-0x70 / 4], frame[-0x68 / 4]);
 }
 }

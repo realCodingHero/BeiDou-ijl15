@@ -1,4 +1,5 @@
 #include "UpscaleLoader.h"
+#include "WorldViewport.h"
 #include "detours.h"
 #include <intrin.h>
 #include <cstring>
@@ -18,7 +19,10 @@ HMODULE WINAPI LoadGraphicsLibrary(LPCSTR name) {
                 reinterpret_cast<LPCSTR>(_ReturnAddress()), &caller);
             // Only the renderer opts in. Other callers retain native loading.
             if (caller && caller == GetModuleHandleA("Gr2D_DX8.dll")) {
-                if (HMODULE custom = LoadLibraryW(modulePath)) return custom;
+                if (HMODULE custom = LoadLibraryW(modulePath)) {
+                    WorldViewport::InstallGraphics(caller);
+                    return custom;
+                }
             }
         }
     }

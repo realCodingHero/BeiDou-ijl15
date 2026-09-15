@@ -188,6 +188,7 @@ bool Client::UpdateResolution() {
 	try {
 	ResolutionPatch::Batch patches;
 	AdaptiveLayout::SetRenderSize(m_nGameWidth, m_nGameHeight);
+	WorldViewport::Configure(m_nGameWidth, m_nGameHeight);
 	nStatusBarY = Client::m_nGameHeight - 578;
 	nStatusBarX = StatusBarLayout::Left(m_nGameWidth);
 	const int statusBarWidth = StatusBarLayout::Width(m_nGameWidth);
@@ -261,7 +262,7 @@ bool Client::UpdateResolution() {
 	patches.WriteInt(0x005386F5 + 1, m_nGameWidth);	//push 800 ; CField::DrawFearEffect
 	patches.WriteInt(0x0055B808 + 1, m_nGameHeight);//push 600
 	patches.WriteInt(0x0055B80D + 1, m_nGameWidth);	//mov edi,800
-	patches.WriteInt(0x0055B884 + 1, m_nGameWidth);	//push 600 ; RelMove?
+	patches.WriteInt(0x0055B884 + 1, m_nGameHeight);	// CField_LimitedView dark canvas DrawRectangle height
 	patches.WriteInt(0x007E15BE + 1, m_nGameWidth);	//push 800 ; CreateWnd
 	patches.WriteInt(0x007E16B9 + 1, m_nGameHeight);//push 600
 	patches.WriteInt(0x007E16BE + 1, m_nGameWidth);	//push 800 ; CWnd::GetCanvas //!!length of server message at top
@@ -402,6 +403,9 @@ bool Client::UpdateResolution() {
 	patches.WriteInt(0x00BE2738, (unsigned int)floor(m_nGameWidth / 2));	// dd 400
 	patches.WriteInt(0x00BE2DF4, (unsigned int)floor(m_nGameHeight / 2));	// dd 300
 	patches.WriteInt(0x00BE2DF0, (unsigned int)floor(m_nGameWidth / 2));	// dd 400
+	patches.WriteInt(0x00640599 + 2, m_nGameWidth / 2 - 10); // Weather horizontal range
+	patches.WriteInt(0x006405BA + 2, m_nGameHeight - 10); // Weather vertical range
+	patches.WriteInt(0x006406FA + 2, m_nGameHeight / 2); // Weather center
 	patches.WriteInt(0x00640656 + 2, (unsigned int)floor(-m_nGameWidth / 2));		//add edi,-400 ;
 
 	patches.WriteInt(0x006CE4C6 + 1, (unsigned int)floor(-m_nGameWidth / 2));		//push -400 ;
@@ -645,13 +649,17 @@ bool Client::UpdateResolution() {
 	//patches.WriteInt(0x0064202F + 2, (unsigned int)floor(m_nGameWidth / 2));	//mov ebc,400 ;  VRright		//camera movement	//crashes
 	patches.WriteInt(0x0064208F + 1, (unsigned int)floor(m_nGameHeight / 2));	//add eax,300  ; VRbottom //camera movement //not working for most maps
 
-	// RestoreViewRange already reads each map's VR (or foothold bounds). For
-	// shorter maps, keep the bottom camera limit instead of averaging it with
-	// the top limit. This keeps ground/foreground at their authored lower edge
-	// at 1080p+, without moving/scaling individual map objects. The <=720p
-	// presentation remains compatible. Wide/tall maps retain native scrolling.
+	// Bound the world viewport to the resolved map VR before native clamping.
+	// All world layers and world input share that transform; HUD stays separate.
+	// Keep bottom anchoring as the fallback when the guarded renderer is absent.
 	if (m_nGameHeight > 720) {
 		patches.CodeCave(AdaptiveBackground, 0x0063D2F2, 6);
+		patches.CodeCave(AdaptiveWorldCamera, 0x00642094, 6);
+		patches.CodeCave(AdaptiveWorldCursor, 0x009E3133, 7);
+		patches.CodeCave(WorldViewport::MouseButton, 0x009E2F3C, 5);
+		patches.CodeCave(WorldViewport::MouseMove, 0x009E2F60, 5);
+		patches.CodeCave(WorldViewport::MouseWheel, 0x009E2F80, 5);
+		patches.CodeCave(WorldViewport::DragMove, 0x009E2FBC, 5);
 		patches.FillBytes(0x006420EB, 0x90, 7); // add eax,ecx; cdq; sub eax,edx; sar eax,1
 	}
 	// 0x00642105 is a nullable COM Release, not a viewport adjustment. Leave

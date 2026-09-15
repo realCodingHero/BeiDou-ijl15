@@ -1410,6 +1410,24 @@
       "instruction": "mov ecx, 0x258"
     },
     {
+      "address": 6555035,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6555033,
+      "guard_size": 6,
+      "original": "81c286010000",
+      "instruction": "add edx, 0x186"
+    },
+    {
+      "address": 6555068,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6555066,
+      "guard_size": 6,
+      "original": "81c34e020000",
+      "instruction": "add ebx, 0x24e"
+    },
+    {
       "address": 6555143,
       "size": 4,
       "kind": "Integer",
@@ -1498,6 +1516,15 @@
       "guard_size": 5,
       "original": "b958020000",
       "instruction": "mov ecx, 0x258"
+    },
+    {
+      "address": 6555388,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 6555386,
+      "guard_size": 6,
+      "original": "8d832c010000",
+      "instruction": "lea eax, [ebx + 0x12c]"
     },
     {
       "address": 6557754,
@@ -1597,6 +1624,15 @@
       "guard_size": 5,
       "original": "2d2c010000",
       "instruction": "sub eax, 0x12c"
+    },
+    {
+      "address": 6561940,
+      "size": 6,
+      "kind": "Jump",
+      "guard": 6561940,
+      "guard_size": 6,
+      "original": "8986fc000000",
+      "instruction": "mov dword ptr [esi + 0xfc], eax"
     },
     {
       "address": 6562027,
@@ -2650,6 +2686,51 @@
       "guard_size": 5,
       "original": "6870feffff",
       "instruction": "push 0xfffffe70"
+    },
+    {
+      "address": 10366780,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 10366780,
+      "guard_size": 5,
+      "original": "a1d4debe00",
+      "instruction": "mov eax, dword ptr [0xbeded4]"
+    },
+    {
+      "address": 10366816,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 10366816,
+      "guard_size": 5,
+      "original": "a1d4debe00",
+      "instruction": "mov eax, dword ptr [0xbeded4]"
+    },
+    {
+      "address": 10366848,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 10366848,
+      "guard_size": 5,
+      "original": "a1d4debe00",
+      "instruction": "mov eax, dword ptr [0xbeded4]"
+    },
+    {
+      "address": 10366908,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 10366908,
+      "guard_size": 5,
+      "original": "a1d4debe00",
+      "instruction": "mov eax, dword ptr [0xbeded4]"
+    },
+    {
+      "address": 10367283,
+      "size": 7,
+      "kind": "Jump",
+      "guard": 10367283,
+      "guard_size": 7,
+      "original": "837c2410007441",
+      "instruction": "cmp dword ptr [esp + 0x10], 0; je 0x9e317b"
     },
     {
       "address": 10447582,

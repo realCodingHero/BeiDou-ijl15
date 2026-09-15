@@ -1,40 +1,66 @@
 # Adaptive map viewport, login presentation and status bar
 
-The internal render size controls the visible world area; window scaling then
-scales that finished image. Increasing the height does not add terrain or make
-old map canvases taller.
+The configured render size defines the framebuffer. The bounded world view
+can be smaller on finite maps, with independent HUD coordinates; window
+scaling then scales the finished frame. Increasing the resolution does not
+add terrain or make old map canvases taller.
 
-## Map camera and backgrounds
+## Bounded world viewport and backgrounds
 
-CMapLoadable::RestoreViewRange reads each map's VR rectangle and keeps native
-foothold/link fallback. Above 720p, a map shorter than the viewport uses
-VRBottom - renderHeight/2 for both vertical camera limits. Horizontal centering
-and tall-map scrolling remain native. 600p/720p behavior is preserved.
+At render heights above 720, WorldViewport bounds the visible world to the VR
+rectangle resolved by native CMapLoadable::RestoreViewRange. That retains the
+engine's linked-map and foothold fallback; missing explicit VR is not treated
+as an infinite scene. An eight-pixel inset hides candidate cut edges identified
+by the asset audit. Inner extents are rounded down to even integers so an
+integer camera center cannot escape a half-pixel edge on odd-sized maps.
 
-For flight map 200090510, VRTop=-748 and VRBottom=179. At 1080p the previous
-center was -284, exposing sky down to world Y=256 below clouds ending at Y=196.
-The bottom-aligned center is -361, so the clouds cover the visible bottom=179.
+The uniform scale is max(1, renderWidth/innerWidth, renderHeight/innerHeight).
+The visible world dimensions are render dimensions divided by that scale;
+camera limits keep this whole rectangle inside the bounds. Large maps retain
+their configured world view, with only the edge inset. Small/narrow maps show
+less world and larger actors, while the framebuffer and HUD remain at the
+configured resolution. There is no map-ID patch list or runtime WZ mutation.
 
-The same map's crescent background has a deliberately flat-cut top. It is a
-460x279 canvas with origin Y=139, placed at Y=-226 and parallax ry=-13. With
-1080p's larger viewport, its top becomes visible around screen Y=222. Moving
-the camera alone cannot fix both this top and the lower foreground boundary.
+For flight map 200090500, the tree canvas ends exactly at VRTop=-633. Its
+authored VR is (-809,-633)-(2765,179). A 1920x1080 render now shows about
+1415.11x796 world pixels at scale 1.3568; camera Y=-227 gives a top of -625,
+placing the cut eight world pixels outside the viewport. Moving the tree
+independently would break its platform/portal/foothold alignment.
 
-The common LoadBack hook at 0x0063D2F2 now adjusts upper parallax decorations:
-front=0, y<0, -100<ry<=0, and type 0/1/4. It shifts Y up by
-MulDiv(renderHeight-600, 100-ry, 200), retaining the 600p upper composition and
-accounting for the bottom camera's parallax displacement. Both static and
-animated layers consume the adjusted position. CLogin, foreground, world-
-attached layers (ry=-100), vertical grids/motion and lower decorations retain
-their authored coordinates. Layer dimensions, speeds, terrain and physics are
-unchanged; there is no map-ID list or WZ mutation.
+The guarded Gr2D_DX8 RenderLayer detour scales clip-space projection for world
+layers only. It follows retained overlay ancestry before checking the root Z,
+so relatively positive face/equipment sublayers still follow their world
+parent. Negative children of HUD roots retain HUD coordinates. Native avatar
+assembly, physics, server positions, skills and portals are unchanged.
+Projection and the native layer's filter field are restored after each draw;
+linear filtering is requested through Gr2D's own state cache. No additional
+render target, neural pass, CPU pixel readback or cached COM/device reference
+is added to production rendering. Shrinking the visible world keeps native
+render-sized culling conservative rather than shrinking an actor's cull box.
 
-This is a layout rule for existing artwork. Finite artwork or unusual map
-compositions still need visual review; the inventory is not a claim that every
-map has been played or that missing scenery can be generated automatically.
+World mouse events are inversely transformed before stage dispatch. Native
+CWndMan::GetCursorPos(bWorld=1) is also transformed before adding the camera
+origin, covering handlers that query the cursor rather than use event X/Y.
+HUD events and the displayed cursor keep screen coordinates. Leaving a field
+immediately disables the scale via current-stage identity; configuration
+changes clear it until the next RestoreViewRange.
 
-The old cave at 0x00642105 was in nullable COM cleanup, not camera calculation.
-It was removed; the original null branch remains intact.
+The upper-parallax LoadBack compensation remains restricted to front=0,
+y<0, -100<ry<=0, type 0/1/4, but uses the effective scene height when the
+bounded viewport is active. Foreground, world-attached back layers, moving
+grids and login retain their existing rules. Weather generation range/center
+now covers the three remaining old 390/590/300 constants. LimitedView's dark
+canvas DrawRectangle now receives height instead of width.
+
+Gr2D PE identity and the draw/overlay/Z/filter instructions must match before
+the detour is installed. If unavailable, previous bottom-camera anchoring
+remains the fallback. At 600p/720p the world projection stays native. The old
+crashing 0x00642105 COM-release cave remains removed.
+
+This is a viewport repair for existing artwork. VR is not proof that every
+pixel inside it has matching art. Missing resources, authored seams deeper
+inside VR, and unusual scripted layouts remain separate cases; the scan does
+not claim that every map or animation has been visually played.
 
 ## Centered status bar and popups
 
@@ -84,11 +110,11 @@ linear/vsync path and full internal resolution.
 
 ## Validation
 
-- All 307 resolution sites have operand/instruction signatures against the
+- All 316 resolution sites have operand/instruction signatures against the
   supported v83 EXE and retain transactional startup validation/rollback.
 - The real EXE fixture covers 64 configurations, camera clamps and all 26
   hotkeys including gaps at 800x600, 1280x720, 1920x1080 and 2560x1440.
-- Production background/login caves are executed with native stack/register
+- Production background/login/camera/world-cursor caves are executed with native stack/register
   conventions, including original local writes and the frame MOVSD.
 - Stage transitions, compatibility fallback, upper-layer exclusions and mouse
   round trips are tested. COM integration uses actual PCOM/Shape2D libraries.
@@ -98,9 +124,13 @@ linear/vsync path and full internal resolution.
   partial-present fallback, resets, managed textures and final Release.
 - Independent image references, frame pacing, all four help actions, window
   resize/maximize and placement persistence regressions pass.
-- The read-only map inventory covers all 5,364 installed maps, including
-  native VR fallback/link data; 1,952 maps contain 14,605 upper parallax
-  layers matching the rule. There were no parse failures or invalid ranges.
+- The scene inventory covers 5,363 numeric maps (AreaCode.img is an index),
+  167,251 objects, 431,960 tiles and 44,528 back/front layers. All 4,126
+  explicit VR rectangles pass the production viewport bounds/input checks.
+- Real PCOM/Gr2D/Canvas integration with the deployed D3D8-to-9 module verifies
+  GPU pixels: world and equipment scale together, HUD stays 60x40 pixels,
+  and stage exit restores a 60x40 world layer. It also checks 800-layer timing;
+  that synthetic workload is not a game-wide performance guarantee.
 
 Run tools/build-patch-integrity.ps1, tools/build-window-scaling.ps1
 -ToolchainRoot <MSVC-root>, and tools/build-upscaling.ps1. GPU tests need desktop
@@ -111,3 +141,11 @@ Research acceptance precedes formal deployment: check login, world/character
 selection and mouse placement; the flight map's top/bottom; popup alignment;
 and a town, small indoor map and vertically scrolling map. Exclusive fullscreen
 mode switching and actual game visuals still require the user's game session.
+
+Run tools/audit-scene-layers.ps1 to regenerate the complete scene/resource
+inventory and out/scene-audit/bounds.txt. Pass that file to WorldViewportTests.exe
+for data-driven camera checks. tools/test-world-viewport-native.ps1 takes
+Client, ToolchainRoot and WzInclude paths; the last points to external WzLib
+headers. It reads installed graphics libraries and runs in out/world-native,
+without launching the game. See [the Chinese test matrix](map-viewport-test-matrix.md)
+for representative map IDs and explicit acceptance limits.
