@@ -1,13 +1,40 @@
 #pragma once
 #include "WindowScaling.h"
+#include "StatusBarLayout.h"
+int nStatusBarX = 0;
 int nStatusBarY = 0;
 __declspec(naked) void AdjustStatusBar() {
 	__asm {
 		push nStatusBarY
-		push ebx // horizontal position; 0
+		push eax
+		mov eax, nStatusBarX
+		lea eax, [eax + ebx]
+		xchg eax, [esp] // push translated X; preserve EAX and EFLAGS
 		mov ecx, esi
 		jmp dword ptr[dwStatusBarPosRetn]
 	}
+}
+
+void __cdecl CenterStatusBarNativeOrigin(IUnknown** result, uintptr_t caller) {
+    StatusBarLayout::CenterNativeOrigin(result, caller);
+}
+
+// CWndMan::GetOrgWindow epilogue: result is an owned IWzVector2D pointer.
+__declspec(naked) void CenterStatusBarOrigin() {
+    __asm {
+        pushfd
+        pushad
+        push dword ptr [ebp + 4]
+        push esi
+        call CenterStatusBarNativeOrigin
+        add esp, 8
+        popad
+        popfd
+        mov eax, esi
+        pop esi
+        leave
+        ret 4
+    }
 }
 
 __declspec(naked) void AdjustStatusBarBG() {
@@ -309,22 +336,6 @@ __declspec(naked) void VersionNumberFix() {
 		sub    eax, DWORD PTR[ebp - 0x1c]
 		push	nTopOfsettedVerFix
 		jmp dword ptr[dwVersionNumberFixRtm]
-	}
-}
-
-int myAlwaysViewRestoreFixOffset = 0;
-
-__declspec(naked) void AlwaysViewRestoreFix() {
-	__asm {
-		test	eax, eax
-		jnz C_Dest
-		mov ecx, myAlwaysViewRestoreFixOffset
-		push myAlwaysViewRestoreFixOffset
-		jmp dword ptr[dwAlwaysViewRestorerFixRtm]
-		C_Dest:
-		mov ecx, DWORD PTR[eax]
-		push eax
-		jmp dword ptr[dwAlwaysViewRestorerFixRtm]
 	}
 }
 

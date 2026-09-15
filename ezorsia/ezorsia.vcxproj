@@ -180,6 +180,7 @@
     <ClInclude Include="WindowScaling.h" />
     <ClInclude Include="UpscaleLoader.h" />
     <ClInclude Include="ResolutionPatch.h" />
+    <ClInclude Include="StatusBarLayout.h" />
     <ClInclude Include="ResolutionPatchSites.h" />
     <ClInclude Include="WindowScalingGeometry.h" />
     <ClInclude Include="WindowPlacementConfig.h" />
@@ -229,6 +230,9 @@
     <ClCompile Include="WindowScaling.cpp" />
     <ClCompile Include="UpscaleLoader.cpp" />
     <ClCompile Include="ResolutionPatch.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="StatusBarLayout.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="ijl15.cpp" />

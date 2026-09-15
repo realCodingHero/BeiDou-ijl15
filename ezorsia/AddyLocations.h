@@ -58,9 +58,6 @@ const DWORD dwCashFixRtm = 0x0046934E;
 const DWORD dwVersionNumberFix = 0x005F464D;
 const DWORD dwVersionNumberFixRtm = 0x005F4657;
 const int dwVersionNumberFixNOPs = 10;
-const DWORD dwAlwaysViewRestoreFix = 0x00642105;
-const DWORD dwAlwaysViewRestorerFixRtm = 0x0064210C;
-const int dwAlwaysViewRestoreFixNOPs = 7;
 
 //const DWORD dwloginFrameFix = 0x005F4C11;
 //const DWORD dwloginFrameFixCall = 0x009DE4D2;

@@ -17,6 +17,7 @@ add_library(ijl15 SHARED
     ezorsia/WindowScaling.cpp
     ezorsia/UpscaleLoader.cpp
     ezorsia/ResolutionPatch.cpp
+    ezorsia/StatusBarLayout.cpp
     ezorsia/ijl15.cpp
     ezorsia/ZAllocEx.cpp
     ezorsia/dllmain.cpp

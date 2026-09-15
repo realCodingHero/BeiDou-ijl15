@@ -8,6 +8,7 @@
 #include "Client.h"
 #include "ResolutionPatch.h"
 #include "ResolutionPatchSites.h"
+#include "StatusBarLayout.h"
 
 using namespace ResolutionPatch;
 static unsigned char* mapped;
@@ -60,6 +61,66 @@ static void ExecuteRegressionInstructions() {
     assert(VirtualFree(code, 0, MEM_RELEASE));
 }
 
+static void ExecuteMapAndHotkeyInstructions(unsigned width, unsigned height) {
+    auto code = static_cast<unsigned char*>(VirtualAlloc(nullptr, 4096, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE));
+    assert(code);
+    // Execute the actual EXE's short-map clamping block, including this patch.
+    // ESI points 0xF0 bytes before our RECT, as it does in CMapLoadable.
+    const unsigned char mapPrefix[] = {0x56,0x8B,0x74,0x24,0x08,0x81,0xEE,0xF0,0,0,0};
+    memcpy(code, mapPrefix, sizeof(mapPrefix));
+    const size_t mapBytes = 0x006420FE-0x006420B0;
+    memcpy(code+sizeof(mapPrefix), At(0x006420B0), mapBytes);
+    memcpy(code+sizeof(mapPrefix)+mapBytes, "\x5E\xC2\x04\x00", 4);
+    auto clamp = reinterpret_cast<void (__stdcall*)(RECT*)>(code);
+
+    // GetShortCutIndexByPos only calls PtInRect. Redirect that import slot;
+    // retain the production table, bounds comparison, and local XY offsets.
+    auto hotkey = code+256;
+    memcpy(hotkey, At(0x008DE8D5), 0x008DE93D-0x008DE8D5);
+    auto ptInRect = &::PtInRect;
+    *reinterpret_cast<uintptr_t*>(hotkey+0x008DE918-0x008DE8D5) = reinterpret_cast<uintptr_t>(&ptInRect);
+    auto hit = reinterpret_cast<int (__stdcall*)(int,int)>(hotkey);
+    DWORD old; assert(VirtualProtect(code, 4096, PAGE_EXECUTE_READ, &old));
+    assert(FlushInstructionCache(GetCurrentProcess(), code, 4096));
+
+    const RECT mapBounds[] = {
+        {-2740,-748,809,179}, // reported flight map 200090510
+        {-400,-300,400,300}, // compact map, both axes smaller than 1080p
+        {-5000,-8000,5000,4000}, // tall/wide scrolling map
+        {-200,100,200,200}, // very short map; negative camera center
+        {-960,-540,960,540}, // exactly 1080p
+        {-901,-301,0,300} // odd and negative coordinates
+    };
+    for (auto bounds : mapBounds) {
+        RECT range{bounds.left+LONG(width/2), bounds.top+LONG(height/2),
+                   bounds.right-LONG(width/2), bounds.bottom-LONG(height/2)};
+        const RECT before = range;
+        clamp(&range);
+        if (before.left < before.right) assert(range.left == before.left && range.right == before.right);
+        else assert(range.left == (before.left+before.right)/2 && range.right == range.left);
+        if (before.top < before.bottom) assert(range.top == before.top && range.bottom == before.bottom);
+        else if (height > 720) {
+            assert(range.top == before.bottom && range.bottom == before.bottom);
+            assert(range.bottom+LONG(height/2) == bounds.bottom);
+        } else assert(range.top == (before.top+before.bottom)/2 && range.bottom == range.top);
+    }
+    assert(*reinterpret_cast<unsigned*>(At(0x008CFD51)) == StatusBarLayout::Width(width));
+    const int left = StatusBarLayout::Left(width), top = int(height)-578;
+    // Start from screen coordinates of the DRAWN keys, then let the native
+    // handler consume coordinates local to the translated CWnd.
+    for (int row=0; row<2; ++row) for (int col=0; col<13; ++col) {
+        int x = left+815+7+35*col, y = int(height)-79+8+33*row;
+        assert(hit(x-left, y-top) == row*13+col);
+        assert(hit(x+31-left, y+31-top) == row*13+col);
+        assert(hit(x+32-left, y-top) == -1); // gap between keys
+    }
+    // Empty space must terminate after the 26 entries, without following data.
+    for (int y : {-100,0,100,498,506,573,578,2000})
+        for (int x : {-100,0,814,815,1280,2000}) assert(hit(x,y) == -1);
+    assert(memcmp(At(0x00642105), original.data()+0x00642105-kImageBase, 10) == 0);
+    assert(VirtualFree(code, 0, MEM_RELEASE));
+}
+
 int main(int argc, char** argv) {
     const char* executable = nullptr;
     for (int i=1; i+1<argc; ++i) if (!strcmp(argv[i], "--exe")) executable = argv[i+1];
@@ -86,6 +147,7 @@ int main(int argc, char** argv) {
         Client::bigLoginFrame = (options&8) != 0;
         for (const auto& size : dimensions) {
             assert(Apply(size[0], size[1]));
+            if (!options) ExecuteMapAndHotkeyInstructions(size[0], size[1]);
             const auto first = Snapshot();
             assert(Apply(size[0], size[1]) && first == Snapshot());
             assert(Protection(0x004D59B2) == PAGE_EXECUTE_READ);
@@ -121,5 +183,5 @@ int main(int argc, char** argv) {
     Reset(); Change(kImageBase+dos->e_lfanew+8, 0);
     before = Snapshot(); assert(!Apply(1920,1080)); assert(before == Snapshot());
     assert(VirtualFree(mapped, 0, MEM_RELEASE));
-    puts("PASS: real EXE, 64 resolution/layout combinations, repeat/reconfigure, signatures, rollback, page protection, executed crash-site regressions.");
+    puts("PASS: real EXE, 64 resolution/layout combinations, map clamps, all 26 hotkeys and empty space at 4 resolutions, repeat/reconfigure, signatures, rollback, page protection, executed crash-site regressions.");
 }
