@@ -14,21 +14,23 @@ as an infinite scene. An eight-pixel inset hides candidate cut edges identified
 by the asset audit. Inner extents are rounded down to even integers so an
 integer camera center cannot escape a half-pixel edge on odd-sized maps.
 
-The uniform scale is max(1, renderHeight/innerHeight). The world width is
-min(renderWidth/scale, innerWidth). Narrow maps use a centered, narrower D3D
-viewport with projection compensation so the world is clipped, not squeezed.
+World scale stays at 1. Width and height are independently limited to the
+smaller of the render extent and the authored inner extent. A centered D3D
+viewport clips both axes, with projection compensation to preserve pixel
+size. Short maps get top/bottom margins, narrow maps get side margins, and
+small rooms may get both. The former height-fill rule made Three Doors
+(270000000) magnify every actor by 2.3789 at 1080p; it is no longer used.
 Camera limits keep the visible rectangle inside the bounds. Large maps retain
-their configured world view, with only the edge inset. Aqua Central Plaza
-(230000001) uses scale 1.0998 instead of 2.4490 at 1920x1080, with scene pixels
-x=529..1390. HUD still spans the full framebuffer. There is no map-ID patch
-list or runtime WZ mutation.
+their configured world view. Aqua Central Plaza (230000001) has scene pixels
+x=568..1351, y=49..1030 at 1920x1080. HUD still spans the full framebuffer.
+There is no map-ID patch list, global 1080p/720p magnification or WZ mutation.
 
 ### Ground coverage and the camera bottom
 
 Native fallback VRBottom can extend below the terrain artwork: the supported
 EXE adds 100 to the foothold MBR bottom at 64204B..64204E. At 1080p this exposes
 the transparent lower edge of a wall while the camera is at its lower limit.
-Do not shrink the Fit input rectangle, which would also change magnification.
+Do not shrink the Fit input rectangle, which would also change the scene clip.
 Instead, constrain only the final camera.bottom when there is evidence of a
 continuous ground band near that limit.
 
@@ -55,13 +57,15 @@ visible bottom 791 becomes 703, camera.bottom 251 becomes 163. For Henesys
 (100000000), woodMarble/enH1 at y=660 has at least 9 opaque rows across the band:
 visible bottom 761 becomes 668, camera.bottom 221 becomes 128. Both keep scale
 1 at 1920x1080. This changes the framing, not terrain or collision coordinates.
-Plaza 230000001 and flight maps 200090500/200090510 retain their previous view.
+The ground rule itself does not adjust Plaza 230000001 or flight maps
+200090500/200090510; their small-map framing follows the uniform-size rule.
 The rule is conservative: missing end caps or insufficient camera travel need
 separate treatment; it does not claim to repair every asset gap.
 
 For flight map 200090500, the tree canvas ends exactly at VRTop=-633. Its
 authored VR is (-809,-633)-(2765,179). A 1920x1080 render now shows about
-1415.11x796 world pixels at scale 1.3568; camera Y=-227 gives a top of -625,
+1920x796 world pixels at scale 1, centered with 142-pixel top/bottom margins.
+Camera Y=-227 gives a world top of -625,
 placing the cut eight world pixels outside the viewport. Moving the tree
 independently would break its platform/portal/foothold alignment.
 
@@ -92,9 +96,10 @@ World mouse events are inversely transformed before stage dispatch. Native
 CWndMan::GetCursorPos(bWorld=1) is also transformed before adding the camera
 origin, covering handlers that query the cursor rather than use event X/Y.
 HUD events and the displayed cursor keep screen coordinates. World dispatch
-rejects clicks in narrow-map side margins. Input requires the active stage
+rejects clicks in all four scene margins. With world scale 1 the inverse is
+the identity; the scene clip and integer camera origin still apply. Input requires the active stage
 identity. Drawing retains the old scene transform during a null-stage fade,
-preventing the outgoing map from briefly returning to its unscaled size.
+preventing the outgoing map from briefly expanding into its margins.
 Entering a non-field stage disables world drawing transforms; configuration
 changes clear them until the next RestoreViewRange.
 
@@ -170,6 +175,11 @@ linear/vsync path and full internal resolution.
 
 - All 319 resolution sites have operand/instruction signatures against the
   supported v83 EXE and retain transactional startup validation/rollback.
+- Fourteen map-bound samples render the actual NPC 2140000 sprite through
+  PCOM/Gr2D/D3D8-to-9. Its GPU footprint stays 64x91 in every fixed sample;
+  the accepted baseline reaches 186x265. Full-window HUD and all scene margins
+  are checked in the same frames. See [sample results](map-magnification-samples.md)
+  for provenance, reproduction, and limits of this component test.
 - The real EXE fixture covers 64 configurations, camera clamps and all 26
   hotkeys including gaps at 800x600, 1280x720, 1920x1080 and 2560x1440.
 - Production background/login/camera/world-cursor caves are executed with native stack/register
