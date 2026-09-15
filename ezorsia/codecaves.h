@@ -4,6 +4,36 @@
 #include "AdaptiveLayout.h"
 #include "WorldViewport.h"
 
+DWORD terrainBeginResume = 0x0063A105;
+__declspec(naked) void AdaptiveTerrainBegin() {
+    __asm {
+        pushfd
+        pushad
+        push ecx
+        call WorldViewport::BeginTerrain
+        add esp,4
+        popad
+        popfd
+        mov eax,0x00A9D383
+        jmp dword ptr[terrainBeginResume]
+    }
+}
+DWORD terrainTileResume = 0x0063A848;
+__declspec(naked) void AdaptiveTerrainTile() {
+    __asm {
+        pushfd
+        pushad
+        push edi
+        push ebp
+        call WorldViewport::RecordTerrainTile
+        add esp,8
+        popad
+        popfd
+        push 0x00BF6300
+        jmp dword ptr[terrainTileResume]
+    }
+}
+
 DWORD backgroundBeginResume = 0x0063CBBF;
 __declspec(naked) void AdaptiveBackgroundBegin() {
     __asm {

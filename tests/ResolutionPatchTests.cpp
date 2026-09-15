@@ -133,9 +133,13 @@ extern void AdaptiveWorldCursor();
 extern DWORD worldCameraResume, worldCursorResume, worldCursorSkip;
 extern void AdaptiveBackgroundBegin();
 extern DWORD backgroundBeginResume;
+extern void AdaptiveTerrainBegin();
+extern void AdaptiveTerrainTile();
+extern DWORD terrainBeginResume,terrainTileResume;
 static int observedX, observedY;
 static DWORD observedEax, observedEbx;
 __declspec(naked) void BackgroundReturnFixture() { __asm { ret } }
+__declspec(naked) void TerrainReturnFixture() { __asm { pop observedX } __asm { ret } }
 __declspec(naked) void LoginReturnFixture() {
     __asm { pop observedX }
     __asm { pop observedY }
@@ -242,6 +246,28 @@ static void ExecuteLayoutCaves() {
     }
     backgroundBeginResume=savedBegin;
     assert(observedEax==0x00A9D95C && observedEbx==reinterpret_cast<DWORD>(map));
+    savedBegin=terrainBeginResume;terrainBeginResume=reinterpret_cast<DWORD>(&BackgroundReturnFixture);
+    __asm {lea ecx,map}
+    __asm {call AdaptiveTerrainBegin}
+    __asm {mov observedEax,eax}
+    __asm {mov observedEbx,ecx}
+    terrainBeginResume=savedBegin;
+    assert(observedEax==0x00A9D383 && observedEbx==reinterpret_cast<DWORD>(map));
+    DWORD savedTile=terrainTileResume;terrainTileResume=reinterpret_cast<DWORD>(&TerrainReturnFixture);
+    __asm {
+        push ebp
+        push edi
+        mov ebp,frame
+        mov edi,690
+        mov eax,0x12345678
+        call AdaptiveTerrainTile
+        mov observedEax,eax
+        mov observedEbx,edi
+        pop edi
+        pop ebp
+    }
+    terrainTileResume=savedTile;
+    assert(observedX==0x00BF6300 && observedEax==0x12345678 && observedEbx==690);
 }
 
 int main(int argc, char** argv) {

@@ -23,6 +23,42 @@ their configured world view, with only the edge inset. Aqua Central Plaza
 x=529..1390. HUD still spans the full framebuffer. There is no map-ID patch
 list or runtime WZ mutation.
 
+### Ground coverage and the camera bottom
+
+Native fallback VRBottom can extend below the terrain artwork: the supported
+EXE adds 100 to the foothold MBR bottom at 64204B..64204E. At 1080p this exposes
+the transparent lower edge of a wall while the camera is at its lower limit.
+Do not shrink the Fit input rectangle, which would also change magnification.
+Instead, constrain only the final camera.bottom when there is evidence of a
+continuous ground band near that limit.
+
+Guarded LoadTiles entry 63A100 clears per-load metadata. LoadTile 63A843 records
+the already-resolved tile property, canvas, layer and x/y immediately before
+native CreateLayer. Only bottom end caps (u=enH1) are inspected. Read width,
+origin and the initial fully opaque rows through the native canvas interface;
+stop at the first partially transparent row. Cache metadata per canvas within
+the load and discard borrowed canvas identities after restoring the camera.
+Dimensions above 512, COM/inspection failure or allocation failure retain the
+previous camera behavior. No per-frame resource or pixel scan is added.
+
+Merge touching end caps on the same layer and at the same top into continuous
+bands. A candidate must span the visible width and reach both authored map
+sides (allowing up to half an end tile for native corner pieces). Its opaque
+bottom must be within 100 world pixels of the previous visible bottom. Choose
+the lowest eligible band, leave one pixel before its first transparent row,
+and reduce camera.bottom only if the existing camera.top still fits. Broken
+bands, isolated platforms, deep voids and fixed-height scenes do not qualify.
+Keep camera left/top/right, scale, viewport size, HUD and input transforms.
+
+For Kerning (103000000), the brownBrick/enH1 row at y=690 has 14 opaque rows:
+visible bottom 791 becomes 703, camera.bottom 251 becomes 163. For Henesys
+(100000000), woodMarble/enH1 at y=660 has at least 9 opaque rows across the band:
+visible bottom 761 becomes 668, camera.bottom 221 becomes 128. Both keep scale
+1 at 1920x1080. This changes the framing, not terrain or collision coordinates.
+Plaza 230000001 and flight maps 200090500/200090510 retain their previous view.
+The rule is conservative: missing end caps or insufficient camera travel need
+separate treatment; it does not claim to repair every asset gap.
+
 For flight map 200090500, the tree canvas ends exactly at VRTop=-633. Its
 authored VR is (-809,-633)-(2765,179). A 1920x1080 render now shows about
 1415.11x796 world pixels at scale 1.3568; camera Y=-227 gives a top of -625,
@@ -132,7 +168,7 @@ linear/vsync path and full internal resolution.
 
 ## Validation
 
-- All 317 resolution sites have operand/instruction signatures against the
+- All 319 resolution sites have operand/instruction signatures against the
   supported v83 EXE and retain transactional startup validation/rollback.
 - The real EXE fixture covers 64 configurations, camera clamps and all 26
   hotkeys including gaps at 800x600, 1280x720, 1920x1080 and 2560x1440.
@@ -149,6 +185,12 @@ linear/vsync path and full internal resolution.
 - The scene inventory covers 5,363 numeric maps (AreaCode.img is an index),
   167,251 objects, 431,960 tiles and 44,528 back/front layers. All 4,126
   explicit VR rectangles pass the production viewport bounds/input checks.
+- Ground audit reads 278 end-cap canvases and builds 2,221 offline map fixtures
+  with resolved bounds. Production ground-camera logic adjusts 92 fixtures;
+  all keep their scale, viewport and other three camera limits. The two town
+  fixtures assert the exact limits above; gaps, platforms, failed reads and
+  native stack-local extraction have separate tests. These are data tests,
+  not 2,221 in-game visits.
 - Real PCOM/Gr2D/Canvas integration with the deployed D3D8-to-9 module verifies
   GPU pixels: world and equipment scale together, a native negative-Z HUD
   stays 1200x40, narrow scene bounds are x=529..1390 while HUD spans x=360..1559,
@@ -157,6 +199,11 @@ linear/vsync path and full internal resolution.
   correction in horizontal/vertical scans. Joined AquaRoad pieces have no
   gap. It also checks 800-layer timing;
   that synthetic workload is not a game-wide performance guarantee.
+- Real PCOM Property/Canvas alpha reads and Gr2D zero-size terrain layers
+  reproduce both towns' bottom gaps. Applying the new camera removes all 200
+  missing pixels on the sampled bottom-row strip, while actor and HUD sizes
+  remain unchanged. The fixture uses native LoadTile's zero width/height;
+  passing canvas dimensions would add a half-canvas center offset.
 
 Run tools/build-patch-integrity.ps1, tools/build-window-scaling.ps1
 -ToolchainRoot <MSVC-root>, and tools/build-upscaling.ps1. GPU tests need desktop
@@ -175,3 +222,10 @@ Client, ToolchainRoot and WzInclude paths; the last points to external WzLib
 headers. It reads installed graphics libraries and runs in out/world-native,
 without launching the game. See [the Chinese test matrix](map-viewport-test-matrix.md)
 for representative map IDs and explicit acceptance limits.
+
+Run tools/audit-ground-camera.ps1 to read end-cap alpha and placements without
+saving IMG files; pass out/ground-camera/fixtures.txt to GroundCameraTests.exe.
+The scanner skips unresolved offline links and uses recorded native fallback
+bounds only for the two towns. Production reads native resolved bounds and
+loaded tiles directly, with no map-ID list. map_viewport.log includes
+groundCamera=1 when the bottom constraint was applied.

@@ -3,6 +3,7 @@
 #include "d3d8.hpp"
 #include "WzLib/IWzGr2D.h"
 #include "WzLib/IWzCanvas.h"
+#include "WzLib/IWzProperty.h"
 #include <cassert>
 #include <cstdio>
 #include <filesystem>
@@ -157,6 +158,62 @@ int main(int argc,char** argv) {
     for(int y=5;y<250;++y)if((*reinterpret_cast<DWORD*>(pixels.data()+(y*captureWidth+1500)*4)&0xffffff)!=0x20d0e0)++joinGaps;
     printf("AquaRoad backdrop join gaps=%d\n",joinGaps);assert(joinGaps==0);
     lower->Release();upper->Release();
+    // Use real PCOM property/canvas methods, including the alpha-channel read.
+    // Reproduce the two towns' bottom end caps and apply the resulting camera.
+    for (int town=0;town<2;++town) {
+        RECT bounds=town ? RECT{-1018,-587,6328,770}:RECT{-2500,-1443,2645,800};
+        const int first=town ? -990:-2475,last=town ? 6210:2565;
+        const int groundY=town ? 660:690,solidRows=town ? 9:14;
+        const int expectedCamera=town ? 128:163;
+        WorldViewport::SetContextForTesting(&current,field,bounds,1920,1080);
+        auto view=WorldViewport::Fit(bounds,1920,1080);
+        assert(view.scale==1.0);
+        assert(SetCurrentDirectoryA(argv[1]));
+        IWzProperty* property=nullptr;IWzCanvas* cap=nullptr;
+        Check(create(L"Property",&__uuidof(IWzProperty),reinterpret_cast<void**>(&property),nullptr),"ground property");
+        Check(create(L"Canvas",&__uuidof(IWzCanvas),reinterpret_cast<void**>(&cap),nullptr),"ground canvas");
+        assert(SetCurrentDirectoryW(directory.c_str()));
+        VARIANT empty{},format{},type{};format.vt=VT_I4;format.lVal=2;
+        Check(cap->raw_Create(90,30,empty,format),"end cap allocate");
+        Check(cap->raw_DrawRectangle(0,0,90,30,0),"transparent end cap");
+        Check(cap->raw_DrawRectangle(0,0,90,solidRows,0xff22cc66),"opaque end cap prefix");
+        Check(cap->put_cx(0),"end cap origin X");Check(cap->put_cy(0),"end cap origin Y");
+        type.vt=VT_BSTR;type.bstrVal=SysAllocString(L"enH1");BSTR name=SysAllocString(L"u");
+        Check(property->put_item(name,type),"end cap type");SysFreeString(name);VariantClear(&type);
+        auto drawGround=[&](int cameraBottom,int tick) {
+            std::vector<IWzGr2DLayer*> ends;
+            VARIANT source{},filter{};source.vt=VT_UNKNOWN;source.punkVal=cap;filter.vt=VT_I4;filter.lVal=1;
+            for(int x=first;x<=last;x+=90) {
+                IWzGr2DLayer* layer=nullptr;
+                // LoadTile (63A881..63A88C) passes zero width/height, so the
+                // layer is anchored at x/y minus the canvas origin.
+                Check(gr->raw_CreateLayer(x,groundY-cameraBottom,0,0,int(0xC0000000),source,filter,&layer),"end cap layer");
+                Check(layer->put_color(0xffffffff),"end cap layer alpha");ends.push_back(layer);
+            }
+            auto groundHud=make(-600,490,int(0xC00615D0),0xffcc00cc,nullptr,1200,40);
+            Check(gr->raw_UpdateCurrentTime(tick),"ground clock");Check(gr->raw_RenderFrame(),"ground frame");
+            int gaps=0;for(int x=100;x<300;++x)
+                if((*reinterpret_cast<DWORD*>(pixels.data()+(1079*captureWidth+x)*4)&0xffffff)!=0x22cc66)++gaps;
+            auto painted=ColorBounds(0x22cc66);
+            printf("ground pixels camera=%d: (%ld,%ld)-(%ld,%ld), pixel(200,1079)=%08lX\n",cameraBottom,
+                painted.left,painted.top,painted.right,painted.bottom,*reinterpret_cast<DWORD*>(pixels.data()+(1079*captureWidth+200)*4));
+            auto actor=ColorBounds(0xff0000),status=ColorBounds(0xcc00cc);
+            assert(actor.right-actor.left==59 && actor.bottom-actor.top==39);
+            assert(status.left==360 && status.right==1559 && status.bottom-status.top==39);
+            groundHud->Release();for(auto layer:ends)layer->Release();return gaps;
+        };
+        const int oldGaps=drawGround(view.camera.bottom,960+town*10);
+        assert(oldGaps==200);
+        WorldViewport::BeginTerrain(field);
+        for(int x=first;x<=last;x+=90)WorldViewport::CollectTerrainTile(field,1,property,cap,x,groundY);
+        auto camera=reinterpret_cast<RECT*>(field+0xF0);
+        *camera={bounds.left+960,bounds.top+540,bounds.right-960,bounds.bottom-540};
+        WorldViewport::AdjustCamera(field);assert(camera->bottom==expectedCamera);
+        const int newGaps=drawGround(camera->bottom,961+town*10);
+        printf("ground camera town=%s: bottom %ld -> %ld, bottom-row gaps %d -> %d, actor/HUD unchanged\n",
+            town ? "100000000":"103000000",view.camera.bottom,camera->bottom,oldGaps,newGaps);
+        assert(newGaps==0);property->Release();cap->Release();
+    }
     WorldViewport::SetContextForTesting(&current,field,{-728,-413,728,413},1920,1080);
     // Exercise the hook under many layers without diagnostic pixel readback.
     // This is a local overhead measurement, not an in-game FPS guarantee.
