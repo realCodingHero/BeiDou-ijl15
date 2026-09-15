@@ -4,6 +4,21 @@
 #include "AdaptiveLayout.h"
 #include "WorldViewport.h"
 
+DWORD backgroundBeginResume = 0x0063CBBF;
+__declspec(naked) void AdaptiveBackgroundBegin() {
+    __asm {
+        pushfd
+        pushad
+        push ecx
+        call WorldViewport::BeginBackgrounds
+        add esp, 4
+        popad
+        popfd
+        mov eax, 0x00A9D95C
+        jmp dword ptr[backgroundBeginResume]
+    }
+}
+
 DWORD worldCameraResume = 0x0064209A;
 __declspec(naked) void AdaptiveWorldCamera() {
     __asm {

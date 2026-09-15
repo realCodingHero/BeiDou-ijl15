@@ -131,6 +131,8 @@ extern DWORD backgroundLayoutResume, loginFrameResume;
 extern void AdaptiveWorldCamera();
 extern void AdaptiveWorldCursor();
 extern DWORD worldCameraResume, worldCursorResume, worldCursorSkip;
+extern void AdaptiveBackgroundBegin();
+extern DWORD backgroundBeginResume;
 static int observedX, observedY;
 static DWORD observedEax, observedEbx;
 __declspec(naked) void BackgroundReturnFixture() { __asm { ret } }
@@ -230,6 +232,16 @@ static void ExecuteLayoutCaves() {
         assert(point.x==555 && point.y==666 && observedEbx==0x76543210);
     }
     worldCursorResume=savedCursor;worldCursorSkip=savedSkip;
+    DWORD savedBegin=backgroundBeginResume;
+    backgroundBeginResume=reinterpret_cast<DWORD>(&BackgroundReturnFixture);
+    __asm {
+        lea ecx, map
+        call AdaptiveBackgroundBegin
+        mov observedEax,eax
+        mov observedEbx,ecx
+    }
+    backgroundBeginResume=savedBegin;
+    assert(observedEax==0x00A9D95C && observedEbx==reinterpret_cast<DWORD>(map));
 }
 
 int main(int argc, char** argv) {

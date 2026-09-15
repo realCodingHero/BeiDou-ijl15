@@ -14,12 +14,14 @@ as an infinite scene. An eight-pixel inset hides candidate cut edges identified
 by the asset audit. Inner extents are rounded down to even integers so an
 integer camera center cannot escape a half-pixel edge on odd-sized maps.
 
-The uniform scale is max(1, renderWidth/innerWidth, renderHeight/innerHeight).
-The visible world dimensions are render dimensions divided by that scale;
-camera limits keep this whole rectangle inside the bounds. Large maps retain
-their configured world view, with only the edge inset. Small/narrow maps show
-less world and larger actors, while the framebuffer and HUD remain at the
-configured resolution. There is no map-ID patch list or runtime WZ mutation.
+The uniform scale is max(1, renderHeight/innerHeight). The world width is
+min(renderWidth/scale, innerWidth). Narrow maps use a centered, narrower D3D
+viewport with projection compensation so the world is clipped, not squeezed.
+Camera limits keep the visible rectangle inside the bounds. Large maps retain
+their configured world view, with only the edge inset. Aqua Central Plaza
+(230000001) uses scale 1.0998 instead of 2.4490 at 1920x1080, with scene pixels
+x=529..1390. HUD still spans the full framebuffer. There is no map-ID patch
+list or runtime WZ mutation.
 
 For flight map 200090500, the tree canvas ends exactly at VRTop=-633. Its
 authored VR is (-809,-633)-(2765,179). A 1920x1080 render now shows about
@@ -32,8 +34,20 @@ layers only. It follows retained overlay ancestry before checking the root Z,
 so relatively positive face/equipment sublayers still follow their world
 parent. Negative children of HUD roots retain HUD coordinates. Native avatar
 assembly, physics, server positions, skills and portals are unchanged.
-Projection and the native layer's filter field are restored after each draw;
-linear filtering is requested through Gr2D's own state cache. No additional
+The native HUD also has negative Z: StatusBar::CreateWnd pushes C00615D0,
+screen messages use C0061634 and ordinary windows C00616FC. Only roots below
+the native status-bar boundary are world layers; a bare Z<0 test loses the HUD.
+Projection and viewport state are restored after each draw, including failure
+and exception paths. The native point/automatic filter is preserved.
+
+The native raw-quad path adds half a source texel to its UVs for 1:1 drawing.
+With extra projection scaling, the last output pixels can sample transparent
+texture padding, producing regular grid lines even with point filtering.
+A second signature-guarded detour at Gr2D+8877 subtracts that UV bias from the
+four stack-local vertices only while a scaled world draw is active. Texture
+dimension exponents come from the current raw canvas. Cached meshes, textures,
+HUD UVs and unscaled draws are untouched. Thread-local scope is restored on
+unwinding. Both detours install in one transaction. No additional
 render target, neural pass, CPU pixel readback or cached COM/device reference
 is added to production rendering. Shrinking the visible world keeps native
 render-sized culling conservative rather than shrinking an actor's cull box.
@@ -41,14 +55,22 @@ render-sized culling conservative rather than shrinking an actor's cull box.
 World mouse events are inversely transformed before stage dispatch. Native
 CWndMan::GetCursorPos(bWorld=1) is also transformed before adding the camera
 origin, covering handlers that query the cursor rather than use event X/Y.
-HUD events and the displayed cursor keep screen coordinates. Leaving a field
-immediately disables the scale via current-stage identity; configuration
-changes clear it until the next RestoreViewRange.
+HUD events and the displayed cursor keep screen coordinates. World dispatch
+rejects clicks in narrow-map side margins. Input requires the active stage
+identity. Drawing retains the old scene transform during a null-stage fade,
+preventing the outgoing map from briefly returning to its unscaled size.
+Entering a non-field stage disables world drawing transforms; configuration
+changes clear them until the next RestoreViewRange.
 
-The upper-parallax LoadBack compensation remains restricted to front=0,
-y<0, -100<ry<=0, type 0/1/4, but uses the effective scene height when the
-bounded viewport is active. Foreground, world-attached back layers, moving
-grids and login retain their existing rules. Weather generation range/center
+The LoadBack loop records the exact native root Z for each decorative back
+entry (front=0, ry>-100), including tiled and moving types. Their original Y
+coordinates are preserved and their complete group uses the same projection,
+max(worldScale, renderHeight/600). AquaRoad's two pieces meet at world Y=-273;
+shifting only its negative-Y piece formerly separated this join by 252 pixels
+at 1080p. The registry is rebuilt on map load and background-only reloads.
+World-attached backs (ry<=-100) and foreground keep the world transform so
+interactive scenery remains aligned. The older Y-offset rule is only the
+unsupported-graphics fallback. Login is excluded. Weather generation range/center
 now covers the three remaining old 390/590/300 constants. LimitedView's dark
 canvas DrawRectangle now receives height instead of width.
 
@@ -110,7 +132,7 @@ linear/vsync path and full internal resolution.
 
 ## Validation
 
-- All 316 resolution sites have operand/instruction signatures against the
+- All 317 resolution sites have operand/instruction signatures against the
   supported v83 EXE and retain transactional startup validation/rollback.
 - The real EXE fixture covers 64 configurations, camera clamps and all 26
   hotkeys including gaps at 800x600, 1280x720, 1920x1080 and 2560x1440.
@@ -128,8 +150,12 @@ linear/vsync path and full internal resolution.
   167,251 objects, 431,960 tiles and 44,528 back/front layers. All 4,126
   explicit VR rectangles pass the production viewport bounds/input checks.
 - Real PCOM/Gr2D/Canvas integration with the deployed D3D8-to-9 module verifies
-  GPU pixels: world and equipment scale together, HUD stays 60x40 pixels,
-  and stage exit restores a 60x40 world layer. It also checks 800-layer timing;
+  GPU pixels: world and equipment scale together, a native negative-Z HUD
+  stays 1200x40, narrow scene bounds are x=529..1390 while HUD spans x=360..1559,
+  and stage exit restores a 60x40 world layer. Adjacent texture fixtures
+  reproduce 17 seam pixels with old linear or point UVs, then zero after
+  correction in horizontal/vertical scans. Joined AquaRoad pieces have no
+  gap. It also checks 800-layer timing;
   that synthetic workload is not a game-wide performance guarantee.
 
 Run tools/build-patch-integrity.ps1, tools/build-window-scaling.ps1

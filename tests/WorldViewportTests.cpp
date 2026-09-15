@@ -1,4 +1,5 @@
 #include "WorldViewport.h"
+#include "AdaptiveLayout.h"
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -10,14 +11,17 @@
 
 namespace {
 struct Matrix { float m[16]; };
-void* methods[39]{};
-struct Device { void** vtable=methods; Matrix projection{}; int writes=0, failure=0; };
+struct Viewport { unsigned x=0,y=0,width=1920,height=1080;float minZ=0,maxZ=1; };
+void* methods[42]{};
+struct Device { void** vtable=methods; Matrix projection{}; int writes=0, failure=0, viewportWrites=0; Viewport viewport; };
 HRESULT __stdcall Get(Device* d,unsigned type,Matrix* m) {
     assert(type==3); if(d->failure==1) return E_FAIL; *m=d->projection; return S_OK;
 }
 HRESULT __stdcall Set(Device* d,unsigned type,const Matrix* m) {
     assert(type==3); if(d->failure==2) return E_FAIL; d->projection=*m; ++d->writes; return S_OK;
 }
+HRESULT __stdcall GetViewport(Device* d,Viewport* v) { if(d->failure==3)return E_FAIL;*v=d->viewport;return S_OK; }
+HRESULT __stdcall SetViewport(Device* d,const Viewport* v) { if(d->failure==4)return E_FAIL;d->viewport=*v;++d->viewportWrites;return S_OK; }
 struct Layer { alignas(4) unsigned char bytes[0x100]{};
     Layer(int z,Layer* parent=nullptr) {
         *reinterpret_cast<uintptr_t*>(bytes)=0x123456;
@@ -32,8 +36,8 @@ Matrix originalProjection;
 void __fastcall Draw(void* layer,void*,void* context) {
     auto d=*static_cast<Device**>(context); ++calls;
     for(int r=0;r<4;++r) for(int c=0;c<4;++c)
-        assert(std::abs(d->projection.m[r*4+c]-originalProjection.m[r*4+c]*(c<2 ? expectedScale:1))<0.0001);
-    assert(*reinterpret_cast<int*>(static_cast<unsigned char*>(layer)+0x4C)==(expectedScale>1 ? 2:1));
+        assert(std::abs(d->projection.m[r*4+c]-originalProjection.m[r*4+c]*(c==0 ? expectedScale*1920/d->viewport.width : c==1 ? expectedScale*1080/d->viewport.height:1))<0.0001);
+    assert(*reinterpret_cast<int*>(static_cast<unsigned char*>(layer)+0x4C)==1);
     if(throwDraw) throw std::runtime_error("draw failure");
 }
 int inputX=0,inputY=0;
@@ -49,7 +53,10 @@ int __fastcall IsField(void*,void*,const void* rtti) { assert(rtti==reinterpret_
 void CheckBounds(RECT r,int width,int height) {
     auto v=WorldViewport::Fit(r,width,height);
     assert(v.scale>=1 && std::isfinite(v.scale));
-    assert(std::abs(v.width/v.height-double(width)/height)<1e-10);
+    assert(std::abs(v.height*v.scale-height)<1e-8);
+    assert(v.width*v.scale<=width+1e-8);
+    assert(v.clip.left>=0 && v.clip.right<=width && v.clip.bottom==height);
+    assert(std::abs(v.clip.left-(width-v.clip.right))<=1);
     assert(v.camera.left<=v.camera.right && v.camera.top<=v.camera.bottom);
     for(LONG x:{v.camera.left,v.camera.right}) for(LONG y:{v.camera.top,v.camera.bottom}) {
         assert(x-v.width/2>=r.left+8-1e-8 && x+v.width/2<=r.right-8+1e-8);
@@ -86,9 +93,10 @@ int main(int argc,char** argv) {
     WorldViewport::DragMove(nullptr,nullptr,2,reinterpret_cast<void*>(9),100,900); assert(inputX==p.x && inputY==p.y);
     POINT cursor{100,900}; WorldViewport::AdjustWorldCursor(&cursor); assert(cursor.x==p.x && cursor.y==p.y);
     methods[0x98/4]=reinterpret_cast<void*>(&Get);methods[0x94/4]=reinterpret_cast<void*>(&Set);
+    methods[0xA4/4]=reinterpret_cast<void*>(&GetViewport);methods[0xA0/4]=reinterpret_cast<void*>(&SetViewport);
     Device d; for(int i=0;i<16;++i) d.projection.m[i]=float(i+1)/16; originalProjection=d.projection;
     Device* context=&d;
-    Layer world(-1000000000), equipment(5,&world), ui(10), uiChild(-1,&ui), cursorLayer(0x7ffffffd);
+    Layer world(int(0xC0000000)), equipment(5,&world), ui(int(0xC00615D0)), uiChild(-1,&ui), cursorLayer(0x7ffffffd);
     for(Layer* layer:{&world,&equipment,&ui,&uiChild,&cursorLayer}) for(int fail=0;fail<3;++fail) {
         d.failure=fail;d.writes=0;calls=0;
         expectedScale=(!fail && (layer==&world || layer==&equipment)) ? flight.scale:1;
@@ -101,7 +109,7 @@ int main(int argc,char** argv) {
     try { WorldViewport::DrawLayerForTesting(&world,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw)); assert(false); }
     catch(const std::runtime_error&) {}
     assert(!memcmp(&d.projection,&originalProjection,sizeof(Matrix)) && *reinterpret_cast<int*>(world.bytes+0x4C)==1);
-    throwDraw=false;expectedScale=1; current=nullptr;
+    throwDraw=false;expectedScale=flight.scale; current=nullptr;
     WorldViewport::DrawLayerForTesting(&world,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
     cursor={100,900};WorldViewport::AdjustWorldCursor(&cursor);assert(cursor.x==100 && cursor.y==900);
     assert(WorldViewport::MouseMove(nullptr,nullptr,100,900)==0);
@@ -115,6 +123,48 @@ int main(int argc,char** argv) {
     WorldViewport::AdjustCamera(map);
     assert(!memcmp(camera,&flight.camera,sizeof(RECT)));
     cursor={100,900};WorldViewport::AdjustWorldCursor(&cursor);assert(cursor.x==p.x && cursor.y==p.y);
+    // Adjacent AquaRoad pieces end/start at -273. Both Y values must survive
+    // LoadBack unchanged; their common backdrop projection preserves the join.
+    WorldViewport::BeginBackgrounds(map);
+    int storage[80]{};int* frame=storage+40;
+    frame[-0x48/4]=reinterpret_cast<int>(map);frame[-0x70/4]=-5;frame[-0x68/4]=1;
+    frame[2]=1;frame[-0x74/4]=27;AdaptiveLayout::AdjustBackground(frame,0);assert(frame[-0x74/4]==27);
+    frame[2]=2;frame[-0x74/4]=-619;AdaptiveLayout::AdjustBackground(frame,0);assert(frame[-0x74/4]==-619);
+    assert(WorldViewport::RegisterBackground(map,3,0,-100));
+    assert(WorldViewport::RegisterBackground(map,4,1,-5));
+    *camera={-809+960,-633+540,2765-960,179-540};WorldViewport::AdjustCamera(map);
+    Layer lower(int(0xBFFE0C00)+1000),upper(int(0xBFFE0C00)+2000),attached(int(0xBFFE0C00)+3000);
+    for(auto layer:{&lower,&upper,&attached}) {
+        expectedScale=layer==&attached ? flight.scale:1.8;
+        WorldViewport::DrawLayerForTesting(layer,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
+    }
+    WorldViewport::BeginBackgrounds(map); // Background-only reload, no camera rebuild.
+    expectedScale=flight.scale;
+    WorldViewport::DrawLayerForTesting(&lower,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
+    WorldViewport::RegisterBackground(map,2,0,-5);expectedScale=1.8;
+    WorldViewport::DrawLayerForTesting(&upper,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
+    // Narrow Aqua plaza: vertical scale about 1.10, centered side margins,
+    // same pixel scale in X/Y, original viewport restored before native HUD.
+    auto narrow=WorldViewport::Fit({-400,-398,400,600},1920,1080);
+    assert(narrow.scale<1.11 && narrow.clip.left==529 && narrow.clip.right==1391);
+    WorldViewport::SetContextForTesting(&current,map,{-400,-398,400,600},1920,1080);
+    inputX=123;assert(WorldViewport::MouseMove(nullptr,nullptr,100,540)==0 && inputX==123);
+    assert(WorldViewport::MouseMove(nullptr,nullptr,960,540)==42 && inputX==960);
+    for(int fail=0;fail<5;++fail) {
+        d.failure=fail;d.viewportWrites=0;expectedScale=fail ? 1:narrow.scale;
+        WorldViewport::DrawLayerForTesting(&world,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
+        assert(d.viewport.x==0 && d.viewport.width==1920 && d.viewport.height==1080);
+        assert(!memcmp(&d.projection,&originalProjection,sizeof(Matrix)));
+    }
+    d.failure=0;expectedScale=1;
+    WorldViewport::DrawLayerForTesting(&ui,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
+    expectedScale=narrow.scale;throwDraw=true;
+    try {WorldViewport::DrawLayerForTesting(&world,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));assert(false);}
+    catch(const std::runtime_error&) {}
+    assert(d.viewport.x==0 && d.viewport.width==1920 && !memcmp(&d.projection,&originalProjection,sizeof(Matrix)));
+    throwDraw=false;expectedScale=1;
+    WorldViewport::Configure(1920,1080); // Explicit new stage setup ends the held fade projection.
+    WorldViewport::DrawLayerForTesting(&world,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
     int maps=0;
     if(argc==2) {
         std::ifstream file(argv[1]); assert(file);

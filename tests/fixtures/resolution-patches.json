@@ -1365,6 +1365,15 @@
       "instruction": "push 0x320"
     },
     {
+      "address": 6540218,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 6540218,
+      "guard_size": 5,
+      "original": "b85cd9a900",
+      "instruction": "mov eax, 0xa9d95c"
+    },
+    {
       "address": 6542066,
       "size": 6,
       "kind": "Jump",
