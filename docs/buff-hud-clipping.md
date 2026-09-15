@@ -2,6 +2,9 @@
 
 2026-09-15。修复基于已验收的 PR #12；本次只修正世界图层与屏幕界面图层的分类。
 
+以下倍率和前后对照为当时修复记录。2026-09-16 的人物比例调整见
+[当前取景规则](map-magnification-samples.md)，Buff 独立于世界裁剪的修复继续保留。
+
 ## 原因与处理
 
 原生 TemporaryStatView 的图标和冷却遮罩均使用根图层 Z `0xC006156C`。
@@ -39,7 +42,7 @@ Buff 使用完整渲染画面的右上角坐标；地图的放大倍率、相机
 没有拿更早的地图放大规则做对照。两版 NPC 尺寸、场景裁剪及底栏像素完全一致。
 
 运行 `tools/test-map-magnification-native.ps1 -BuffRegression` 验证修复。
-对照时另加 `-ExpectBuffBug -ViewportSource <旧版 WorldViewport.cpp>`。
+历史对照时另加 `-ExpectBuffBug -ViewportSource <旧版 WorldViewport.cpp> -FixturePath <9b610e1 的 buff-hud.txt>`。
 输入为 `tests/fixtures/buff-hud.txt`，CSV 和 BMP 位于 `out/world-native`。
 测试需桌面 GPU，但不启动游戏，也不写客户端配置或 WZ。
 

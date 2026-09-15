@@ -240,7 +240,7 @@ MapShape Classify(RECT bounds) {
     return MapShape::Normal;
 }
 namespace {
-View FitRegion(RECT bounds,int width,int height,MapShape shape,bool expand) {
+View FitRegion(RECT bounds,int width,int height,MapShape shape) {
     View view;
     const double bw = double(bounds.right)-bounds.left, bh = double(bounds.bottom)-bounds.top;
     if (width <= 0 || height <= 0 || bw <= 16 || bh <= 16) return view;
@@ -254,21 +254,15 @@ View FitRegion(RECT bounds,int width,int height,MapShape shape,bool expand) {
     if (innerWidth<=0 || innerHeight<=0) return view;
     bounds.right=bounds.left+LONG(innerWidth); bounds.bottom=bounds.top+LONG(innerHeight);
     int visibleWidth=width,visibleHeight=height;
-    if(shape==MapShape::TallNarrow) {
-        const int unit=(std::min)(width/4,height/3);
-        if(unit<=0) return {};
-        visibleWidth=unit*4;visibleHeight=unit*3;
-        view.scale=(std::max)(1.0,(std::max)(visibleWidth/innerWidth,visibleHeight/innerHeight));
-        view.width=visibleWidth/view.scale;view.height=visibleHeight/view.scale;
-    } else if(shape==MapShape::ShortWide && !expand) {
-        // Unknown/incomplete artwork: keep the research framing rather than
-        // infer a complete map from partial metadata and zoom aggressively.
+    if(shape!=MapShape::Normal) {
+        // Preserve native actor size (Henesys at 1080p). Finite scenes may
+        // letterbox on either axis; neither height-fill nor 4:3 changes zoom.
+        // Short-wide scenery can extend bounds, but never magnifies actors.
         view.width=(std::min)(double(width),innerWidth);
         view.height=(std::min)(double(height),innerHeight);
         visibleWidth=int(view.width);visibleHeight=int(view.height);
     } else {
-        // Accepted normal-map framing. On an audited short map this is used
-        // only AFTER its authored scenery has extended the vertical bounds.
+        // Retain accepted normal-map framing outside the two audited classes.
         view.scale=(std::max)(1.0,height/innerHeight);
         view.width=(std::min)(width/view.scale,innerWidth);view.height=height/view.scale;
         visibleWidth=(std::min)(width,2*int(std::floor((view.width*view.scale+1e-8)/2)));
@@ -282,16 +276,15 @@ View FitRegion(RECT bounds,int width,int height,MapShape shape,bool expand) {
     return view;
 }
 }
-View Fit(RECT bounds,int width,int height) {return FitRegion(bounds,width,height,Classify(bounds),false);}
+View Fit(RECT bounds,int width,int height) {return FitRegion(bounds,width,height,Classify(bounds));}
 View FitScenery(RECT bounds,int width,int height,const std::vector<RECT>& scenery) {
     const auto shape=Classify(bounds);
     if(shape!=MapShape::ShortWide) return Fit(bounds,width,height);
-    bool found=false;
     for(const auto& r:scenery) {
         if(r.left>=r.right || r.top>=r.bottom || r.right<=bounds.left || r.left>=bounds.right) continue;
-        found=true;bounds.top=(std::min)(bounds.top,r.top);bounds.bottom=(std::max)(bounds.bottom,r.bottom);
+        bounds.top=(std::min)(bounds.top,r.top);bounds.bottom=(std::max)(bounds.bottom,r.bottom);
     }
-    return FitRegion(bounds,width,height,shape,found);
+    return FitRegion(bounds,width,height,shape);
 }
 bool ConstrainGround(View& view, RECT bounds, const std::vector<GroundTile>& tiles) try {
     if (view.width<=0 || view.height<=0 || view.camera.top>=view.camera.bottom) return false;

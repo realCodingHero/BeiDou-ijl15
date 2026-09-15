@@ -38,9 +38,10 @@ int main(int argc,char** argv){
     assert(Classify(doors)==MapShape::ShortWide);
     auto bare=Fit(doors,1920,1080),expanded=FitScenery(doors,1920,1080,pillars);
     assert(bare.scale==1 && bare.height==454);
-    assert(std::abs(expanded.scale-1080.0/742)<1e-9 && expanded.height==742);
+    const auto henesys=Fit({-1018,-587,6328,770},1920,1080);
+    assert(henesys.scale==1 && expanded.scale==henesys.scale && expanded.height==742);
     assert(expanded.camera.top==-43 && expanded.camera.bottom==-43);
-    assert(expanded.clip.top==0 && expanded.clip.bottom==1080);
+    assert(expanded.clip.top==169 && expanded.clip.bottom==911);
     auto enough=FitScenery(doors,1920,1080,{{-100,-800,100,600}});
     assert(enough.scale==1 && enough.height==1080 && enough.clip.top==0);
     assert(Same(bare,FitScenery(doors,1920,1080,{})));
@@ -59,8 +60,11 @@ int main(int argc,char** argv){
         assert(Classify(r)==MapShape::TallNarrow);
         for(POINT output:{POINT{1920,1080},POINT{2560,1440},POINT{3840,2160},POINT{1919,1079}}){
             auto v=Fit(r,output.x,output.y);
-            assert((v.clip.right-v.clip.left)*3==(v.clip.bottom-v.clip.top)*4);
-            assert(std::abs(v.width/v.height-4.0/3)<1e-9);
+            assert(v.scale==1 && v.width==784);
+            assert(v.height==(std::min)(double(output.y),double(2*((r.bottom-r.top-16)/2))));
+            assert(v.clip.right-v.clip.left==v.width && v.clip.bottom-v.clip.top==v.height);
+            assert(std::abs(v.clip.left-(output.x-v.clip.right))<=1);
+            assert(std::abs(v.clip.top-(output.y-v.clip.bottom))<=1);
             assert(Same(v,FitScenery(r,output.x,output.y,{{-10000,-10000,10000,10000}})));
         }
     }
@@ -112,5 +116,5 @@ int main(int argc,char** argv){
         }
         assert(samples>=18);
     }
-    printf("PASS scoped scenery: bounds first then fill, unchanged normal maps, tall-map 4:3, frames/cache/refcounts, failure and reload; %d asset samples.\n",samples);
+    printf("PASS scoped scenery: native actor size with margins, unchanged normal maps, frames/cache/refcounts, failure and reload; %d asset samples.\n",samples);
 }

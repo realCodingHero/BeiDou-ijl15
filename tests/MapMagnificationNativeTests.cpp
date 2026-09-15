@@ -133,6 +133,7 @@ int main(int argc,char** argv){
     if(Pixel(x,y)!=0x20d0e0){visible.left=std::min(visible.left,LONG(x));visible.top=std::min(visible.top,LONG(y));visible.right=std::max(visible.right,LONG(x));visible.bottom=std::max(visible.bottom,LONG(y));}
   int w=visible.right-visible.left+1,h=visible.bottom-visible.top+1;
   assert(std::abs(w-(header[4]-header[2])*v.scale)<=2&&std::abs(h-(header[5]-header[3])*v.scale)<=2);
+  if(s.expected==1)assert(w==header[4]-header[2]&&h==header[5]-header[3]); // Exact Henesys-size pixels.
   const auto hb=Bounds(0x0000ff);assert(hb.left==360&&hb.right==1559&&hb.top==1030&&hb.bottom==1069);
   if(buffTest){
    int widths[3]{};
@@ -152,8 +153,9 @@ int main(int argc,char** argv){
   const int worldBottom=v.clip.left>=360&&v.clip.right<=1560&&v.clip.bottom>1030&&v.clip.bottom<=1070 ? 1029:v.clip.bottom-1;
   const auto fb=Bounds(0x20d0e0);assert(fb.left==v.clip.left&&fb.right==v.clip.right-1&&fb.top==v.clip.top&&fb.bottom==worldBottom);
   // Independent native textures must stay joined at each actual map scale.
-  for(int x=v.clip.left;x<v.clip.right;++x)assert(Pixel(x,200)==0x20d0e0);
-  for(int y=50;y<1000;++y)assert(Pixel(std::min(1400L,v.clip.right-10),y)==0x20d0e0);
+  const int scanY=std::max(200L,v.clip.top+20);
+  for(int x=v.clip.left;x<v.clip.right;++x)assert(Pixel(x,scanY)==0x20d0e0);
+  for(int y=std::max(60L,v.clip.top);y<std::min(1000L,v.clip.bottom);++y)assert(Pixel(std::min(1400L,v.clip.right-10),y)==0x20d0e0);
   for(POINT p:{POINT{100,v.clip.top-1},POINT{100,v.clip.bottom},POINT{v.clip.left-1,540},POINT{v.clip.right,540}})
    if(p.x>=0&&p.x<1920&&p.y>=0&&p.y<1020)assert(Pixel(p.x,p.y)==0);
   printf("%s %s: NPC=%dx%d, scale=%.4f, world=(%ld,%ld)-(%ld,%ld), HUD=1200x40\n",baseline ? "before":"after",id.c_str(),w,h,v.scale,v.clip.left,v.clip.top,v.clip.right,v.clip.bottom);
