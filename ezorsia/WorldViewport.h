@@ -27,7 +27,8 @@ bool InstallGraphics(HMODULE module);
 void __cdecl AdjustCamera(void* map);
 void __cdecl AdjustWorldCursor(POINT* screen);
 void __cdecl BeginBackgrounds(void* map);
-bool RegisterBackground(void* map,int index,int front,int ry);
+double ForegroundEdgeOffset(RECT bounds,double visibleWidth,int x,int rx,int type);
+bool RegisterBackground(void* map,int index,int front,int ry,int x=0,int rx=0,int type=0);
 void __fastcall MouseButton(void*, void*, unsigned message, unsigned flags, int x, int y);
 int __fastcall MouseMove(void*, void*, int x, int y);
 int __fastcall MouseWheel(void*, void*, int x, int y, int wheel);
@@ -35,6 +36,7 @@ void __fastcall DragMove(void*, void*, int state, void* object, int x, int y);
 #ifdef WORLD_VIEWPORT_TESTING
 void SetContextForTesting(void** stage, void* map, RECT bounds, int width, int height);
 void DrawLayerForTesting(void* layer, void* context, void (__thiscall* original)(void*, void*));
+void SetGraphicsForTesting(void* graphics);
 void SetObserverForTesting(void (*observer)(void*, void*, double));
 void SetTexelAlignmentForTesting(bool enabled);
 #endif

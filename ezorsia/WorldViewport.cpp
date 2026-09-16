@@ -15,7 +15,12 @@ void** stageSlot = reinterpret_cast<void**>(0x00BEDED4);
 const void* activeMap = nullptr; // Identity only; no retained game/COM objects.
 WorldViewport::View activeView;
 const void* loadingMap=nullptr;
-std::vector<int> loadingBackdrops, activeBackdrops;
+struct Backdrop { int z,x,rx,ry,type; bool front; };
+std::vector<Backdrop> loadingBackdrops, activeBackdrops;
+RECT activeBounds{};
+#ifdef WORLD_VIEWPORT_TESTING
+void* testGraphics=nullptr;
+#endif
 const void* terrainMap=nullptr;
 bool terrainValid=false;
 std::vector<WorldViewport::GroundTile> groundTiles;
@@ -74,6 +79,25 @@ void (*drawObserver)(void*,void*,double) = nullptr;
 #endif
 template<class T> T Method(void* object, unsigned offset) {
     return reinterpret_cast<T>((*static_cast<void***>(object))[offset / 4]);
+}
+bool CameraCenter(POINT& center) {
+#ifdef WORLD_VIEWPORT_TESTING
+    void* graphics=testGraphics;
+#else
+    void* graphics=*reinterpret_cast<void**>(0x00BF14EC);
+#endif
+    if(!graphics) return false;
+    using GetCenter=HRESULT (__stdcall*)(void*,void**);
+    using GetCoordinate=HRESULT (__stdcall*)(void*,int*);
+    using Release=ULONG (__stdcall*)(void*);
+    void* vector=nullptr;
+    if(FAILED(Method<GetCenter>(graphics,0x5C)(graphics,&vector)) || !vector) return false;
+    int x=0,y=0;
+    const bool ok=SUCCEEDED(Method<GetCoordinate>(vector,0x20)(vector,&x)) &&
+        SUCCEEDED(Method<GetCoordinate>(vector,0x28)(vector,&y));
+    Method<Release>(vector,8)(vector);
+    if(ok) center={x,y};
+    return ok;
 }
 bool CanvasBounds(void* canvas,RECT& bounds) {
     const auto cached=sceneryCanvases.find(canvas);
@@ -152,7 +176,7 @@ struct ProjectionScope {
     Matrix saved{};
     Viewport savedViewport{};
     bool applied = false, viewportApplied=false;
-    ProjectionScope(void* dev, double scale, const RECT& clip) : device(dev) {
+    ProjectionScope(void* dev, double scale, const RECT& clip, double dx=0, double dy=0) : device(dev) {
         if (!dev || FAILED(Method<GetTransform>(dev,0x98)(dev,3,&saved))) return;
         double sx=scale,sy=scale;
         if (clip.left || clip.top || clip.right!=renderWidth || clip.bottom!=renderHeight) {
@@ -174,6 +198,13 @@ struct ProjectionScope {
             projection.m[row*4] *= static_cast<float>(sx);
             projection.m[row*4+1] *= static_cast<float>(sy);
         }
+        // Row-vector projection: translate by physical render pixels after
+        // scaling. Include the homogeneous W column for non-identity matrices.
+        const double tx=2*dx/(clip.right-clip.left),ty=-2*dy/(clip.bottom-clip.top);
+        for(int row=0;row<4;++row) {
+            projection.m[row*4]+=float(tx*saved.m[row*4+3]);
+            projection.m[row*4+1]+=float(ty*saved.m[row*4+3]);
+        }
         applied = SUCCEEDED(Method<SetTransform>(dev,0x94)(dev,3,&projection));
         if (!applied && viewportApplied) {
             Method<SetViewport>(device,0xA0)(device,&savedViewport); viewportApplied=false;
@@ -191,19 +222,37 @@ void __fastcall RenderLayer(void* layer, void*, void* context) {
     // Exclude that HUD band explicitly; lower field-effect bands remain world.
     const int z=root ? *reinterpret_cast<int*>(static_cast<unsigned char*>(root)+0x44):0;
     const bool world=root && z<int(0xC00615D0u) && z!=int(0xC006156Cu) && context && HasScene();
-    double scale=world ? DrawScale():1.0;
-    if (world && std::find(activeBackdrops.begin(),activeBackdrops.end(),z)!=activeBackdrops.end())
-        scale=(std::max)(scale,renderHeight/600.0);
+    double scale=world ? DrawScale():1.0,dx=0,dy=0;
+    if(world) {
+        const auto entry=std::find_if(activeBackdrops.begin(),activeBackdrops.end(),
+            [z](const Backdrop& b){return b.z==z;});
+        if(entry!=activeBackdrops.end()) {
+            if(!entry->front) {
+                scale=(std::max)(scale,renderHeight/600.0);
+                // LoadBack's static/tiled vectors use Ratio(center,100,100,rx,ry).
+                // Grow artwork and tile spacing, not camera-driven motion.
+                // Auto-scroll types 4..7 have a different time-based vector path.
+                POINT center{};
+                if(entry->type>=0 && entry->type<=3 && CameraCenter(center)) {
+                    dx=(1-scale)*center.x*entry->rx/100.0;
+                    dy=(1-scale)*center.y*entry->ry/100.0;
+                }
+            } else {
+                dx=WorldViewport::ForegroundEdgeOffset(activeBounds,activeView.width,
+                    entry->x,entry->rx,entry->type);
+            }
+        }
+    }
     const bool clipped=world && (activeView.clip.left || activeView.clip.top ||
         activeView.clip.right!=renderWidth || activeView.clip.bottom!=renderHeight);
-    if (!world || (scale<=1.0 && !clipped)) {
+    if (!world || (scale<=1.0 && !clipped && dx==0 && dy==0)) {
         originalDrawLayer(layer,context);
 #ifdef WORLD_VIEWPORT_TESTING
         if (drawObserver) drawObserver(layer,context,1.0);
 #endif
         return;
     }
-    ProjectionScope projection(*static_cast<void**>(context),scale,activeView.clip);
+    ProjectionScope projection(*static_cast<void**>(context),scale,activeView.clip,dx,dy);
     if (!projection.applied) { originalDrawLayer(layer,context); return; }
     // Preserve native point/automatic sampling and correct the native 1:1 UV
     // bias only inside this draw. No cached vertices/textures are modified.
@@ -469,7 +518,7 @@ bool InstallGraphics(HMODULE module) {
     }
     if (DetourTransactionCommit() != NO_ERROR) return false;
     layerVtable=base+0x2E3F0; graphicsReady=true;
-    Log("World viewport ready: scoped scenery fit, tall-map 4:3, normal framing, independent HUD.");
+    Log("World viewport ready: native-size world, scoped scenery, independent HUD and backdrop motion.");
     return true;
 }
 void __cdecl AdjustCamera(void* map) {
@@ -492,7 +541,7 @@ void __cdecl AdjustCamera(void* map) {
     const bool groundAdjusted=terrainMap==map && terrainValid && ConstrainGround(view,bounds,groundTiles);
     groundCanvases.clear(); // Never retain canvas identities beyond the load.
     sceneryCanvases.clear();sceneryAnimations.clear();
-    *camera=view.camera; activeView=view; activeMap=map;
+    *camera=view.camera; activeView=view; activeMap=map; activeBounds=bounds;
     if (loadingMap==map) activeBackdrops=loadingBackdrops;
     char line[400]; sprintf_s(line,"bounds=(%ld,%ld,%ld,%ld) view=%.2fx%.2f zoom=%.4f camera=(%ld,%ld,%ld,%ld) clip=(%ld,%ld,%ld,%ld) backdrops=%u groundCamera=%d shape=%d scenery=%u",
         bounds.left,bounds.top,bounds.right,bounds.bottom,view.width,view.height,view.scale,
@@ -504,17 +553,25 @@ void __cdecl BeginBackgrounds(void* map) {
     loadingMap=map; loadingBackdrops.clear();
     if (map==activeMap) activeBackdrops.clear();
 }
-bool RegisterBackground(void* map,int index,int front,int ry) {
+double ForegroundEdgeOffset(RECT bounds,double visibleWidth,int x,int rx,int type) {
+    // Only non-repeating, parallax foreground pieces near a map side. Move
+    // vertically joined pieces together; never move scenery attached at -100.
+    if(type!=0 || rx<=-100 || rx>=0 || visibleWidth<=800 ||
+        int64_t(bounds.right)-bounds.left<=800) return 0;
+    const bool left=std::abs(double(x)-bounds.left)<400;
+    const bool right=std::abs(double(x)-bounds.right)<400;
+    if(left==right) return 0;
+    const double amount=(visibleWidth-800)*(100+rx)/200.0;
+    return left ? -amount:amount;
+}
+bool RegisterBackground(void* map,int index,int front,int ry,int x,int rx,int type) {
     if (!graphicsReady || renderHeight<=720 || !IsField(map)) return false;
     if (loadingMap!=map) BeginBackgrounds(map);
-    // Register the exact root Z assigned by LoadBack to this entry. All tiled
-    // copies and overlay animation children use the same root classification.
-    // World-attached scenery and foreground keep the world projection.
-    if (!front && ry>-100 && index>=0 && index<128) {
-        const int z=int(0xBFFE0C00u)+index*1000;
-        loadingBackdrops.push_back(z);
-        // Native background-only reloads do not always restore the camera.
-        if (map==activeMap) activeBackdrops.push_back(z);
+    if(index>=0 && index<128 && ((!front && ry>-100) || (front && type==0 && rx>-100 && rx<0))) {
+        const int z=int(front ? 0xC0042360u:0xBFFE0C00u)+index*1000;
+        const Backdrop entry{z,x,rx,ry,type,front!=0};
+        loadingBackdrops.push_back(entry);
+        if(map==activeMap) activeBackdrops.push_back(entry);
     }
     return true;
 }
@@ -541,12 +598,13 @@ void __fastcall DragMove(void*,void*,int state,void* object,int x,int y) {
 #ifdef WORLD_VIEWPORT_TESTING
 void SetContextForTesting(void** slot,void* map,RECT bounds,int width,int height) {
     Configure(width,height); stageSlot=slot; activeMap=map;
-    activeView=Fit(bounds,width,height); graphicsReady=true;
+    activeView=Fit(bounds,width,height); activeBounds=bounds; graphicsReady=true;
 }
 void DrawLayerForTesting(void* layer,void* context,DrawLayer original) {
     layerVtable=*static_cast<uintptr_t*>(layer); originalDrawLayer=original;
     RenderLayer(layer,nullptr,context);
 }
+void SetGraphicsForTesting(void* graphics) { testGraphics=graphics; }
 void SetObserverForTesting(void (*observer)(void*,void*,double)) { drawObserver=observer; }
 void SetTexelAlignmentForTesting(bool enabled) { testTexelAlignment=enabled; }
 #endif
