@@ -8,6 +8,9 @@ if(!$ViewportSource){$ViewportSource=Join-Path $repoRoot 'ezorsia\WorldViewport.
 $vc=(Get-ChildItem -LiteralPath "$ToolchainRoot\VC\Tools\MSVC" -Directory | Sort-Object Name -Descending | Select-Object -First 1).FullName
 $sdk="$ToolchainRoot\Windows Kits\10";$version=(Get-ChildItem -LiteralPath "$sdk\Include" -Directory | Sort-Object Name -Descending | Select-Object -First 1).Name
 $out=Join-Path $repoRoot 'out\world-native';$null=New-Item -ItemType Directory -Force $out
+if(!(Test-Path -LiteralPath (Join-Path $out 'temple-keeper.runs'))){
+ & (Join-Path $PSScriptRoot 'export-magnification-sample.ps1') -Data (Join-Path $Client 'Data') -OutputDirectory $out
+}
 $savedPath,$savedInclude,$savedLib=$env:PATH,$env:INCLUDE,$env:LIB
 try{
  $env:PATH="$vc\bin\Hostx64\x86;"+$env:PATH

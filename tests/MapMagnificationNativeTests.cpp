@@ -162,7 +162,7 @@ int main(int argc,char** argv){
   csv<<id<<','<<v.scale<<','<<w<<','<<h<<','<<v.clip.left<<','<<v.clip.top<<','<<v.clip.right<<','<<v.clip.bottom<<'\n';++count;
   if(id=="270000000"||id=="260010402")Save(out/(id+(baseline ? "-before.bmp":"-after.bmp")));
  }
- assert(count==(buffTest ? 3:baseline ? 14:18));for(auto buff:buffLayers)buff->Release();marker->Release();hud->Release();actor->Release();for(auto tile:tiles)tile->Release();npc->Release();bar->Release();dot->Release();
+ assert(!samples.empty() && count==samples.size());for(auto buff:buffLayers)buff->Release();marker->Release();hud->Release();actor->Release();for(auto tile:tiles)tile->Release();npc->Release();bar->Release();dot->Release();
  Check(gr->raw_Uninitialize(),"uninitialize");gr->Release();term();DestroyWindow(hwnd);
  printf("PASS %d sampled map bounds through real Gr2D + NPC 2140000, scene clips and independent HUD.\n",count);
 }
