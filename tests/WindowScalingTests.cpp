@@ -4,6 +4,7 @@
 #include "WindowScaling.h"
 #include "WindowScalingGeometry.h"
 #include "WindowPlacementConfig.h"
+#include "BorderlessViewport.h"
 
 int Client::m_nGameWidth = 1280;
 int Client::m_nGameHeight = 720;
@@ -245,6 +246,93 @@ void PlacementTests(const std::string& config, HMODULE fixture) {
     std::cout << "PASS persistence: unchanged config before exit, byte preservation, rounded sizes, restart, maximized restart, minimized/fullscreen exit, repeated Gr2D mode transitions\n";
 }
 
+void BorderlessTests(const std::string& config, HMODULE fixture) {
+    auto rendererResize = reinterpret_cast<BOOL(__cdecl*)(HWND,int,int)>(GetProcAddress(fixture,"RendererResize"));
+    WriteConfig(config);
+    WindowScaling::LoadPlacement(config.c_str());
+    HWND window = CreateFixtureWindow();
+    Resize(window, 1120, 630);
+    Move(window, 137, 81);
+    RECT initial{}; GetWindowRect(window, &initial);
+    const auto exStyle = GetWindowLongA(window, GWL_EXSTYLE);
+    MONITORINFO monitor{sizeof(MONITORINFO)};
+    GetMonitorInfoA(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor);
+    DEVMODEA display{}; display.dmSize=sizeof(display);
+    Check(EnumDisplaySettingsA(nullptr, ENUM_CURRENT_SETTINGS, &display), "read desktop mode before borderless");
+    auto expectBorderless = [&]() {
+        RECT actual{}; GetWindowRect(window, &actual);
+        Check(EqualRect(&actual, &monitor.rcMonitor), "borderless covers entire current monitor including taskbar");
+        Check(!(GetWindowLongA(window,GWL_STYLE)&WS_OVERLAPPEDWINDOW), "borderless has no caption or resize frame");
+        Check(!IsZoomed(window), "borderless is not maximized or exclusive fullscreen");
+        Check(GetPropW(window,BorderlessViewport::Property)!=nullptr, "presentation contract published");
+        const SIZE size=ClientSize(window);
+        // Before a compatible renderer presents (or after fallback), input
+        // follows the native full-client stretch rather than imaginary bars.
+        RemovePropW(window,BorderlessViewport::PresentedProperty);
+        NativeCursorTests(window);
+        SetPropW(window,BorderlessViewport::PresentedProperty,reinterpret_cast<HANDLE>(1));
+        const RECT content=BorderlessViewport::Fit(size.cx,size.cy,1280,720);
+        NativeInput input{window,{},0};
+        for (POINT p : {POINT{content.left,content.top},POINT{(content.left+content.right)/2,(content.top+content.bottom)/2},POINT{content.right-1,content.bottom-1},POINT{content.left-20,content.top-20}}) {
+            WindowScaling::SetNativeCursorPosition(&input,static_cast<WORD>(p.x),static_cast<WORD>(p.y),RecordCursor);
+            Check(input.drawn.x==MulDiv(p.x-content.left,1280,content.right-content.left) &&
+                input.drawn.y==MulDiv(p.y-content.top,720,content.bottom-content.top), "borderless cursor agrees with aspect-fit presentation");
+        }
+        DEVMODEA after{}; after.dmSize=sizeof(after);
+        Check(EnumDisplaySettingsA(nullptr,ENUM_CURRENT_SETTINGS,&after), "read desktop mode after borderless");
+        Check(display.dmPelsWidth==after.dmPelsWidth && display.dmPelsHeight==after.dmPelsHeight &&
+            display.dmDisplayFrequency==after.dmDisplayFrequency,"borderless never changes desktop resolution or refresh rate");
+    };
+    for (int i=0;i<4;++i) {
+        Check(!WindowScaling::HandleNativeFullscreenKey(VK_RETURN,0), "plain Enter remains a game key");
+        Check(WindowScaling::HandleNativeFullscreenKey(VK_RETURN,0x100), "native DirectInput Alt+Enter consumed");
+        expectBorderless();
+        Check(WindowScaling::HandleNativeFullscreenKey(VK_RETURN,0x100), "native key repeat consumed");
+        expectBorderless();
+        Check(rendererResize(window,1280,720), "renderer recovery while borderless");
+        expectBorderless();
+        SendMessageA(window,WM_DISPLAYCHANGE,32,MAKELPARAM(display.dmPelsWidth,display.dmPelsHeight));
+        PumpMessages(); expectBorderless();
+        Check(WindowScaling::HandleNativeFullscreenKey(VK_RETURN,0x80000000), "native release clears latch");
+        Check(WindowScaling::HandleNativeFullscreenKey(VK_RETURN,0x100), "native Alt+Enter returns to framed window");
+        WindowScaling::HandleNativeFullscreenKey(VK_RETURN,0x80000000);
+        RECT after{}; GetWindowRect(window,&after);
+        Check(EqualRect(&initial,&after), "toggle restores live placement, not stale config or 720p");
+        ExpectSize(window,1120,630); NativeCursorTests(window);
+        Check(GetWindowLongA(window,GWL_EXSTYLE)==exStyle,"extended window styles restored");
+        Check(!GetPropW(window,BorderlessViewport::Property),"borderless contract cleared on return");
+        Check(!GetPropW(window,BorderlessViewport::PresentedProperty),"presentation marker cleared on return");
+        Check(!IsWindowVisible(window),"hidden fixture is never activated or shown by toggle");
+    }
+    SendMessageA(window,WM_SYSCOMMAND,SC_MAXIMIZE,0);
+    const SIZE maximized=ClientSize(window);
+    SendMessageA(window,WM_SYSKEYDOWN,VK_RETURN,1L<<29);
+    expectBorderless();
+    SendMessageA(window,WM_SYSKEYDOWN,VK_RETURN,(1L<<29)|(1L<<30));
+    expectBorderless();
+    SendMessageA(window,WM_SYSKEYUP,VK_RETURN,0);
+    SendMessageA(window,WM_SYSKEYDOWN,VK_RETURN,1L<<29);
+    SendMessageA(window,WM_SYSKEYUP,VK_RETURN,0);
+    Check(IsZoomed(window),"return restores framed maximized state");
+    ExpectSize(window,maximized.cx,maximized.cy);
+    SendMessageA(window,WM_SYSCOMMAND,SC_RESTORE,0);
+    ExpectSize(window,1120,630);
+    ExpectPosition(window,137,81);
+    ShowWindow(window,SW_HIDE);
+    SendMessageA(window,WM_SYSKEYDOWN,VK_RETURN,1L<<29);
+    expectBorderless();
+    DestroyWindow(window);
+    const auto saved=WindowPlacementConfig::Read(config,{});
+    Check(saved.width==1120 && saved.height==630 && saved.x==137 && saved.y==81 && !saved.maximized,
+        "exit borderless saves last framed placement, never desktop dimensions");
+    WindowScaling::LoadPlacement(config.c_str());
+    window=CreateFixtureWindow();
+    ExpectSize(window,1120,630); ExpectPosition(window,137,81);
+    DestroyWindow(window); WindowScaling::LoadPlacement(nullptr);
+    Check(gameFullscreenCommands==0,"borderless never forwards native exclusive fullscreen command");
+    puts("PASS borderless: DirectInput and Win32 hotkeys, repeats, monitor bounds, live placement, maximized restore, recovery, cursor, desktop mode, exit and restart");
+}
+
 void ExitProcessTest(const std::string& config) {
     WriteConfig(config);
     char executable[MAX_PATH]{};
@@ -294,6 +382,38 @@ void GeometryTests() {
         Check(top ? rect.bottom == proposed.bottom : rect.top == proposed.top, "vertical anchor");
     }
     std::cout << "PASS geometry: cursor conversion, signed coordinates, zero size, eight handles\n";
+}
+
+volatile int nativeKeyCalls=0;
+__declspec(noinline) int __fastcall NativeKeyFixture(void* self,void*,UINT message,UINT key,ULONG flags) {
+    ++nativeKeyCalls;
+    Check(self==reinterpret_cast<void*>(0x1234) && message==0x104,"native key preserves ECX and first stack argument");
+    return int(key+flags);
+}
+void NativeKeyHookTests() {
+    WindowScaling::SetNativeKeyForTesting(reinterpret_cast<void*>(NativeKeyFixture));
+    Check(WindowScaling::Hook(true),"install actual native key detour");
+    HWND window=CreateFixtureWindow();
+    Resize(window,960,540);
+    using Entry=int(__thiscall*)(void*,UINT,UINT,ULONG);
+    volatile Entry entry=reinterpret_cast<Entry>(NativeKeyFixture);
+    Check(entry(reinterpret_cast<void*>(0x1234),0x104,'A',0x100)==('A'+0x100) && nativeKeyCalls==1,
+        "unrelated native key returns original result with intact stack");
+    Check(entry(reinterpret_cast<void*>(0x1234),0x104,VK_RETURN,0x100)==0,"detoured Alt+Enter result");
+    Check(GetPropW(window,BorderlessViewport::Property)!=nullptr && nativeKeyCalls==1,"native exclusive branch never called");
+    entry(reinterpret_cast<void*>(0x1234),0x104,VK_RETURN,0x100);
+    Check(GetPropW(window,BorderlessViewport::Property)!=nullptr,"detoured repeat does not retoggle");
+    entry(reinterpret_cast<void*>(0x1234),0x104,VK_RETURN,0x80000000);
+    entry(reinterpret_cast<void*>(0x1234),0x104,VK_RETURN,0x100);
+    entry(reinterpret_cast<void*>(0x1234),0x104,VK_RETURN,0x80000000);
+    ExpectSize(window,960,540);
+    Check(!GetPropW(window,BorderlessViewport::Property) && nativeKeyCalls==1,"native release rearms next toggle");
+    DestroyWindow(window);
+    Check(WindowScaling::Hook(false),"detach actual native key detour");
+    Check(entry(reinterpret_cast<void*>(0x1234),0x104,VK_RETURN,0x100)==(VK_RETURN+0x100) && nativeKeyCalls==2,
+        "detaching restores original native key routine");
+    WindowScaling::SetNativeKeyForTesting(nullptr);
+    puts("PASS native Alt+Enter detour: real x86 thiscall/fastcall ABI, argument/return forwarding, repeat/release and detach");
 }
 
 int main(int argc, char** argv) {
@@ -408,9 +528,11 @@ int main(int argc, char** argv) {
     const std::string fixturePath = argv[1];
     const std::string directory = fixturePath.substr(0, fixturePath.find_last_of("\\/") + 1);
     PlacementTests(directory + "placement-tests.ini", fixture);
+    BorderlessTests(directory + "borderless-tests.ini", fixture);
     ExitProcessTest(directory + "exit-placement-tests.ini");
     Check(WindowScaling::Hook(false), "detach hooks and restore original window procedure");
     DestroyWindow(other);
     FreeLibrary(fixture);
+    NativeKeyHookTests();
     std::cout << "PASS Win32 integration: native hand coordinates, maximize/restore, startup, resize, repeated recovery, styles, minimized state, fullscreen restore, placement aspect, isolation, free aspect, native startup, detach\n";
 }

@@ -1,4 +1,5 @@
 #include "d3d8.hpp"
+#include "BorderlessViewport.h"
 #include <windows.h>
 #include <cstdio>
 #include <fstream>
@@ -45,6 +46,24 @@ int main(int argc,char** argv) {
         D3DSURFACE_DESC8 desc{};Check(back->GetDesc(&desc),"description");back->Release();
         Require(desc.Width==pp.BackBufferWidth && desc.Height==pp.BackBufferHeight,"logical backbuffer unchanged");
     };
+    SetPropW(window,BorderlessViewport::Property,reinterpret_cast<HANDLE>(1));
+    for (SIZE size : {SIZE{96,54},SIZE{54,96},SIZE{128,48}}) {
+        SetWindowPos(window,nullptr,0,0,size.cx,size.cy,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+        frame();
+        Require((GetPropW(window,BorderlessViewport::PresentedProperty)!=nullptr)==enabled,"borderless input handshake reflects actual renderer");
+    }
+    if (enabled) {
+        RECT partial{0,0,32,24};
+        Check(device->Present(&partial,nullptr,nullptr,nullptr),"borderless fallback");
+        Require(!GetPropW(window,BorderlessViewport::PresentedProperty),"fallback clears aspect-fit input mapping");
+        frame();
+        RemovePropW(window,BorderlessViewport::PresentedProperty);
+        frame();
+        Require(GetPropW(window,BorderlessViewport::PresentedProperty)!=nullptr,"rapid re-entry restores presentation marker");
+    }
+    RemovePropW(window,BorderlessViewport::Property);
+    frame();
+    Require(!GetPropW(window,BorderlessViewport::PresentedProperty),"framed return clears borderless input contract");
     if (setLogin) {
         const wchar_t* property=L"BeiDou.LoginViewport.v1";
         frame(); Require(GetPropW(window,property)!=nullptr,"version handshake activates login crop and input");

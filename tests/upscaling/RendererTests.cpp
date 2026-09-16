@@ -1,4 +1,5 @@
 #include "UpscaleRenderer.h"
+#include "BorderlessViewport.h"
 #include <cstdio>
 #include <fstream>
 #include <filesystem>
@@ -56,6 +57,35 @@ void TestLoginCrop(IDirect3DDevice9* device) {
     Require(renderer.Render(source.Get(),source.Get(),linear,&invalid)==E_INVALIDARG,"reject empty viewport");
     puts("PASS GPU: window/fullscreen crop pixels, invalid bounds and linear resource budget");
 }
+void TestBorderlessOutput(IDirect3DDevice9* device) {
+    Renderer renderer(device);
+    Settings settings; settings.enabled=true; settings.algorithm=Algorithm::Linear;
+    auto source=Target(device,32,18);
+    Check(device->ColorFill(source.Get(),nullptr,0xff2080c0),"borderless source");
+    D3DVIEWPORT9 sentinel{}; Check(device->GetViewport(&sentinel),"borderless original viewport");
+    for (SIZE size : {SIZE{32,24},SIZE{64,36},SIZE{84,36},SIZE{27,48},SIZE{16,12}}) {
+        auto destination=Target(device,size.cx,size.cy);
+        RECT content=BorderlessViewport::Fit(size.cx,size.cy,32,18);
+        Check(device->ColorFill(destination.Get(),nullptr,0xffff0000),"dirty borderless output");
+        Check(renderer.Render(source.Get(),destination.Get(),settings,nullptr,&content),"aspect-fit output");
+        auto read=Target(device,size.cx,size.cy,true);
+        Check(device->GetRenderTargetData(destination.Get(),read.Get()),"borderless readback");
+        D3DLOCKED_RECT lock{}; Check(read->LockRect(&lock,nullptr,D3DLOCK_READONLY),"borderless lock");
+        for (int y=0;y<size.cy;++y) for (int x=0;x<size.cx;++x) {
+            const DWORD pixel=reinterpret_cast<const DWORD*>(static_cast<const char*>(lock.pBits)+y*lock.Pitch)[x]&0xffffff;
+            const bool inside=x>=content.left && x<content.right && y>=content.top && y<content.bottom;
+            Require(pixel==(inside?0x2080c0:0),"all content pixels and black margins are exact");
+        }
+        read->UnlockRect();
+        D3DVIEWPORT9 after{}; device->GetViewport(&after);
+        Require(memcmp(&sentinel,&after,sizeof(after))==0,"borderless preserves native render viewport");
+        Require(renderer.InternalReferences()<=4,"borderless linear resource budget unchanged");
+    }
+    auto destination=Target(device,48,27);
+    RECT bad{-1,0,32,18};
+    Require(renderer.Render(source.Get(),destination.Get(),settings,nullptr,&bad)==E_INVALIDARG,"reject invalid output viewport");
+    puts("PASS GPU borderless: 4:3, 16:9, ultrawide, portrait and downscale pixels/margins, native state and resource budget");
+}
 int main(int argc, char** argv) {
     if (argc < 2) return 2;
     const std::filesystem::path folder(argv[1]);
@@ -73,6 +103,7 @@ int main(int argc, char** argv) {
     ComPtr<IDirect3DDevice9> device;
     Check(d3d->CreateDevice(0,D3DDEVTYPE_HAL,window,D3DCREATE_SOFTWARE_VERTEXPROCESSING,&pp,&device), "create device");
     TestLoginCrop(device.Get());
+    TestBorderlessOutput(device.Get());
     auto source=Target(device.Get(),w,h), upload=Target(device.Get(),w,h,true);
     std::ifstream input(folder/"input.bgra",std::ios::binary);
     Require(input.good(), "input fixture");

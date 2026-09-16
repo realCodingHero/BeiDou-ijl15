@@ -47,7 +47,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Help menu tests failed' }
     & $compiler @common /LD (Join-Path $repoRoot 'tests\RendererResizeFixture.cpp') ('/Fo' + $testDir + '\') /link /MACHINE:X86 $detours user32.lib ('/IMPLIB:' + (Join-Path $testDir 'RendererResizeFixture.lib')) ('/OUT:' + (Join-Path $testDir 'Gr2D_DX8.dll'))
     if ($LASTEXITCODE -ne 0) { throw 'Renderer fixture build failed' }
-    & $compiler @common (Join-Path $repoRoot 'tests\WindowScalingTests.cpp') (Join-Path $repoRoot 'ezorsia\WindowScaling.cpp') (Join-Path $repoRoot 'ezorsia\AdaptiveLayout.cpp') (Join-Path $repoRoot 'ezorsia\WorldViewport.cpp') ('/Fo' + $testDir + '\') /link /MACHINE:X86 $detours oleaut32.lib user32.lib ('/OUT:' + (Join-Path $testDir 'WindowScalingTests.exe'))
+    & $compiler @common /DWINDOW_SCALING_TESTING (Join-Path $repoRoot 'tests\WindowScalingTests.cpp') (Join-Path $repoRoot 'ezorsia\WindowScaling.cpp') (Join-Path $repoRoot 'ezorsia\AdaptiveLayout.cpp') (Join-Path $repoRoot 'ezorsia\WorldViewport.cpp') ('/Fo' + $testDir + '\') /link /MACHINE:X86 $detours oleaut32.lib user32.lib ('/OUT:' + (Join-Path $testDir 'WindowScalingTests.exe'))
     if ($LASTEXITCODE -ne 0) { throw 'Window scaling test build failed' }
     & (Join-Path $testDir 'WindowScalingTests.exe') (Join-Path $testDir 'Gr2D_DX8.dll')
     if ($LASTEXITCODE -ne 0) { throw 'Window scaling tests failed' }
