@@ -203,6 +203,20 @@ int main(int argc,char** argv) {
     d.failure=0;
     WorldViewport::Configure(1920,1080); // Explicit new stage setup ends the held fade projection.
     WorldViewport::DrawLayerForTesting(&world,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
+    // Real cave foreground entries 21..23 share one parallax plane; every
+    // piece must shift equally so vertical joins survive wider camera limits.
+    RECT cave{-1022,-766,2910,-70};
+    for(int x:{-852,-906,-835}) {
+        assert(WorldViewport::ForegroundEdgeOffset(cave,1920,x,-90,0)==-56);
+        assert(WorldViewport::ForegroundEdgeOffset(cave,1280,x,-90,0)==-24);
+        assert(WorldViewport::ForegroundEdgeOffset(cave,800,x,-90,0)==0);
+    }
+    assert(WorldViewport::ForegroundEdgeOffset(cave,1920,2569,-90,0)==56);
+    for(int type:{1,2,3,4,5,6,7})
+        assert(WorldViewport::ForegroundEdgeOffset(cave,1920,-852,-90,type)==0);
+    assert(WorldViewport::ForegroundEdgeOffset(cave,1920,-852,-100,0)==0);
+    assert(WorldViewport::ForegroundEdgeOffset(cave,1920,1000,-90,0)==0);
+    assert(WorldViewport::ForegroundEdgeOffset({-400,-1000,400,1000},784,-350,-90,0)==0);
     int maps=0;
     if(argc==2) {
         std::ifstream file(argv[1]); assert(file);

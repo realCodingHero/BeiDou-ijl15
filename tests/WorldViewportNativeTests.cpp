@@ -96,6 +96,71 @@ int main(int argc,char** argv) {
     assert(green.right-green.left==59 && green.bottom-green.top==39);
     assert(blue.right-blue.left==59 && blue.bottom-blue.top==39);
     auto bar=make(-600,490,int(0xC00615D0),0xffcc00cc,nullptr,1200,40);
+    // Real camera/Ratio vectors reproduce authored rx=-70, ry=-50. Growing
+    // the backdrop must not multiply motion by 1.8 (126px instead of 70px).
+    WorldViewport::SetContextForTesting(&current,field,{-2000,-1200,2000,1200},1920,1080);
+    WorldViewport::SetGraphicsForTesting(gr);
+    IWzVector2D* center=nullptr;Check(gr->get_center(&center),"camera center");
+    const int savedCenterX=center->Getx(),savedCenterY=center->Gety();
+    IWzVector2D* parallax=nullptr;
+    assert(SetCurrentDirectoryA(argv[1]));
+    Check(create(L"Shape2D#Vector2D",&__uuidof(IWzVector2D),reinterpret_cast<void**>(&parallax),nullptr),"parallax vector");
+    assert(SetCurrentDirectoryW(directory.c_str()));
+    VARIANT cameraOrigin{};cameraOrigin.vt=VT_UNKNOWN;cameraOrigin.punkVal=center;
+    Check(parallax->put_origin(cameraOrigin),"native vector origin");
+    Check(parallax->raw_RelMove(0,0),"native vector offset");
+    Check(parallax->raw_Ratio(center,100,100,-70,-50),"native background Ratio");
+    WorldViewport::BeginBackgrounds(field);
+    assert(WorldViewport::RegisterBackground(field,17,0,-50,928,-70,1));
+    auto moving=make(0,0,int(0xBFFE0C00)+17000,0xff20d0e0,nullptr,60,40);
+    VARIANT origin{};origin.vt=VT_UNKNOWN;origin.punkVal=parallax;
+    Check(moving->put_origin(origin),"native background origin");
+    Check(center->raw_RelMove(0,0),"camera zero");
+    for(int i=0;i<3;++i){Sleep(20);Check(gr->raw_UpdateCurrentTime(GetTickCount()),"motion clock");Check(gr->raw_RenderFrame(),"motion zero");}
+    auto first=ColorBounds(0x20d0e0);
+    Check(center->raw_RelMove(100,100),"camera step");
+    for(int i=0;i<3;++i){Sleep(20);Check(gr->raw_UpdateCurrentTime(GetTickCount()),"motion clock");Check(gr->raw_RenderFrame(),"motion step");}
+    auto second=ColorBounds(0x20d0e0);
+    printf("backdrop camera delta=(%ld,%ld), expected=(-70,-50), artwork width=%ld\n",second.left-first.left,second.top-first.top,second.right-second.left+1);
+    assert(second.left-first.left==-70 && second.top-first.top==-50);
+    assert(second.right-second.left+1==108 && second.bottom-second.top+1==72);
+    // The same native vector without compensation reproduces the regression.
+    WorldViewport::SetGraphicsForTesting(nullptr);
+    auto motionAt=[&](int value) {
+        Check(center->raw_RelMove(value,value),"baseline camera");
+        for(int i=0;i<3;++i){Sleep(20);Check(gr->raw_UpdateCurrentTime(GetTickCount()),"baseline time");Check(gr->raw_RenderFrame(),"baseline frame");}
+        return ColorBounds(0x20d0e0);
+    };
+    const auto oldFirst=motionAt(0),oldSecond=motionAt(100);
+    printf("uncompensated backdrop delta=(%ld,%ld)\n",oldSecond.left-oldFirst.left,oldSecond.top-oldFirst.top);
+    assert(oldSecond.left-oldFirst.left==-126 && oldSecond.top-oldFirst.top==-90);
+    WorldViewport::SetGraphicsForTesting(gr);
+    moving->Release();parallax->Release();
+    // Cave left cap at its 1080p left camera limit: native geometry leaves
+    // a 32px gap; compensate the additional 56px drift caused by wider view.
+    WorldViewport::SetContextForTesting(&current,field,{-1022,-766,2910,-70},1920,1080);
+    WorldViewport::BeginBackgrounds(field);
+    Check(center->raw_RelMove(0,0),"cave camera origin");
+    assert(SetCurrentDirectoryA(argv[1]));
+    Check(create(L"Shape2D#Vector2D",&__uuidof(IWzVector2D),reinterpret_cast<void**>(&parallax),nullptr),"foreground vector");
+    assert(SetCurrentDirectoryW(directory.c_str()));
+    Check(parallax->put_origin(cameraOrigin),"foreground vector origin");
+    Check(parallax->raw_RelMove(0,0),"foreground vector offset");
+    Check(parallax->raw_Ratio(center,100,100,-90,-90),"native foreground Ratio");
+    auto capLayer=make(-977,-100,int(0xC0042360)+21000,0xff11bb77,nullptr,250,194);
+    origin.punkVal=parallax;Check(capLayer->put_origin(origin),"foreground origin");
+    Check(center->raw_RelMove(-54,0),"cave camera left limit");
+    auto capFrame=[&](){for(int i=0;i<3;++i){Sleep(20);Check(gr->raw_UpdateCurrentTime(GetTickCount()),"cap clock");Check(gr->raw_RenderFrame(),"cap frame");}return ColorBounds(0x11bb77);};
+    const auto oldCap=capFrame();
+    assert(oldCap.left>=31 && oldCap.left<=33);
+    assert(WorldViewport::RegisterBackground(field,21,1,-90,-852,-90,0));
+    capFrame();
+    auto capBounds=ColorBounds(0x11bb77);
+    printf("cave foreground gap: %ld -> %ld pixels; right=%ld\n",oldCap.left,capBounds.left,capBounds.right);
+    assert(capBounds.left==0 && capBounds.right>200);
+    capLayer->Release();parallax->Release();Check(center->raw_RelMove(savedCenterX,savedCenterY),"restore camera");center->Release();
+    WorldViewport::SetGraphicsForTesting(nullptr);
+    WorldViewport::SetContextForTesting(&current,field,{-728,-413,728,413},1920,1080);
     // Decorative backgrounds use 1.8x at 1080p independently of world framing.
     WorldViewport::SetContextForTesting(&current,field,{-2000,-1200,2000,1200},1920,1080);
     WorldViewport::BeginBackgrounds(field);

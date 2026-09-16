@@ -35,7 +35,8 @@ void __cdecl AdjustBackground(int* frame, int front) {
     void* map = reinterpret_cast<void*>(frame[-0x48 / 4]);
     // The active renderer scales whole decorative backdrop groups. Moving
     // only their negative-Y pieces opens gaps in vertically joined artwork.
-    if (WorldViewport::RegisterBackground(map,frame[2],front,frame[-0x70/4])) return;
+    if (WorldViewport::RegisterBackground(map,frame[2],front,frame[-0x70/4],
+        frame[-0x78/4],frame[-0x6C/4],frame[-0x68/4])) return;
     frame[-0x74 / 4] = BackgroundY(renderHeight, IsLogin(map), front,
         frame[-0x74 / 4], frame[-0x70 / 4], frame[-0x68 / 4]);
 }
