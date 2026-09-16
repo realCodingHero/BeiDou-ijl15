@@ -1,5 +1,7 @@
 # Adaptive map viewport, login presentation and status bar
 
+> 2026-09-17 更新：[所有地图统一人物大小](uniform-world-scale.md)。以下为此前实现记录；普通地图保留高度填充的旧规则已取消。
+
 The configured render size defines the framebuffer. The bounded world view
 can be smaller on finite maps, with independent HUD coordinates; window
 scaling then scales the finished frame. Increasing the resolution does not

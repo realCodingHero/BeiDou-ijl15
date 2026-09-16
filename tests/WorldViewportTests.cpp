@@ -52,7 +52,7 @@ void __fastcall Drag(void*,void*,int s,void* p,int x,int y) {
 int __fastcall IsField(void*,void*,const void* rtti) { assert(rtti==reinterpret_cast<void*>(0xBED758));return 1; }
 void CheckBounds(RECT r,int width,int height) {
     auto v=WorldViewport::Fit(r,width,height);
-    assert(v.scale>=1 && std::isfinite(v.scale));
+    assert(v.scale==1);
     assert(v.height*v.scale<=height+1e-8 && v.width*v.scale<=width+1e-8);
     assert(std::abs(v.clip.right-v.clip.left-v.width*v.scale)<2.001);
     assert(std::abs(v.clip.bottom-v.clip.top-v.height*v.scale)<1e-8);
@@ -82,8 +82,8 @@ int main(int argc,char** argv) {
     assert(WorldViewport::Fit({-3600,-1700,2700,255},1920,1080).scale==1);
     auto flight=WorldViewport::Fit({-809,-633,2765,179},1920,1080);
     assert(std::abs(flight.height-796)<1e-8 && flight.camera.top==-227 && flight.camera.bottom==-227);
-    assert(flight.clip.top==0 && flight.clip.bottom==1080 && flight.clip.right==1920);
-    assert(std::abs(flight.scale-1080.0/796)<1e-8); // Accepted normal-map rule.
+    assert(flight.clip.top==142 && flight.clip.bottom==938 && flight.clip.right==1920);
+    assert(flight.scale==1); // Finite height leaves margins instead of magnifying actors.
     auto doors=WorldViewport::Fit({-3045,-183,1326,287},1920,1080);
     assert(doors.scale==1 && doors.width==1920 && doors.height==454);
     assert(doors.clip.top==313 && doors.clip.bottom==767);

@@ -23,7 +23,7 @@ rect -592 -451 608 149
 rect -592 -451 608 149
 end
 # 680000002: 10 placements inspected; class=0
-map 680000002 -396 -271 403 263 2.084942084942
+map 680000002 -396 -271 403 263 1.000000000000
 rect -457 -302 283 -175
 rect -401 -300 399 300
 end
@@ -58,12 +58,12 @@ rect -122 -422 83 -155
 rect 80 178 305 338
 end
 # 200090500: 84 placements inspected; class=0
-map 200090500 -809 -633 2765 179 1.356783919598
+map 200090500 -809 -633 2765 179 1.000000000000
 rect -810 -633 -474 -303
 rect -810 180 -720 205
 end
 # 200090510: 85 placements inspected; class=0
-map 200090510 -2740 -748 809 179 1.186813186813
+map 200090510 -2740 -748 809 179 1.000000000000
 rect 688 -748 810 -319
 rect 180 180 270 205
 end
@@ -91,4 +91,179 @@ end
 map 230010400 -2150 -380 309 750 1.000000000000
 rect -1924 -496 -1714 -20
 rect -810 960 -720 1001
+end
+# Native cave bounds verified from research assets.
+map 211042000 -1022 -766 2910 -70 1.000000000000
+rect 210 -774 219 -666
+rect -810 -60 -720 -19
+end
+# Native cave bounds verified from research assets.
+map 211042100 -930 -715 3360 -70 1.000000000000
+rect 2641 -719 2650 -611
+rect -810 -60 -720 -19
+end
+# Native cave bounds verified from research assets.
+map 211042200 -1290 -720 3900 -70 1.000000000000
+rect -1123 -720 -1110 -643
+rect -810 -60 -720 -19
+end
+# Native cave bounds verified from research assets.
+map 211042101 -2910 -716 930 -70 1.000000000000
+rect -1422 -717 -1413 -609
+rect -810 -60 -720 -19
+end
+# Native cave bounds verified from research assets.
+map 211042300 -3180 -720 -420 -120 1.000000000000
+rect -2101 -391 -2030 -332
+rect -1260 -120 -1170 -79
+end
+# Native cave bounds verified from research assets.
+map 211042400 -1800 -720 -440 -120 1.000000000000
+rect -1728 -376 -1663 -325
+rect -1260 -120 -1170 -79
+end
+# Verified numbered Dead Mine map bounds.
+map 280010010 -394 -300 1920 300 1.000000000000
+rect 990 -406 1080 -360
+rect -90 300 0 346
+end
+# Verified numbered Dead Mine map bounds.
+map 280010011 -395 -509 1113 930 1.000000000000
+rect 540 -526 630 -480
+rect 180 960 270 1007
+end
+# Verified numbered Dead Mine map bounds.
+map 280010020 -394 -300 1920 300 1.000000000000
+rect -90 -406 0 -360
+rect 90 300 180 346
+end
+# Verified numbered Dead Mine map bounds.
+map 280010030 -394 -300 1920 300 1.000000000000
+rect 1440 -406 1530 -360
+rect -270 300 -180 346
+end
+# Verified numbered Dead Mine map bounds.
+map 280010031 -395 -440 1113 930 1.000000000000
+rect 900 -466 990 -420
+rect 900 960 990 1007
+end
+# Verified numbered Dead Mine map bounds.
+map 280010040 -394 -300 2193 300 1.000000000000
+rect -360 -406 -270 -360
+rect -270 360 -180 407
+end
+# Verified numbered Dead Mine map bounds.
+map 280010041 -395 -509 1113 930 1.000000000000
+rect 540 -526 630 -480
+rect 900 960 990 1007
+end
+# Verified numbered Dead Mine map bounds.
+map 280010050 -394 -300 1920 300 1.000000000000
+rect 1620 -406 1710 -360
+rect 90 300 180 346
+end
+# Verified numbered Dead Mine map bounds.
+map 280010060 -394 -300 2193 300 1.000000000000
+rect 810 -406 900 -360
+rect 450 360 540 407
+end
+# Verified numbered Dead Mine map bounds.
+map 280010070 -394 -300 1920 300 1.000000000000
+rect 450 -406 540 -360
+rect -180 300 -90 346
+end
+# Verified numbered Dead Mine map bounds.
+map 280010071 -1024 -320 33 1172 1.000000000000
+rect -450 -346 -360 -300
+rect -180 1200 -90 1247
+end
+# Verified numbered Dead Mine map bounds.
+map 280010080 -394 -300 1920 300 1.000000000000
+rect 1440 -406 1530 -360
+rect 90 300 180 346
+end
+# Verified numbered Dead Mine map bounds.
+map 280010081 -394 -450 1113 1070 1.000000000000
+rect 900 -466 990 -420
+rect 0 1080 90 1127
+end
+# Verified numbered Dead Mine map bounds.
+map 280010090 -394 -300 1920 300 1.000000000000
+rect -90 -406 0 -360
+rect 90 300 180 346
+end
+# Verified numbered Dead Mine map bounds.
+map 280010091 -394 -442 1113 954 1.000000000000
+rect 540 -466 630 -420
+rect 180 960 270 1007
+end
+# Verified numbered Dead Mine map bounds.
+map 280010100 -394 -300 2192 300 1.000000000000
+rect 990 -406 1080 -360
+rect -270 360 -180 407
+end
+# Verified numbered Dead Mine map bounds.
+map 280010101 -393 -300 2192 300 1.000000000000
+rect 990 -406 1080 -360
+rect -270 360 -180 407
+end
+# Verified numbered Dead Mine map bounds.
+map 280010110 -754 -370 1920 400 1.000000000000
+rect 1710 -406 1800 -360
+rect 90 420 180 467
+end
+# Verified numbered Dead Mine map bounds.
+map 280010120 -394 -300 1920 300 1.000000000000
+rect -391 -406 -326 -360
+rect -90 300 0 346
+end
+# Verified numbered Dead Mine map bounds.
+map 280010130 -394 -300 1920 300 1.000000000000
+rect 180 -406 270 -360
+rect -90 300 0 346
+end
+# Verified numbered Dead Mine map bounds.
+map 280010140 -394 -300 1920 300 1.000000000000
+rect 1859 -406 1924 -360
+rect -90 300 0 346
+end
+# Verified numbered Dead Mine map bounds.
+map 280010150 -394 -300 1920 300 1.000000000000
+rect 990 -406 1080 -360
+rect -90 300 0 346
+end
+# Verified numbered Dead Mine map bounds.
+map 280011000 -393 -370 752 1070 1.000000000000
+rect 630 -406 720 -360
+rect 90 1140 180 1187
+end
+# Verified numbered Dead Mine map bounds.
+map 280011001 -393 -317 1110 1380 1.000000000000
+rect -360 -346 -270 -300
+rect 900 1380 990 1427
+end
+# Verified numbered Dead Mine map bounds.
+map 280011002 -393 -317 1110 1380 1.000000000000
+rect 990 -346 1080 -300
+rect 900 1380 990 1427
+end
+# Verified numbered Dead Mine map bounds.
+map 280011003 -393 -317 1110 1380 1.000000000000
+rect 630 -346 720 -300
+rect 900 1380 990 1427
+end
+# Verified numbered Dead Mine map bounds.
+map 280011004 -393 -317 1110 1380 1.000000000000
+rect 360 -346 450 -300
+rect 900 1380 990 1427
+end
+# Verified numbered Dead Mine map bounds.
+map 280011005 -393 -317 1110 1380 1.000000000000
+rect -360 -346 -270 -300
+rect 900 1380 990 1427
+end
+# Verified numbered Dead Mine map bounds.
+map 280011006 -393 -317 1110 1380 1.000000000000
+rect 360 -346 450 -300
+rect 900 1380 990 1427
 end

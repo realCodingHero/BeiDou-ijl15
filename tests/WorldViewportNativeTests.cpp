@@ -88,12 +88,12 @@ int main(int argc,char** argv) {
     auto hud=make(200,100,10,0xff0000ff);
     marker=make(400,200,0x7ffffffd,0xffffff00);
     for(int i=0;i<3;++i) {Check(gr->raw_UpdateCurrentTime(100+i*100),"clock");Check(gr->raw_RenderFrame(),"actual frame");}
-    assert(worldDraws && hudDraws && !pixels.empty());
+    assert(worldDraws==0 && hudDraws && !pixels.empty());
     auto red=ColorBounds(0xff0000),green=ColorBounds(0x00ff00),blue=ColorBounds(0x0000ff);
     printf("native pixels: world (%ld,%ld)-(%ld,%ld), equipment (%ld,%ld)-(%ld,%ld), HUD (%ld,%ld)-(%ld,%ld); draws magnified=%d 1x=%d\n",
         red.left,red.top,red.right,red.bottom,green.left,green.top,green.right,green.bottom,blue.left,blue.top,blue.right,blue.bottom,worldDraws,hudDraws);
-    assert(red.right-red.left>=77 && red.right-red.left<=81);
-    assert(green.right-green.left>=77 && green.right-green.left<=81);
+    assert(red.right-red.left==59 && red.bottom-red.top==39);
+    assert(green.right-green.left==59 && green.bottom-green.top==39);
     assert(blue.right-blue.left==59 && blue.bottom-blue.top==39);
     auto bar=make(-600,490,int(0xC00615D0),0xffcc00cc,nullptr,1200,40);
     // Decorative backgrounds use 1.8x at 1080p independently of world framing.

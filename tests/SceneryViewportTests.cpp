@@ -46,14 +46,31 @@ int main(int argc,char** argv){
     assert(enough.scale==1 && enough.height==1080 && enough.clip.top==0);
     assert(Same(bare,FitScenery(doors,1920,1080,{})));
     assert(Same(bare,FitScenery(doors,1920,1080,{{5000,-900,6000,800},{0,2,0,9}})));
-    // Other maps must remain on the accepted normal-map rule, even when
-    // scenery extends well beyond VR. Do not expand their camera by accident.
+    // Dead Mine I/II/III, Cave of Trial and Zakum entrances were just above
+    // the old short-map cutoff, and must not magnify actors even outside the special scenery classes.
+    for(RECT r:{RECT{-1022,-766,2910,-70},RECT{-930,-715,3360,-70},
+        RECT{-1290,-720,3900,-70},RECT{-2910,-716,930,-70},
+        RECT{-3180,-720,-420,-120},RECT{-1800,-720,-440,-120}}) {
+        assert(Classify(r)==MapShape::Normal);
+        for(POINT output:{POINT{1280,720},POINT{1920,1080},POINT{2560,1440},POINT{3840,2160}}) {
+            auto v=Fit(r,output.x,output.y);
+            assert(v.scale==henesys.scale && v.camera.top<=v.camera.bottom);
+            assert(v.clip.right-v.clip.left==v.width && v.clip.bottom-v.clip.top==v.height);
+            auto scenery=FitScenery(r,output.x,output.y,{{r.left,r.top-100,r.right,r.bottom+100}});
+            assert(scenery.scale==1 && scenery.height>=v.height);
+        }
+    }
+    // Keep the existing scenery classifications. Native size no longer
+    // depends on these thresholds (including taller Dead Mine 11-1).
+    for(RECT r:{RECT{-754,-370,1920,400},RECT{0,0,1296,736},RECT{0,0,3000,738}})
+        assert(Fit(r,1920,1080).scale==1);
+    // Normal maps retain their camera envelope, but no longer height-fill.
     for(RECT r:{RECT{-809,-633,2765,179},RECT{-2740,-748,809,179},
         RECT{-400,-300,400,300},RECT{-1018,-587,6328,770},RECT{-1169,-1273,1230,333}}){
         assert(Classify(r)==MapShape::Normal);
         auto v=Fit(r,1920,1080);
         assert(Same(v,FitScenery(r,1920,1080,{{-10000,-10000,10000,10000}})));
-        const double expected=(std::max)(1.0,1080.0/(2*((r.bottom-r.top-16)/2)));
+        const double expected=1.0;
         assert(std::abs(v.scale-expected)<1e-9);
     }
     for(RECT r:{RECT{-400,-398,400,600},RECT{-400,-6000,400,595}}){
@@ -116,5 +133,5 @@ int main(int argc,char** argv){
         }
         assert(samples>=18);
     }
-    printf("PASS scoped scenery: native actor size with margins, unchanged normal maps, frames/cache/refcounts, failure and reload; %d asset samples.\n",samples);
+    printf("PASS scoped scenery: native actor size with margins, native-size normal maps, frames/cache/refcounts, failure and reload; %d asset samples.\n",samples);
 }
