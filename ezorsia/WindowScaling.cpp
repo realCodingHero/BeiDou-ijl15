@@ -5,6 +5,7 @@
 #include "WindowScalingGeometry.h"
 #include "AdaptiveLayout.h"
 #include "WindowPlacementConfig.h"
+#include "BorderlessViewport.h"
 #include "detours.h"
 
 namespace {
@@ -23,6 +24,14 @@ bool havePlacement = false;
 bool restoreMaximizedOnShow = false;
 bool returningToWindow = false;
 bool destroyingWindow = false;
+bool borderless = false, borderlessTransition = false, altEnterHeld = false;
+DWORD framedStyle = 0, framedExStyle = 0;
+WINDOWPLACEMENT framedPlacement{sizeof(WINDOWPLACEMENT)};
+RECT framedRect{};
+bool framedVisible = false;
+using NativeKey = int(__thiscall*)(void*, UINT, UINT, ULONG);
+NativeKey originalNativeKey = nullptr;
+bool nativeKeyHooked = false;
 SIZE returnSize{};
 POINT returnPosition{};
 UINT restoreMessage = 0;
@@ -74,13 +83,15 @@ SIZE OuterSize(HWND window, int width, int height, UINT dpi = 0) {
 
 void RememberSize(HWND window) {
     RECT rect{};
-    if (returningToWindow || destroyingWindow || !IsWindowed(window) || IsIconic(window) || !GetClientRect(window, &rect) ||
+    if (borderlessTransition || returningToWindow || destroyingWindow || (!borderless && !IsWindowed(window)) || IsIconic(window) || !GetClientRect(window, &rect) ||
         rect.right <= 0 || rect.bottom <= 0) return;
     Client::m_nWindowWidth = rect.right;
     Client::m_nWindowHeight = rect.bottom;
     Client::m_fScaleX = static_cast<float>(rect.right) / Client::m_nGameWidth;
     Client::m_fScaleY = static_cast<float>(rect.bottom) / Client::m_nGameHeight;
     Client::m_bEnableScaling = rect.right != Client::m_nGameWidth || rect.bottom != Client::m_nGameHeight;
+    // Presentation/input use the live client size, but config keeps the framed placement.
+    if (borderless) return;
     RECT outer{};
     if (!GetWindowRect(window, &outer)) return;
     const bool maximized = IsZoomed(window) != FALSE;
@@ -151,7 +162,89 @@ BOOL RestoreWindowed(HWND window, HWND after = nullptr,
     return result;
 }
 
+BOOL FitBorderless(HWND window) {
+    MONITORINFO monitor{sizeof(MONITORINFO)};
+    if (!GetMonitorInfoA(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor)) return FALSE;
+    const RECT& r = monitor.rcMonitor; // Full display, including the taskbar area.
+    return originalSetWindowPos(window, HWND_NOTOPMOST, r.left, r.top,
+        r.right-r.left, r.bottom-r.top, SWP_NOACTIVATE | SWP_FRAMECHANGED);
+}
+
+bool ToggleBorderless(HWND window) {
+    if (!window || borderlessTransition || returningToWindow || IsIconic(window)) return false;
+    if (!borderless) {
+        // Never disguise an existing exclusive device as a windowed device.
+        if (!IsWindowed(window)) return false;
+        RememberSize(window);
+        framedStyle = GetWindowLongA(window, GWL_STYLE);
+        framedExStyle = GetWindowLongA(window, GWL_EXSTYLE);
+        framedPlacement.length = sizeof(framedPlacement);
+        if (!GetWindowPlacement(window, &framedPlacement) || !GetWindowRect(window, &framedRect)) return false;
+        framedVisible = IsWindowVisible(window) != FALSE;
+        if (!SetPropW(window, BorderlessViewport::Property, reinterpret_cast<HANDLE>(1))) return false;
+        borderlessTransition = borderless = true;
+        restoreMaximizedOnShow = false;
+        SetWindowLongA(window, GWL_STYLE, (framedStyle & ~(WS_OVERLAPPEDWINDOW | WS_MINIMIZE | WS_MAXIMIZE)) | WS_POPUP);
+        SetWindowLongA(window, GWL_EXSTYLE, framedExStyle & ~(WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE |
+            WS_EX_DLGMODALFRAME | WS_EX_STATICEDGE));
+        const BOOL placed = FitBorderless(window);
+        borderlessTransition = false;
+        if (!placed) { ToggleBorderless(window); return false; }
+    } else {
+        borderlessTransition = true;
+        borderless = false;
+        RemovePropW(window, BorderlessViewport::Property);
+        RemovePropW(window, BorderlessViewport::PresentedProperty);
+        SetWindowLongA(window, GWL_STYLE, framedStyle & ~(WS_MAXIMIZE | WS_MINIMIZE));
+        SetWindowLongA(window, GWL_EXSTYLE, framedExStyle);
+        WINDOWPLACEMENT placement = framedPlacement;
+        if (!framedVisible) placement.showCmd = SW_HIDE;
+        SetWindowPlacement(window, &placement);
+        if (!(framedStyle & WS_MAXIMIZE)) {
+            POINT position{framedRect.left, framedRect.top};
+            SIZE size{framedRect.right-framedRect.left, framedRect.bottom-framedRect.top};
+            KeepPositionVisible(position, size);
+            originalSetWindowPos(window, nullptr, position.x, position.y, size.cx, size.cy,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        }
+        borderlessTransition = false;
+    }
+    RememberSize(window);
+    return true;
+}
+
+int __fastcall NativeKeyHook(void* self, void*, UINT message, UINT key, ULONG flags) {
+    if (WindowScaling::HandleNativeFullscreenKey(key, flags)) return 0;
+    return originalNativeKey(self, message, key, flags);
+}
+
 LRESULT CALLBACK GameWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    if (!nativeKeyHooked && (message == WM_KEYUP || message == WM_SYSKEYUP) && wParam == VK_RETURN) altEnterHeld = false;
+    if (message == WM_ACTIVATEAPP && !wParam) altEnterHeld = false;
+    // The supported client's native hook owns keyboard dispatch. This fallback
+    // also serves native Win32 hosts without the client's DirectInput dispatcher.
+    if (!nativeKeyHooked && message == WM_SYSKEYDOWN && wParam == VK_RETURN && (lParam & (1L << 29))) {
+        if (!(lParam & (1L << 30)) && !altEnterHeld) {
+            altEnterHeld = true;
+            ToggleBorderless(window);
+        }
+        return 0;
+    }
+    if (borderless && !borderlessTransition) {
+        if (message == WM_DISPLAYCHANGE || message == WM_DPICHANGED) {
+            PostMessageA(window, restoreMessage, 0, 0);
+            return 0;
+        }
+        if (message == restoreMessage && restoreMessage) {
+            if (!IsIconic(window)) FitBorderless(window);
+            return 0;
+        }
+        if (message == WM_SYSCOMMAND && ((wParam & 0xfff0) == SC_MAXIMIZE || (wParam & 0xfff0) == SC_RESTORE)) {
+            const LRESULT result = DefWindowProcA(window, message, wParam, lParam);
+            if (!IsIconic(window)) FitBorderless(window);
+            return result;
+        }
+    }
     if (message == WM_SYSCOMMAND && resizable && IsWindowed(window) &&
         ((wParam & 0xfff0) == SC_MAXIMIZE || (wParam & 0xfff0) == SC_RESTORE)) {
         // BeiDou.exe 0x009FEB57 handles SC_MAXIMIZE by putting Gr2D in fullscreen.
@@ -172,7 +265,7 @@ LRESULT CALLBACK GameWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM
         SavePlacement();
         destroyingWindow = true;
     }
-    if (message == WM_WINDOWPOSCHANGING && resizable && keepAspectRatio &&
+    if (message == WM_WINDOWPOSCHANGING && !borderlessTransition && resizable && keepAspectRatio &&
         IsWindowed(window) && !IsIconic(window)) {
         // Snap, placement restoration and DPI changes can resize without WM_SIZING.
         auto* position = reinterpret_cast<WINDOWPOS*>(lParam);
@@ -197,6 +290,11 @@ LRESULT CALLBACK GameWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM
         RememberSize(window);
     } else if (message == WM_STYLECHANGING && wParam == GWL_STYLE) {
         auto* change = reinterpret_cast<STYLESTRUCT*>(lParam);
+        if (borderlessTransition) return CallWindowProcA(originalWindowProc, window, message, wParam, lParam);
+        if (borderless) {
+            change->styleNew = (change->styleNew & ~(WS_OVERLAPPEDWINDOW | WS_MAXIMIZE)) | WS_POPUP;
+            return CallWindowProcA(originalWindowProc, window, message, wParam, lParam);
+        }
         const bool wasWindowed = (change->styleOld & WS_CAPTION) == WS_CAPTION;
         const bool willBeWindowed = (change->styleNew & WS_CAPTION) == WS_CAPTION;
         if (wasWindowed && !willBeWindowed) RememberSize(window);
@@ -277,6 +375,9 @@ LRESULT CALLBACK GameWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM
                 monitor.rcWork.top - monitor.rcMonitor.top + (availableHeight - limits->ptMaxSize.y) / 2};
         }
     } else if (message == WM_NCDESTROY) {
+        RemovePropW(window, BorderlessViewport::Property);
+        RemovePropW(window, BorderlessViewport::PresentedProperty);
+        borderless = borderlessTransition = altEnterHeld = false;
         gameWindow = nullptr;
         originalWindowProc = nullptr;
         returningToWindow = false;
@@ -287,7 +388,7 @@ LRESULT CALLBACK GameWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM
 HWND WINAPI CreateWindowHook(DWORD exStyle, LPCSTR className, LPCSTR title, DWORD style,
     int x, int y, int width, int height, HWND parent, HMENU menu, HINSTANCE instance, LPVOID param) {
     const bool manage = !gameWindow && IsGameClass(className) &&
-        (resizable || Client::m_bEnableScaling) && !(style & WS_CHILD) &&
+        !(style & WS_CHILD) &&
         Client::m_nGameWidth > 0 && Client::m_nGameHeight > 0 &&
         Client::m_nWindowWidth > 0 && Client::m_nWindowHeight > 0;
     if (!manage) return originalCreateWindow(exStyle, className, title, style, x, y, width, height,
@@ -304,6 +405,7 @@ HWND WINAPI CreateWindowHook(DWORD exStyle, LPCSTR className, LPCSTR title, DWOR
         placementRevision = savedRevision = 0;
     }
     destroyingWindow = false;
+    borderless = borderlessTransition = altEnterHeld = false;
     returningToWindow = false;
     restoreMaximizedOnShow = startupPlacement.maximized && Client::WindowedMode;
     // Windows implicitly adds a caption to ordinary overlapped windows even if
@@ -351,6 +453,10 @@ HWND WINAPI CreateWindowHook(DWORD exStyle, LPCSTR className, LPCSTR title, DWOR
 }
 
 BOOL WINAPI SetWindowPosHook(HWND window, HWND after, int x, int y, int width, int height, UINT flags) {
+    if (window == gameWindow && borderless && IsRendererCaller(_ReturnAddress())) {
+        if (IsIconic(window)) return TRUE;
+        return FitBorderless(window);
+    }
     if (window == gameWindow && !(flags & SWP_NOSIZE) && IsWindowed(window) &&
         IsRendererCaller(_ReturnAddress())) {
         // Gr2D's initialization and device recovery use the logical render size.
@@ -378,13 +484,26 @@ ULONG_PTR ClientCallerOffset(void* caller) {
 POINT ScaleInput(HWND window, POINT point, bool toRender) {
     RECT rect{};
     if (window != gameWindow || !GetClientRect(window, &rect)) return point;
-    const SIZE physical{rect.right, rect.bottom};
+    SIZE physical{rect.right, rect.bottom};
     RECT login{};
-    if (AdaptiveLayout::LoginInputRect(window, login))
-        return WindowScalingGeometry::MapViewport(point, physical, login, toRender);
-    if (!IsWindowed(window)) return point;
-    const SIZE logical{Client::m_nGameWidth, Client::m_nGameHeight};
-    return WindowScalingGeometry::MapPoint(point, toRender ? physical : logical, toRender ? logical : physical);
+    const bool loginActive = AdaptiveLayout::LoginInputRect(window, login);
+    RECT output{};
+    const bool fitted = GetPropW(window, BorderlessViewport::PresentedProperty) &&
+        BorderlessViewport::Query(window, loginActive ? login.right-login.left : Client::m_nGameWidth,
+            loginActive ? login.bottom-login.top : Client::m_nGameHeight, output);
+    if (fitted) {
+        physical = {output.right-output.left, output.bottom-output.top};
+        if (toRender) { point.x -= output.left; point.y -= output.top; }
+    }
+    if (loginActive)
+        point = WindowScalingGeometry::MapViewport(point, physical, login, toRender);
+    else {
+        if (!borderless && !IsWindowed(window)) return point;
+        const SIZE logical{Client::m_nGameWidth, Client::m_nGameHeight};
+        point = WindowScalingGeometry::MapPoint(point, toRender ? physical : logical, toRender ? logical : physical);
+    }
+    if (fitted && !toRender) { point.x += output.left; point.y += output.top; }
+    return point;
 }
 
 BOOL WINAPI ScreenToClientHook(HWND window, LPPOINT point) {
@@ -407,6 +526,29 @@ BOOL WINAPI ClientToScreenHook(HWND window, LPPOINT point) {
     return originalClientToScreen(window, point);
 }
 }
+
+bool WindowScaling::HandleNativeFullscreenKey(UINT key, ULONG flags) {
+    if (key != VK_RETURN) return false;
+    // Native CWndMan::OnKey uses 0x100 for Alt, 0x80000000 for key release.
+    // These are game event flags, not Windows lParam's Alt bit (1<<29).
+    if (flags & 0x80000000u) {
+        const bool handled = altEnterHeld;
+        altEnterHeld = false;
+        return handled;
+    }
+    if (!(flags & 0x100) || !gameWindow || (!borderless && !IsWindowed(gameWindow))) return false;
+    if (!altEnterHeld) {
+        altEnterHeld = true;
+        ToggleBorderless(gameWindow);
+    }
+    return true;
+}
+
+#ifdef WINDOW_SCALING_TESTING
+void WindowScaling::SetNativeKeyForTesting(void* entry) {
+    originalNativeKey = reinterpret_cast<NativeKey>(entry);
+}
+#endif
 
 void WindowScaling::SetNativeCursorPosition(void* input, int x, int y, CursorVectorSetter setter) {
     if (!input || !setter) return;
@@ -438,6 +580,16 @@ void WindowScaling::LoadPlacement(const char* path) {
 
 bool WindowScaling::Hook(bool enable) {
     if (enable) restoreMessage = RegisterWindowMessageA("BeiDou.WindowScaling.RestorePlacement");
+    if (!enable && borderless && gameWindow) ToggleBorderless(gameWindow);
+    if (enable) {
+        const auto base = reinterpret_cast<unsigned char*>(GetModuleHandleA(nullptr));
+        const auto dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+        const auto nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+        const unsigned char signature[]{0xb8,0x7c,0x6f,0xae,0x00,0xe8,0x9d,0xca,0x07,0x00};
+        if (nt->OptionalHeader.SizeOfImage > 0x5e40f1 + sizeof(signature) &&
+            !memcmp(base+0x5e40f1, signature, sizeof(signature)))
+            originalNativeKey = reinterpret_cast<NativeKey>(base+0x5e40f1);
+    }
     // Commit all API hooks together; an installation failure leaves native APIs intact.
     if (DetourTransactionBegin() != NO_ERROR) return false;
     const auto operation = enable ? DetourAttach : DetourDetach;
@@ -446,11 +598,13 @@ bool WindowScaling::Hook(bool enable) {
         operation(reinterpret_cast<void**>(&originalScreenToClient), ScreenToClientHook) != NO_ERROR ||
         operation(reinterpret_cast<void**>(&originalClientToScreen), ClientToScreenHook) != NO_ERROR ||
         operation(reinterpret_cast<void**>(&originalExitProcess), ExitProcessHook) != NO_ERROR ||
-        operation(reinterpret_cast<void**>(&originalCreateWindow), CreateWindowHook) != NO_ERROR) {
+        operation(reinterpret_cast<void**>(&originalCreateWindow), CreateWindowHook) != NO_ERROR ||
+        (originalNativeKey && operation(reinterpret_cast<void**>(&originalNativeKey), NativeKeyHook) != NO_ERROR)) {
         DetourTransactionAbort();
         return false;
     }
     if (DetourTransactionCommit() != NO_ERROR) return false;
+    nativeKeyHooked = enable && originalNativeKey;
     if (!enable && gameWindow && originalWindowProc) {
         SetWindowLongPtrA(gameWindow, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(originalWindowProc));
         gameWindow = nullptr;

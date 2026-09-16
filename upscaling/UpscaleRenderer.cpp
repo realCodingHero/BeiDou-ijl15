@@ -2,6 +2,7 @@
 #include "LoginViewportBridge.h"
 #include "NeuralShaders.h"
 #include "PresentationPolicy.h"
+#include "BorderlessViewport.h"
 #include <algorithm>
 #include <cstring>
 #include <cmath>
@@ -50,6 +51,7 @@ ULONG Renderer::References() const { device_->AddRef(); return device_->Release(
 
 void Renderer::Reset() {
     SetLoginPresentation(nullptr, false);
+    SetBorderlessPresentation(nullptr, false);
     ResetTiming();
     // Call before the underlying Reset; DEFAULT-pool resources and additional
     // swapchains must not keep the old device surfaces alive.
@@ -186,7 +188,7 @@ HRESULT Renderer::Prepare(UINT w, UINT h, UINT tw, UINT th, const Settings& sett
 }
 
 HRESULT Renderer::Draw(IDirect3DSurface9* target, IDirect3DPixelShader9* shader,
-    const std::vector<IDirect3DTexture9*>& inputs, UINT iw, UINT ih, bool linear, const float* axis) {
+    const std::vector<IDirect3DTexture9*>& inputs, UINT iw, UINT ih, bool linear, const float* axis, const RECT* output) {
     // Unbind all previous inputs before selecting a surface that might have been read.
     for (UINT i = 0; i < 4; ++i) device_->SetTexture(i, nullptr);
     HRESULT hr = device_->SetRenderTarget(0, target);
@@ -210,12 +212,15 @@ HRESULT Renderer::Draw(IDirect3DSurface9* target, IDirect3DPixelShader9* shader,
     device_->SetPixelShaderConstantF(0, size, 1);
     if (axis) device_->SetPixelShaderConstantF(1, axis, 1);
     struct Vertex { float x,y,z,w,u,v; };
-    const float w = static_cast<float>(desc.Width), h = static_cast<float>(desc.Height);
-    const Vertex vertices[4]{{-.5f,-.5f,0,1,0,0},{w-.5f,-.5f,0,1,1,0},{-.5f,h-.5f,0,1,0,1},{w-.5f,h-.5f,0,1,1,1}};
+    const float x = output ? static_cast<float>(output->left) : 0.f;
+    const float y = output ? static_cast<float>(output->top) : 0.f;
+    const float r = output ? static_cast<float>(output->right) : static_cast<float>(desc.Width);
+    const float b = output ? static_cast<float>(output->bottom) : static_cast<float>(desc.Height);
+    const Vertex vertices[4]{{x-.5f,y-.5f,0,1,0,0},{r-.5f,y-.5f,0,1,1,0},{x-.5f,b-.5f,0,1,0,1},{r-.5f,b-.5f,0,1,1,1}};
     return device_->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, vertices, sizeof(Vertex));
 }
 
-HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* destination, const Settings& settings, const RECT* viewport) {
+HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* destination, const Settings& settings, const RECT* viewport, const RECT* output) {
     D3DSURFACE_DESC src{}, dst{};
     HRESULT hr = source->GetDesc(&src);
     if (FAILED(hr)) return hr;
@@ -227,8 +232,16 @@ HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* desti
         src.Width = viewport->right - viewport->left;
         src.Height = viewport->bottom - viewport->top;
     }
+    if (output) {
+        if (output->left < 0 || output->top < 0 || output->right > static_cast<LONG>(dst.Width) ||
+            output->bottom > static_cast<LONG>(dst.Height) || output->left >= output->right ||
+            output->top >= output->bottom || source == destination) return E_INVALIDARG;
+        dst.Width = output->right-output->left;
+        dst.Height = output->bottom-output->top;
+        if (FAILED(hr = device_->ColorFill(destination, nullptr, 0xff000000))) return hr;
+    }
     if (settings.algorithm == Algorithm::Linear && src.Width == dst.Width && src.Height == dst.Height && source != destination)
-        return device_->StretchRect(source, viewport, destination, nullptr, D3DTEXF_NONE);
+        return device_->StretchRect(source, viewport, destination, output, D3DTEXF_NONE);
     if (FAILED(hr = Prepare(src.Width, src.Height, dst.Width, dst.Height, settings))) return hr;
     if (FAILED(hr = device_->StretchRect(source, viewport, input_.surface.Get(), nullptr, D3DTEXF_NONE))) return hr;
     StateGuard guard(device_);
@@ -254,11 +267,11 @@ HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* desti
     device_->SetRenderState(D3DRS_WRAP0, 0);
     auto render = [&]() -> HRESULT {
         if (src.Width == dst.Width && src.Height == dst.Height)
-            return Draw(destination, copy_.Get(), {input_.image.Get()}, src.Width, src.Height);
+            return Draw(destination, copy_.Get(), {input_.image.Get()}, src.Width, src.Height, false, nullptr, output);
         if (settings.algorithm == Algorithm::Linear)
             // Explicit pixel centers avoid driver-dependent StretchRect
             // magnification offsets, while still using one bilinear GPU pass.
-            return Draw(destination, copy_.Get(), {input_.image.Get()}, src.Width, src.Height, true);
+            return Draw(destination, copy_.Get(), {input_.image.Get()}, src.Width, src.Height, true, nullptr, output);
         IDirect3DTexture9* active = input_.image.Get();
         UINT aw = src.Width, ah = src.Height;
         if (dst.Width > src.Width && dst.Height > src.Height) {
@@ -281,7 +294,7 @@ HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* desti
             active = doubled_.image.Get(); aw *= 2; ah *= 2;
         }
         if (aw == dst.Width && ah == dst.Height)
-            return Draw(destination, copy_.Get(), {active}, aw, ah);
+            return Draw(destination, copy_.Get(), {active}, aw, ah, false, nullptr, output);
         if (aw != dst.Width) {
             const float axis[4]{1,0,static_cast<float>(aw),static_cast<float>(dst.Width)};
             const bool fast = horizontalWeights_.image != nullptr;
@@ -294,9 +307,9 @@ HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* desti
             const float axis[4]{0,1,static_cast<float>(ah),static_cast<float>(dst.Height)};
             const bool fast = verticalWeights_.image != nullptr;
             return Draw(destination, fast ? resampleFast_.Get() : resample_.Get(),
-                fast ? std::vector<IDirect3DTexture9*>{active, verticalWeights_.image.Get()} : std::vector<IDirect3DTexture9*>{active}, aw, ah, false, axis);
+                fast ? std::vector<IDirect3DTexture9*>{active, verticalWeights_.image.Get()} : std::vector<IDirect3DTexture9*>{active}, aw, ah, false, axis, output);
         }
-        return Draw(destination, copy_.Get(), {active}, aw, ah);
+        return Draw(destination, copy_.Get(), {active}, aw, ah, false, nullptr, output);
     };
     hr = render();
     for (UINT i = 0; i < 4; ++i) device_->SetTexture(i, nullptr);
@@ -304,11 +317,11 @@ HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* desti
     return FAILED(hr) ? hr : end;
 }
 
-HRESULT Renderer::Render(IDirect3DSurface9* source, IDirect3DSurface9* destination, const Settings& settings, const RECT* viewport) {
+HRESULT Renderer::Render(IDirect3DSurface9* source, IDirect3DSurface9* destination, const Settings& settings, const RECT* viewport, const RECT* output) {
     if (!source || !destination) return E_POINTER;
     const ULONG external = References() - internalReferences_;
     HRESULT result = E_FAIL;
-    try { result = RenderImpl(source, destination, settings, viewport); }
+    try { result = RenderImpl(source, destination, settings, viewport, output); }
     catch (...) { result = E_OUTOFMEMORY; }
     internalReferences_ = References() - external;
     return result;
@@ -328,9 +341,20 @@ void Renderer::SetLoginPresentation(HWND window, bool active) {
     }
 }
 
+void Renderer::SetBorderlessPresentation(HWND window, bool active) {
+    if (borderlessWindow_ && (!active || borderlessWindow_ != window)) {
+        RemovePropW(borderlessWindow_, BorderlessViewport::PresentedProperty);
+        borderlessWindow_ = nullptr;
+    }
+    if (active && window && (borderlessWindow_ != window || !GetPropW(window, BorderlessViewport::PresentedProperty))) {
+        if (SetPropW(window, BorderlessViewport::PresentedProperty, reinterpret_cast<HANDLE>(1)))
+            borderlessWindow_ = window;
+    }
+}
+
 bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND overrideWindow, HRESULT& result) {
     double frameStart = Milliseconds();
-    const auto native = [&]() { SetLoginPresentation(nullptr, false); ResetTiming(); return false; };
+    const auto native = [&]() { SetLoginPresentation(nullptr, false); SetBorderlessPresentation(nullptr, false); ResetTiming(); return false; };
     if (!Configuration().enabled || disabledUntilReset_) return native();
     ComPtr<IDirect3DSwapChain9> original;
     if (FAILED(device_->GetSwapChain(0, &original))) return native();
@@ -361,6 +385,7 @@ bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND over
     RECT login{};
     const bool crop = LoginViewportBridge::Query(description.Width, description.Height, &login);
     if (!params.Windowed) {
+        SetBorderlessPresentation(nullptr, false);
         if (crop) {
             Settings linear = Configuration(); linear.algorithm = Algorithm::Linear;
             const HRESULT hr = Render(source.Get(), source.Get(), linear, &login);
@@ -433,7 +458,12 @@ bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND over
         hr = output_->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &target);
         Settings settings = Configuration();
         if (crop) settings.algorithm = Algorithm::Linear;
-        if (SUCCEEDED(hr)) hr = Render(source.Get(), target.Get(), settings, crop ? &login : nullptr);
+        RECT fitted{};
+        const bool borderlessOutput = BorderlessViewport::Query(window,
+            crop ? login.right-login.left : description.Width,
+            crop ? login.bottom-login.top : description.Height, fitted);
+        const bool letterbox = borderlessOutput && !EqualRect(&fitted, &client);
+        if (SUCCEEDED(hr)) hr = Render(source.Get(), target.Get(), settings, crop ? &login : nullptr, letterbox ? &fitted : nullptr);
         const double submitEnd = Milliseconds();
         if (SUCCEEDED(hr)) {
             if (!activeLogged_) {
@@ -448,6 +478,7 @@ bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND over
             }
             hr = output_->Present(nullptr, nullptr, window, nullptr, 0);
             SetLoginPresentation(window, SUCCEEDED(hr) && crop);
+            SetBorderlessPresentation(window, SUCCEEDED(hr) && borderlessOutput);
             if (SUCCEEDED(hr)) RecordFrame(frameStart, submitEnd-frameStart, Milliseconds()-submitEnd);
             else ResetTiming();
             // Let the game handle normal device-loss recovery through Reset.
