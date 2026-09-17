@@ -15,7 +15,7 @@ void** stageSlot = reinterpret_cast<void**>(0x00BEDED4);
 const void* activeMap = nullptr; // Identity only; no retained game/COM objects.
 WorldViewport::View activeView;
 const void* loadingMap=nullptr;
-struct Backdrop { int z,x,rx,ry,type; bool front; };
+struct Backdrop { int z,x,rx,ry,type; bool front; int y; };
 std::vector<Backdrop> loadingBackdrops, activeBackdrops;
 RECT activeBounds{};
 #ifdef WORLD_VIEWPORT_TESTING
@@ -228,7 +228,7 @@ void __fastcall RenderLayer(void* layer, void*, void* context) {
             [z](const Backdrop& b){return b.z==z;});
         if(entry!=activeBackdrops.end()) {
             if(!entry->front) {
-                scale=(std::max)(scale,renderHeight/600.0);
+                scale=(std::max)(scale,activeView.height/600.0);
                 // LoadBack's static/tiled vectors use Ratio(center,100,100,rx,ry).
                 // Grow artwork and tile spacing, not camera-driven motion.
                 // Auto-scroll types 4..7 have a different time-based vector path.
@@ -327,7 +327,12 @@ View FitScenery(RECT bounds,int width,int height,const std::vector<RECT>& scener
     return FitRegion(bounds,width,height);
 }
 bool ConstrainGround(View& view, RECT bounds, const std::vector<GroundTile>& tiles) try {
-    if (view.width<=0 || view.height<=0 || view.camera.top>=view.camera.bottom) return false;
+    // Henesys Park has a deliberate 180px ravine in its bottom tile row.
+    // Its native fallback also leaves no vertical camera travel at 1080p.
+    // Restrict this exception to the audited bounds; arbitrary platform gaps
+    // elsewhere are not evidence of a safe map-wide bottom.
+    const bool park=bounds.left==-118 && bounds.top==-56 && bounds.right==4708 && bounds.bottom==1010;
+    if (view.width<=0 || view.height<=0 || (!park && view.camera.top>=view.camera.bottom)) return false;
     std::map<std::pair<int,int>,std::vector<GroundTile>> rows;
     for (const auto& tile:tiles) {
         if (tile.right>tile.left && tile.solidBottom>tile.top)
@@ -339,23 +344,33 @@ bool ConstrainGround(View& view, RECT bounds, const std::vector<GroundTile>& til
         auto& row=entry.second;
         std::sort(row.begin(),row.end(),[](const GroundTile& a,const GroundTile& b){return a.left<b.left;});
         int left=row[0].left,right=row[0].right,solidBottom=row[0].solidBottom;
-        int edgeWidth=row[0].right-row[0].left, count=1;
+        int edgeWidth=row[0].right-row[0].left, count=1,gaps=0;
         auto consider=[&]() {
             // The native fallback adds 100 below the foothold MBR. Correct
             // only that near-boundary band, not intentional deep empty space.
             const int bottom=solidBottom-1; // Keep the first transparent row outside.
-            if (count<2 || right-left<view.width ||
+            if (count<2 || right-left<view.width || gaps*20>right-left ||
                 left>bounds.left+edgeWidth/2 || right<bounds.right-edgeWidth/2 ||
                 bottom>=oldBottom || oldBottom-bottom>100) return;
             bestBottom=(std::max)(bestBottom,bottom);
         };
         for (size_t i=1;i<row.size();++i) {
-            if (row[i].left>right) {consider();left=row[i].left;right=row[i].right;solidBottom=row[i].solidBottom;edgeWidth=row[i].right-row[i].left;count=1;}
-            else {right=(std::max)(right,row[i].right);solidBottom=(std::min)(solidBottom,row[i].solidBottom);edgeWidth=(std::min)(edgeWidth,row[i].right-row[i].left);++count;}
+            if (row[i].left>right && !(park && row[i].left-right<=180)) {consider();left=row[i].left;right=row[i].right;solidBottom=row[i].solidBottom;edgeWidth=row[i].right-row[i].left;count=1;gaps=0;}
+            else {gaps+=(std::max)(0,row[i].left-right);right=(std::max)(right,row[i].right);solidBottom=(std::min)(solidBottom,row[i].solidBottom);edgeWidth=(std::min)(edgeWidth,row[i].right-row[i].left);++count;}
         }
         consider();
     }
     if (bestBottom==INT_MIN) return false;
+    if(park && bestBottom-view.height/2<view.camera.top) {
+        const double top=view.camera.top-view.height/2;
+        const int height=2*int(std::floor((bestBottom-top)/2));
+        if(height<=0 || height>=view.height) return false;
+        const int screenHeight=view.clip.top+view.clip.bottom;
+        view.height=height;
+        view.clip.top=(screenHeight-height)/2;view.clip.bottom=view.clip.top+height;
+        view.camera.top=view.camera.bottom=LONG(top+height/2);
+        return true;
+    }
     const int limit=int(std::floor(bestBottom-view.height/2));
     // Preserve both magnification and the existing upper limit. A scene with
     // insufficient vertical camera travel cannot be fixed by moving it alone.
@@ -539,6 +554,19 @@ void __cdecl AdjustCamera(void* map) {
     }
     if (view.width<=0 || view.height<=0 || bounds.right-bounds.left<=16 || bounds.bottom-bounds.top<=16) return;
     const bool groundAdjusted=terrainMap==map && terrainValid && ConstrainGround(view,bounds,groundTiles);
+    // Audited Leafre minar/back/27: y=577, originY=31, height=63.
+    // This horizontal scrolling foreground terminates at world Y=609.
+    // Keep its bottom outside the viewport instead of exposing terrain below
+    // the river. Bounds plus the full placement signature limit the policy
+    // to this asset arrangement; do not anchor other moving effects.
+    if(loadingMap==map && bounds.left==-2385 && bounds.top==-960 &&
+        bounds.right==2834 && bounds.bottom==666) {
+        for(const auto& b:loadingBackdrops) if(b.front && b.z==int(0xC0042360u)+22000 &&
+            b.x==-45 && b.y==577 && b.rx==5 && b.ry==-100 && b.type==4) {
+            const LONG limit=LONG(std::floor(608-view.height/2));
+            if(limit>=view.camera.top && limit<view.camera.bottom)view.camera.bottom=limit;
+        }
+    }
     groundCanvases.clear(); // Never retain canvas identities beyond the load.
     sceneryCanvases.clear();sceneryAnimations.clear();
     *camera=view.camera; activeView=view; activeMap=map; activeBounds=bounds;
@@ -564,12 +592,13 @@ double ForegroundEdgeOffset(RECT bounds,double visibleWidth,int x,int rx,int typ
     const double amount=(visibleWidth-800)*(100+rx)/200.0;
     return left ? -amount:amount;
 }
-bool RegisterBackground(void* map,int index,int front,int ry,int x,int rx,int type) {
+bool RegisterBackground(void* map,int index,int front,int ry,int x,int rx,int type,int y) {
     if (!graphicsReady || renderHeight<=720 || !IsField(map)) return false;
     if (loadingMap!=map) BeginBackgrounds(map);
-    if(index>=0 && index<128 && ((!front && ry>-100) || (front && type==0 && rx>-100 && rx<0))) {
+    if(index>=0 && index<128 && ((!front && ry>-100) || (front && type==0 && rx>-100 && rx<0) ||
+        (front && type==4 && ry==-100))) {
         const int z=int(front ? 0xC0042360u:0xBFFE0C00u)+index*1000;
-        const Backdrop entry{z,x,rx,ry,type,front!=0};
+        const Backdrop entry{z,x,rx,ry,type,front!=0,y};
         loadingBackdrops.push_back(entry);
         if(map==activeMap) activeBackdrops.push_back(entry);
     }

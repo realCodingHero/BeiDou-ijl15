@@ -28,7 +28,7 @@ void __cdecl AdjustCamera(void* map);
 void __cdecl AdjustWorldCursor(POINT* screen);
 void __cdecl BeginBackgrounds(void* map);
 double ForegroundEdgeOffset(RECT bounds,double visibleWidth,int x,int rx,int type);
-bool RegisterBackground(void* map,int index,int front,int ry,int x=0,int rx=0,int type=0);
+bool RegisterBackground(void* map,int index,int front,int ry,int x=0,int rx=0,int type=0,int y=0);
 void __fastcall MouseButton(void*, void*, unsigned message, unsigned flags, int x, int y);
 int __fastcall MouseMove(void*, void*, int x, int y);
 int __fastcall MouseWheel(void*, void*, int x, int y, int wheel);

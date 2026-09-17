@@ -59,6 +59,18 @@ int main(int argc,char** argv) {
     auto lower=bricks;auto platform=Band(-2475,2565,680,14);lower.insert(lower.end(),platform.begin(),platform.end());
     assert(Apply(kerning,lower,&bottom) && bottom==163);
 
+    // Actual Park fallback bounds and bottom row, including its ravine.
+    const RECT park{-118,-56,4708,1010};
+    auto parkTiles=Band(-90,4590,900,9);
+    parkTiles.erase(parkTiles.begin()+5,parkTiles.begin()+7); // x=360,450
+    auto parkView=WorldViewport::Fit(park,1920,1080);
+    assert(WorldViewport::ConstrainGround(parkView,park,parkTiles));
+    assert(parkView.scale==1 && parkView.height==956 && parkView.camera.bottom==430);
+    assert(parkView.clip.top==62 && parkView.clip.bottom==1018);
+    auto uncertain=park;uncertain.left--;
+    auto uncertainView=WorldViewport::Fit(uncertain,1920,1080);
+    assert(!WorldViewport::ConstrainGround(uncertainView,uncertain,parkTiles));
+
     propertyMethods[0x14/4]=reinterpret_cast<void*>(&Item);
     canvasMethods[0x40/4]=reinterpret_cast<void*>(&Width);canvasMethods[0x48/4]=reinterpret_cast<void*>(&Height);
     canvasMethods[0x6C/4]=canvasMethods[0x74/4]=reinterpret_cast<void*>(&Origin);
@@ -83,6 +95,17 @@ int main(int argc,char** argv) {
     WorldViewport::AdjustCamera(map);assert(camera->bottom==251);
     WorldViewport::BeginTerrain(map);canvas.fail=false;property.type=L"enH0";canvas.reads=0;
     WorldViewport::CollectTerrainTile(map,6,&property,&canvas,-2475,690);assert(canvas.reads==0);
+
+    const RECT leafre{-2385,-960,2834,666};
+    WorldViewport::SetContextForTesting(&stage,map,leafre,1920,1080);
+    WorldViewport::BeginBackgrounds(map);
+    WorldViewport::RegisterBackground(map,22,1,-100,-45,5,4,577);
+    *camera={leafre.left+960,leafre.top+540,leafre.right-960,leafre.bottom-540};
+    WorldViewport::AdjustCamera(map);assert(camera->bottom==68);
+    WorldViewport::BeginBackgrounds(map);
+    WorldViewport::RegisterBackground(map,22,1,-100,-45,5,4,576);
+    *camera={leafre.left+960,leafre.top+540,leafre.right-960,leafre.bottom-540};
+    WorldViewport::AdjustCamera(map);assert(camera->bottom==118);
 
     int maps=0,adjusted=0,targets=0;
     if(argc==2) {
