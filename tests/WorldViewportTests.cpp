@@ -147,13 +147,13 @@ int main(int argc,char** argv) {
     *camera={-809+960,-633+540,2765-960,179-540};WorldViewport::AdjustCamera(map);
     Layer lower(int(0xBFFE0C00)+1000),upper(int(0xBFFE0C00)+2000),attached(int(0xBFFE0C00)+3000);
     for(auto layer:{&lower,&upper,&attached}) {
-        expectedScale=layer==&attached ? flight.scale:1.8;
+        expectedScale=layer==&attached ? flight.scale:flight.height/600.0;
         WorldViewport::DrawLayerForTesting(layer,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
     }
     WorldViewport::BeginBackgrounds(map); // Background-only reload, no camera rebuild.
     expectedScale=flight.scale;
     WorldViewport::DrawLayerForTesting(&lower,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
-    WorldViewport::RegisterBackground(map,2,0,-5);expectedScale=1.8;
+    WorldViewport::RegisterBackground(map,2,0,-5);expectedScale=flight.height/600.0;
     WorldViewport::DrawLayerForTesting(&upper,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
     // Aqua plaza: centered on both axes, original viewport restored for HUD.
     auto narrow=WorldViewport::Fit({-400,-398,400,600},1920,1080);

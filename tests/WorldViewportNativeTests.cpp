@@ -161,7 +161,24 @@ int main(int argc,char** argv) {
     capLayer->Release();parallax->Release();Check(center->raw_RelMove(savedCenterX,savedCenterY),"restore camera");center->Release();
     WorldViewport::SetGraphicsForTesting(nullptr);
     WorldViewport::SetContextForTesting(&current,field,{-728,-413,728,413},1920,1080);
-    // Decorative backgrounds use 1.8x at 1080p independently of world framing.
+    // Letterboxed caves must size decoration against the 634px effective
+    // scene, not the full 1080px buffer. Actors and HUD remain native-sized.
+    WorldViewport::SetContextForTesting(&current,field,{-1290,-720,6330,-70},1920,1080);
+    WorldViewport::BeginBackgrounds(field);
+    WorldViewport::RegisterBackground(field,12,0,-65,4794,-65,1);
+    auto shortBackdrop=make(0,0,int(0xBFFE0C00)+12000,0xffaabb33,nullptr,60,40);
+    Check(gr->raw_UpdateCurrentTime(GetTickCount()),"short backdrop clock");
+    Check(gr->raw_RenderFrame(),"short backdrop frame");
+    auto shortPixels=ColorBounds(0xaabb33);
+    printf("634px scene backdrop: %ldx%ld (old full-buffer policy 108x72)\n",
+        shortPixels.right-shortPixels.left+1,shortPixels.bottom-shortPixels.top+1);
+    assert(shortPixels.right-shortPixels.left+1>=63 && shortPixels.right-shortPixels.left+1<=64);
+    assert(shortPixels.bottom-shortPixels.top+1>=42 && shortPixels.bottom-shortPixels.top+1<=43);
+    auto shortActor=ColorBounds(0xff0000),shortHud=ColorBounds(0xcc00cc);
+    assert(shortActor.right-shortActor.left==59 && shortActor.bottom-shortActor.top==39);
+    assert(shortHud.right-shortHud.left==1199 && shortHud.bottom-shortHud.top==39);
+    shortBackdrop->Release();
+    // Full-height decorative backgrounds retain their established 1.8x.
     WorldViewport::SetContextForTesting(&current,field,{-2000,-1200,2000,1200},1920,1080);
     WorldViewport::BeginBackgrounds(field);
     assert(WorldViewport::RegisterBackground(field,1,0,-5));
