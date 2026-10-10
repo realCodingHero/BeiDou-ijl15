@@ -17,13 +17,14 @@ struct RawTile {
     void** methods;
     int width,height;
     std::vector<unsigned char> pixels;
+    int format=2;
 };
 struct TiledCanvas {void** methods;std::vector<RawTile> tiles;};
 ULONG __stdcall TileRelease(void*){return 1;}
-HRESULT __stdcall TileFormat(void*,unsigned* value){*value=2;return S_OK;}
+HRESULT __stdcall TileFormat(void* p,unsigned* value){*value=static_cast<RawTile*>(p)->format;return S_OK;}
 HRESULT __stdcall TileWidth(void* p,unsigned* value){*value=static_cast<RawTile*>(p)->width;return S_OK;}
 HRESULT __stdcall TileHeight(void* p,unsigned* value){*value=static_cast<RawTile*>(p)->height;return S_OK;}
-HRESULT __stdcall TileLock(void* p,int* pitch,VARIANT* address){auto& t=*static_cast<RawTile*>(p);*pitch=t.width*4;address->vt=VT_BYREF|VT_UI4;address->byref=t.pixels.data();return S_OK;}
+HRESULT __stdcall TileLock(void* p,int* pitch,VARIANT* address){auto& t=*static_cast<RawTile*>(p);*pitch=t.width*(t.format==2?4:2);address->vt=VT_BYREF|VT_UI4;address->byref=t.pixels.data();return S_OK;}
 HRESULT __stdcall TileUnlock(void* p,RECT* r){auto& t=*static_cast<RawTile*>(p);assert(r && r->left==0 && r->top==0 && r->right>0 && r->right<=t.width && r->bottom>0 && r->bottom<=t.height);return S_OK;}
 HRESULT __stdcall CanvasTileWidth(void*,unsigned* value){*value=512;return S_OK;}
 HRESULT __stdcall CanvasTileHeight(void*,unsigned* value){*value=256;return S_OK;}
@@ -39,6 +40,12 @@ void TestNarrowTiles(const Bitmap& source){
     for(int y=0;y<source.height;++y)for(int x=0;x<source.width;++x){auto& tile=c.tiles[(y/256)*2+x/512];DWORD color=0;memcpy(&color,tile.pixels.data()+((y%256)*tile.width+x%512)*4,4);assert(color==source.pixels[y*source.width+x]);}
     for(const auto& t:c.tiles)for(size_t n=t.width*t.height*4;n<t.pixels.size();++n)assert(t.pixels[n]==0xAB);
     puts("PASS tiled canvas: narrow edge tile strides, every pixel across four tiles and buffer guards");
+    Bitmap transparent(600,450);for(int y=0;y<450;++y)for(int x=0;x<600;++x)transparent.pixels[y*600+x]=x<425?0x88223344:0;
+    for(auto& t:c.tiles){t.format=1;t.pixels.assign(t.width*t.height*2+32,0xAB);}
+    assert(Upload(&c,transparent));
+    for(int y=0;y<450;++y)for(int x=0;x<600;++x){auto& tile=c.tiles[(y/256)*2+x/512];WORD color=0;memcpy(&color,tile.pixels.data()+((y%256)*tile.width+x%512)*2,2);assert(color==(x<425?0x8234:0));}
+    for(const auto& t:c.tiles)for(size_t n=t.width*t.height*2;n<t.pixels.size();++n)assert(t.pixels[n]==0xAB);
+    puts("PASS 16-bit tiled canvas: drawer alpha, transparent tail, narrow tile strides and buffer guards");
 }
 void Save(const Bitmap& b,const std::filesystem::path& path) {
     BITMAPFILEHEADER f{};f.bfType=0x4D42;f.bfOffBits=sizeof(f)+sizeof(BITMAPINFOHEADER);f.bfSize=f.bfOffBits+b.width*b.height*4;
@@ -53,8 +60,8 @@ int main(int argc,char** argv) {
     completionFeatures=3;
     font=CreateFontW(-12,0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,NONANTIALIASED_QUALITY,0,L"SimSun");
     boldFont=CreateFontW(-12,0,0,0,FW_BOLD,0,0,0,DEFAULT_CHARSET,0,0,NONANTIALIASED_QUALITY,0,L"SimSun");
-    const wchar_t* paths[]={L"UI/UIWindow.img/Quest/backgrnd",L"UI/UIWindow.img/Quest/backgrnd2",L"UI/UIWindow.img/QuestAlarm/backgrndmax",L"UI/UIWindow.img/QuestAlarm/backgrndcenter",L"UI/UIWindow.img/QuestAlarm/backgrndbottom",L"UI/Basic.img/BtOK/normal/0",L"UI/Basic.img/BtOK/mouseOver/0",L"UI/Basic.img/BtOK/disabled/0"};
-    for(int i=0;i<8;++i) {
+    const wchar_t* paths[]={L"UI/UIWindow.img/Quest/backgrnd",L"UI/UIWindow.img/Quest/backgrnd2",L"UI/UIWindow.img/QuestAlarm/backgrndmax",L"UI/UIWindow.img/QuestAlarm/backgrndcenter",L"UI/UIWindow.img/QuestAlarm/backgrndbottom",L"UI/Basic.img/BtOK/normal/0",L"UI/Basic.img/BtOK/mouseOver/0",L"UI/Basic.img/BtOK/disabled/0",L"UI/UIWindow.img/Quest/BtDetail/normal/0",L"UI/UIWindow.img/Quest/BtDetail/mouseOver/0",L"UI/UIWindow.img/Quest/BtDetail/pressed/0",L"UI/UIWindow.img/Quest/BtDetail/disabled/0",L"UI/Basic.img/BtClose/normal/0",L"UI/Basic.img/BtClose/mouseOver/0",L"UI/Basic.img/BtClose/pressed/0",L"UI/Basic.img/BtClose/disabled/0"};
+    for(int i=0;i<int(std::size(paths));++i) {
         auto file=directory/(std::to_string(i)+".bmp");HBITMAP bitmap=static_cast<HBITMAP>(LoadImageW(nullptr,file.c_str(),IMAGE_BITMAP,0,0,LR_LOADFROMFILE|LR_CREATEDIBSECTION));assert(bitmap);
         BITMAP info{};GetObject(bitmap,sizeof(info),&info);auto b=std::make_unique<Bitmap>(info.bmWidth,info.bmHeight);
         HDC src=CreateCompatibleDC(nullptr);auto old=SelectObject(src,bitmap);BitBlt(b->dc,0,0,b->width,b->height,src,0,0,SRCCOPY);SelectObject(src,old);DeleteDC(src);DeleteObject(bitmap);GdiFlush();
@@ -87,38 +94,57 @@ int main(int argc,char** argv) {
     questTotal=3;progressCount=2;readyCount=1;mainWindow.shown=true;Paint(mainWindow);
     assert(mainWindow.image->width==250 && caption(mainWindow,2)==L"进行中 2" && caption(mainWindow,3)==L"可交付 1");
     auto entries=ListEntries();assert(entries.size()==5 && entries.back().group==100000 && entries.back().index==-1);
-    Click(mainWindow,16);assert(ListEntries().size()==6);Click(mainWindow,17);assert(ListEntries().size()==3);
+    assert(hasButton(mainWindow,16) && !hasButton(mainWindow,17));
+    Click(mainWindow,16);assert(ListEntries().size()==3);Click(mainWindow,16);assert(ListEntries().size()==6);
     Click(mainWindow,16);SelectQuest(2000,L"酋长的家修理");assert(!mainWindow.collapsed && mainWindow.x==110 && mainWindow.y==90);
+    assert(mainWindow.animating && mainWindow.drawer==0);AdvanceDrawer(mainWindow.drawerStart+100);Paint(mainWindow);
+    assert(mainWindow.drawer==175 && mainWindow.image->width==600);
+    for(int y=0;y<450;++y)for(int x=425;x<600;++x)assert(mainWindow.image->pixels[y*600+x]==0);
+    void* drawerControl=nullptr;assert(HitTest(mainWindow.native,nullptr,450,10,&drawerControl)==0);
+    Save(*mainWindow.image,directory/"quest-drawer.bmp");AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);
     detailRows={{4000018,2,2,12,50,1800,L"木块",L"缺少 38 个"},{4000003,2,2,26,30,200,L"树枝",L"缺少 4 个"},{1032001,6,0,0,0,0,L"汉斯",L"交付 NPC"}};
     questNpc=1032001;questDescription=Description(2000);selectedRow=0;detailTotal=3;Paint(mainWindow);
     assert(questDescription.find(L"木块")!=std::wstring::npos && questDescription.find(L"12/50")!=std::wstring::npos && questDescription.find(L"#")==std::wstring::npos);
     assert(!hasButton(mainWindow,8) && hasButton(mainWindow,9) && mainWindow.rowHits.size()==2);
     assert(descriptionScrollMax>0);Wheel(mainWindow.native+4,nullptr,300,150,1);assert(descriptionScroll>0);
     Save(*mainWindow.image,directory/"quest-main.bmp");
-    SetExpanded(false);Paint(mainWindow);assert(mainWindow.image->width==250 && selectedQuest==2000);
-    SetExpanded(true);Paint(mainWindow);assert(mainWindow.image->width==600 && questNpc==1032001);
+    SetExpanded(false);AdvanceDrawer(mainWindow.drawerStart+100);assert(mainWindow.drawer==175);
+    SetExpanded(true);assert(mainWindow.animating);AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);assert(mainWindow.drawer==350);
+    SetExpanded(false);AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Paint(mainWindow);assert(mainWindow.image->width==250 && selectedQuest==2000);
+    SetExpanded(true);AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Paint(mainWindow);assert(mainWindow.image->width==600 && questNpc==1032001);
     void* control=reinterpret_cast<void*>(1);assert(HitTest(mainWindow.native,nullptr,20,10,&control)==1 && !control);
-    assert(HitTest(mainWindow.native,nullptr,560,10,&control)==2);
+    assert(HitTest(mainWindow.native,nullptr,235,10,&control)==2);
     // Actual thiscall input dispatch uses the +4 IUIMsgHandler subobject.
     using MouseInput=void(__thiscall*)(void*,unsigned,unsigned,int,int);
     void* inputMethods[19]{};inputMethods[2]=reinterpret_cast<void*>(MouseButton);
     *reinterpret_cast<void***>(mainWindow.native+4)=inputMethods;
     *reinterpret_cast<void***>(confirmWindow.native+4)=inputMethods;
-    auto mouse=Method<MouseInput>(mainWindow.native+4,8);
-    auto modalMouse=Method<MouseInput>(confirmWindow.native+4,8);
+    auto nativeMouse=Method<MouseInput>(mainWindow.native+4,8);
+    auto mouse=[&](void* input,unsigned msg,unsigned flags,int x,int y){if(msg==WM_LBUTTONUP)nativeMouse(input,WM_LBUTTONDOWN,flags,x,y);nativeMouse(input,msg,flags,x,y);};
+    auto modalMouse=mouse;
     quests.resize(50);for(int i=0;i<50;++i){quests[i]={2000+i,0,0,10,0,0,L"任务 "+std::to_wstring(i),L""};resourceText[L"Quest/QuestInfo.img/"+std::to_wstring(2000+i)+L"/area"]=L"30";}
     questTotal=61;listOffset=listPage=0;Paint(mainWindow);assert(!mainWindow.scrollbars.empty());
-    auto bar=mainWindow.scrollbars.front();assert(bar.value==&listOffset && bar.maximum==42);
+    auto bar=mainWindow.scrollbars.front();assert(bar.value==&listOffset && bar.maximum==1302);
     MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONDOWN,0,235,bar.thumb.top+3);
     MouseMove(mainWindow.native+4,nullptr,235,350);assert(listOffset>0);
     Paint(mainWindow);MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONUP,0,235,350);assert(mainWindow.dragScroll==-1);
-    listOffset=0;Wheel(mainWindow.native+4,nullptr,40,100,1);assert(listOffset==3);
+    listOffset=0;Wheel(mainWindow.native+4,nullptr,40,100,1);assert(listOffset==60);
+    listOffset=0;Paint(mainWindow);assert(mainWindow.listHits.front().rect.bottom-mainWindow.listHits.front().rect.top==18);
+    assert(!hasButton(mainWindow,17));
+    for(const auto& b:mainWindow.buttons){if(b.id==1)assert(b.rect.right-b.rect.left==12 && b.rect.bottom-b.rect.top==12);else assert(b.rect.bottom-b.rect.top<=19);}
+    queue.clear();MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONUP,0,190,425);assert(queue.empty());
+    MouseMove(mainWindow.native+4,nullptr,190,425);Paint(mainWindow);DWORD unpressed=mainWindow.image->pixels[424*600+170];
+    MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONDOWN,0,190,425);Paint(mainWindow);
+    assert(mainWindow.pressed==6 && mainWindow.image->pixels[424*600+170]!=unpressed);Save(*mainWindow.image,directory/"quest-pressed.bmp");
+    MouseMove(mainWindow.native+4,nullptr,40,100);MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONUP,0,40,100);assert(mainWindow.pressed==-1 && queue.empty());
+    mouse(mainWindow.native+4,WM_LBUTTONUP,0,190,425);assert(!queue.empty());
+    MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONDOWN,0,190,425);MouseEnter(mainWindow.native+4,nullptr,0);assert(mainWindow.pressed==-1 && !mainWindow.mouseDown);
     Paint(mainWindow);queue.clear();mouse(mainWindow.native+4,WM_LBUTTONUP,0,100,425);
     assert(listPage==1 && listOffset==0 && queue.back().map==1);quests.resize(11);Paint(mainWindow);
     assert(!buttonEnabled(mainWindow,5) && buttonEnabled(mainWindow,4));
     mouse(mainWindow.native+4,WM_LBUTTONUP,0,40,425);assert(listPage==0 && queue.back().map==0);
     puts("PASS categories: medal isolation, expand/collapse all, tab totals, 50-row pages, drag/wheel scrollbar and detail resizing");
-    category=1;Paint(mainWindow);for(const auto& hit:mainWindow.listHits)if(hit.entry.index>=0)assert(hit.rect.bottom-hit.rect.top==30);
+    category=1;Paint(mainWindow);for(const auto& hit:mainWindow.listHits)if(hit.entry.index>=0)assert(hit.rect.bottom-hit.rect.top<=20);
     category=0;view=desiredView=3;routePage=0;routeMap=103020100;routeTotal=4;detailOffset=0;selectedRow=-1;
     sourceKind=2;sourceTarget=4000018;sourceRows={{103020100,2,8,0,0,1200,L"金银岛 - 逆恩森林 II",L"木块"}};
     routeRows={{103000000,0,8,0,0,800,L"金银岛 - 废弃都市",L"主城出发"},{103010000,0,0,0,0,1200,L"金银岛 - 废都南方工地",L"通过地图传送门"},{103020000,0,8,0,0,1200,L"金银岛 - 逆恩森林 I",L"通过地图传送门"},{103020100,0,0,0,0,1200,L"金银岛 - 逆恩森林 II",L"通过地图传送门"}};
@@ -150,13 +176,13 @@ int main(int argc,char** argv) {
     using EnabledInput=int(__thiscall*)(void*);inputMethods[8]=reinterpret_cast<void*>(InputEnabled);
     assert(Method<EnabledInput>(mainWindow.native+4,32)(mainWindow.native+4)==0);
     assert(Method<EnabledInput>(confirmWindow.native+4,32)(confirmWindow.native+4)==1);
-    modalMouse(confirmWindow.native+4,WM_LBUTTONUP,0,40,220);assert(confirming && confirmWindow.shown && queue.size()==1 && queue.front().token==123);
-    Paint(confirmWindow);modalMouse(confirmWindow.native+4,WM_LBUTTONUP,0,40,220);Key(confirmWindow.native+4,nullptr,VK_ESCAPE,0);assert(queue.size()==1 && confirmWindow.shown);
+    modalMouse(confirmWindow.native+4,WM_LBUTTONUP,0,80,220);assert(confirming && confirmWindow.shown && queue.size()==1 && queue.front().token==123);
+    Paint(confirmWindow);modalMouse(confirmWindow.native+4,WM_LBUTTONUP,0,80,220);Key(confirmWindow.native+4,nullptr,VK_ESCAPE,0);assert(queue.size()==1 && confirmWindow.shown);
     Snapshot result;result.sequence=11;result.quest=selectedQuest;result.view=5;result.features=3;result.message=L"传送成功";
     receive(result,queue.front());assert(!confirmWindow.shown && !quote.token && view==3);
     assert(Method<EnabledInput>(mainWindow.native+4,32)(mainWindow.native+4)==1);
     Click(mainWindow,7);assert(view==2 && selectedRow==0);Click(mainWindow,7);assert(view==1 && selectedRow==0);Click(mainWindow,7);assert(mainWindow.collapsed);
-    SetExpanded(true);queue.clear();view=desiredView=1;
+    SetExpanded(true);AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);queue.clear();view=desiredView=1;
     Snapshot stale;stale.sequence=12;stale.quest=selectedQuest;stale.view=3;stale.features=3;
     Request outdated{3,selectedQuest,sourceKind,sourceTarget,routeMap,3,0,navigation-1};receive(stale,outdated);assert(view==1 && !confirmWindow.shown);
     puts("PASS modal: parent mouse/keyboard/wheel/drag blocked, duplicate confirm rejected, payment preserves route and Back follows each level");
@@ -171,6 +197,38 @@ int main(int argc,char** argv) {
     message=Text(L"loading");receive(detail,{1,selectedQuest,0,0,detailPage,1});assert(message.empty() && questNpc==1032001);
     pending.emplace(17,Pending{{1,selectedQuest,0,0,detailPage,1},100});message=Text(L"loading");ExpirePending(10200);assert(message==Text(L"timeout"));
     puts("PASS packet state: original description/NPC, loading clears, stale navigation/features ignored and live switches dismiss purchase modal");
+    // Reopening restores the last selection in each tab, including a later server page.
+    categoryMemory={};category=0;listPage=1;listOffset=0;quests={{2050,0,0,10,0,0,L"第一页之外",L""},{2055,0,0,20,0,0,L"记住这项任务",L""}};
+    questTotal=80;SelectQuest(2055,L"记住这项任务");AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);
+    Click(mainWindow,1);assert(!mainWindow.shown);queue.clear();OpenMain();assert(restoreSelection && listPage==1 && selectedQuest==0);
+    Snapshot remembered;remembered.sequence=20;remembered.view=0;remembered.total=80;remembered.progress=80;remembered.ready=1;remembered.rows=quests;
+    // RestoreCategory intentionally clears the visible rows; use the server's new list.
+    remembered.rows={{2050,0,0,10,0,0,L"第一页之外",L""},{2055,0,0,20,0,0,L"记住这项任务",L""}};
+    receive(remembered,{0,0,0,0,1,0});assert(selectedQuest==2055 && !mainWindow.collapsed && !restoreSelection);
+    AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Click(mainWindow,3);assert(category==1 && restoreSelection && selectedQuest==0 && listPage==0);
+    Snapshot readyList=remembered;readyList.sequence=21;readyList.total=1;readyList.rows={{2001,0,1,15,0,0,L"可交付的任务",L""}};
+    receive(readyList,{0,0,0,1,0,0});assert(selectedQuest==0);SelectQuest(2001,L"可交付的任务");AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);
+    Click(mainWindow,2);remembered.sequence=22;receive(remembered,{0,0,0,0,1,0});assert(selectedQuest==2055 && listPage==1);
+    AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Click(mainWindow,3);readyList.sequence=23;receive(readyList,{0,0,0,1,0,0});assert(selectedQuest==2001 && !mainWindow.collapsed);
+    AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Key(mainWindow.native+4,nullptr,VK_ESCAPE,0);OpenMain();readyList.sequence=24;
+    receive(readyList,{0,0,0,1,0,0});assert(selectedQuest==2001 && !mainWindow.collapsed);
+    AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Click(mainWindow,1);OpenMain();readyList.sequence=25;readyList.rows.clear();readyList.total=0;
+    receive(readyList,{0,0,0,1,0,0});assert(selectedQuest==0 && categoryMemory[1].quest==0 && mainWindow.collapsed && !restoreSelection);
+    category=0;listPage=1;quests=remembered.rows;SelectQuest(2055,L"记住这项任务");Click(mainWindow,1);OpenMain();
+    Snapshot moved=remembered;moved.sequence=26;moved.rows.resize(1);receive(moved,{0,0,0,0,1,0});assert(restoreSelection && listPage==0);
+    moved.sequence=27;moved.rows={remembered.rows[1]};receive(moved,{0,0,0,0,0,0});assert(selectedQuest==2055 && listPage==0 && !restoreSelection);
+    category=0;listPage=listOffset=0;quests=remembered.rows;resourceText[L"Quest/QuestInfo.img/2050/area"]=L"20";resourceText[L"Quest/QuestInfo.img/2055/area"]=L"30";
+    SelectQuest(2055,L"记住这项任务");SelectQuest(2050,L"第一页之外");AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);collapsedGroups.insert(30);Paint(mainWindow);
+    for(const auto& hit:mainWindow.listHits)if(hit.entry.index<0 && hit.entry.group==30){int y=(hit.rect.top+hit.rect.bottom)/2;mouse(mainWindow.native+4,WM_LBUTTONUP,0,80,y);break;}
+    assert(selectedQuest==2055 && !collapsedGroups.count(30));
+    Snapshot anotherCharacter=remembered;anotherCharacter.sequence=28;
+    pending.emplace(28,Pending{{0,0,0,category,listPage,0},GetTickCount()});auto otherBytes=wire(anotherCharacter);
+    // Snapshot wire character is at byte offset 10. A different character clears all selections.
+    int otherCharacter=99;memcpy(otherBytes.data()+10,&otherCharacter,4);QuestHelperUI::Receive(otherBytes.data(),otherBytes.size());
+    assert(selectedQuest==0 && categoryMemory[0].quest==0 && categoryMemory[1].quest==0 && categoryMemory[0].groupQuests.empty());
+    SetExpanded(true);AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);
+    puts("PASS compact UI: 18-pixel category rows, one banner, 12-pixel close icon, pressed/drag-out feedback and drawer clipping/reversal");
+    puts("PASS remembered selections: both tabs, close/ESC reopening, page 2 and reordered pages, regional group, removed quest and character isolation");
     view=desiredView=2;sourceRows={{103000000,2,8,0,0,800,L"金银岛 - 废弃都市",L"掉落来源"},{103020000,2,8,0,0,2147483647,L"金银岛 - 逆恩森林 I",L"完整费用"}};
     selectedRow=0;detailOffset=textScroll=0;Paint(mainWindow);Save(*mainWindow.image,directory/"quest-map-table.bmp");
         TestNarrowTiles(*mainWindow.image);
