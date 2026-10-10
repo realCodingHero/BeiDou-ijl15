@@ -11,13 +11,13 @@ void Require(bool ok,const char* what) { if (!ok) { printf("FAIL %s\n",what);exi
 int main(int argc,char** argv) {
     if(argc!=3)return 2;
     const std::string mode=argv[2];
-    const bool enabled=mode=="enabled" || mode=="linear" || mode=="login";
-    const bool linear=mode=="linear" || mode=="login";
+    const bool enabled=mode=="enabled" || mode=="direct" || mode=="nearest" || mode=="linear" || mode=="login";
+    const bool linear=mode=="direct" || mode=="nearest" || mode=="linear" || mode=="login";
     char exe[MAX_PATH]{};GetModuleFileNameA(nullptr,exe,MAX_PATH);
     const auto directory=std::filesystem::path(exe).parent_path();
     // This executable lives in out/neural/fixture; never touch a game's config.
     Require(directory.filename()=="fixture","isolated config directory");
-    {std::ofstream config(directory/"config.ini");config<<"[upscaling]\nenabled="<<(enabled?"true":"false")<<"\nalgorithm="<<(linear?"linear":"cunny")<<"\nquality=balanced\n";}
+    {std::ofstream config(directory/"config.ini");config<<"[upscaling]\nenabled="<<(enabled?"true":"false")<<"\nalgorithm="<<(mode=="nearest"?"nearest":linear?"linear":"cunny")<<"\nquality=balanced\ndirect_output="<<(mode=="direct"?"true":"false")<<"\n";}
     HMODULE contract = mode=="login" ? LoadLibraryW((directory/L"ijl15.dll").c_str()) : nullptr;
     using SetLogin = void (__cdecl*)(BOOL);
     auto setLogin = contract ? reinterpret_cast<SetLogin>(GetProcAddress(contract,"SetFixtureLogin")) : nullptr;
@@ -117,7 +117,7 @@ int main(int argc,char** argv) {
         Require(log.find("max_fps=0, timer_fps=0")!=std::string::npos,"unlimited has no software cap");
         Require(log.find("max_fps=30, timer_fps=30")!=std::string::npos,"explicit lower cap survives vsync");
         if(linear) {
-            Require(log.find("backend=single-pass-linear")!=std::string::npos,"single-pass linear presentation active");
+            Require(log.find(mode=="nearest"?"backend=single-pass-nearest":"backend=single-pass-linear")!=std::string::npos,"single-pass linear presentation active");
             Require(log.find("CuNNy=yes")==std::string::npos,"linear mode never executes CuNNy");
         }
     }

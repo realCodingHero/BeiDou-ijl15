@@ -43,6 +43,8 @@ HRESULT __stdcall Pixel(Canvas* c,int x,int y,unsigned* color) {
 }
 }
 int main(int argc,char** argv) {
+    WorldViewport::SetSceneScaleForTesting(1.0); // Retain baseline regression coverage.
+
     auto bricks=Band(-2475,2565,690,14),stones=Band(-990,6210,660,9);
     int bottom=0;
     assert(Apply(kerning,bricks,&bottom) && bottom==163);

@@ -661,6 +661,8 @@ bool Client::UpdateResolution() {
 		patches.CodeCave(AdaptiveBackground, 0x0063D2F2, 6);
 		patches.CodeCave(AdaptiveWorldCamera, 0x00642094, 6);
 		patches.CodeCave(AdaptiveWorldCursor, 0x009E3133, 7);
+		patches.WriteInt(0x00533AF9, 0xC00614A5u); // Separate Boss HUD from teleport Z.
+		patches.CodeCave(AdaptiveBuffTooltip, 0x0094D155, 5);
 		patches.CodeCave(WorldViewport::MouseButton, 0x009E2F3C, 5);
 		patches.CodeCave(WorldViewport::MouseMove, 0x009E2F60, 5);
 		patches.CodeCave(WorldViewport::MouseWheel, 0x009E2F80, 5);

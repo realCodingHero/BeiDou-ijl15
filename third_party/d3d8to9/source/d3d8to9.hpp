@@ -10,6 +10,7 @@
 #include "d3d8.hpp"
 #include "interface_query.hpp"
 #include "UpscaleRenderer.h"
+#include "DirectOutput.h"
 
 class Direct3D8 : public IDirect3D8
 {
@@ -168,6 +169,7 @@ private:
 	Direct3D8 *const D3D;
 	IDirect3DDevice9 *const ProxyInterface;
 	NeuralUpscale::Renderer Upscaler{ProxyInterface};
+    NeuralUpscale::DirectOutput DirectRaster{ProxyInterface};
 
 	const BOOL ZBufferDiscarding = FALSE;
 	bool IsPaletteSupported = false;

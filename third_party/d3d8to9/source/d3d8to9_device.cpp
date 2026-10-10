@@ -65,7 +65,7 @@ ULONG STDMETHODCALLTYPE Direct3DDevice8::AddRef()
 	ULONG LastRefCount = ProxyInterface->AddRef();
 
 	// Shaders and state blocks increase ref counter in d3d9 but not in d3d8
-	DWORD ExtraRefs = VertexShaderAndDeclarationCount + PixelShaderHandles.size() + StateBlockTokens.size() + Upscaler.InternalReferences();
+	DWORD ExtraRefs = VertexShaderAndDeclarationCount + PixelShaderHandles.size() + StateBlockTokens.size() + Upscaler.InternalReferences() + DirectRaster.InternalReferences();
 	if (ExtraRefs <= LastRefCount)
 	{
 		LastRefCount = LastRefCount - ExtraRefs;
@@ -82,13 +82,14 @@ ULONG STDMETHODCALLTYPE Direct3DDevice8::Release()
 
 	// Shaders and StateBlocks are destroyed alongside the device that created them in D3D8 but not in D3D9
 	// so we need to Release any remaining shaders or state blocks when the device is released to mirror that behaviour
-	DWORD ExtraRefs = VertexShaderAndDeclarationCount + PixelShaderHandles.size() + StateBlockTokens.size() + Upscaler.InternalReferences();
+	DWORD ExtraRefs = VertexShaderAndDeclarationCount + PixelShaderHandles.size() + StateBlockTokens.size() + Upscaler.InternalReferences() + DirectRaster.InternalReferences();
 	if (ExtraRefs <= LastRefCount)
 	{
 		LastRefCount = LastRefCount - ExtraRefs;
 		if (LastRefCount == 1)
 		{
-			Upscaler.Reset();
+			DirectRaster.Reset();
+	Upscaler.Reset();
 			// Release shaders and state blocks when only one reference is left
 			ReleaseShadersAndStateBlocks();
 		}
@@ -200,6 +201,7 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::Reset(D3DPRESENT_PARAMETERS8 *pPresen
 		return D3DERR_INVALIDCALL;
 
 	CurrentZBiasRenderState = 0;
+	DirectRaster.Reset();
 	Upscaler.Reset();
 
 	const HRESULT deviceState = ProxyInterface->TestCooperativeLevel();
@@ -233,9 +235,10 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::Reset(D3DPRESENT_PARAMETERS8 *pPresen
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::Present(const RECT *pSourceRect, const RECT *pDestRect, HWND hDestWindowOverride, const RGNDATA *pDirtyRegion)
 {
 	HRESULT upscaled;
-	if (Upscaler.Present(pSourceRect, pDestRect, hDestWindowOverride, upscaled)) return upscaled;
+	if (Upscaler.Present(pSourceRect, pDestRect, hDestWindowOverride, upscaled, DirectRaster.Source())) return upscaled;
 	UNREFERENCED_PARAMETER(pDirtyRegion);
 
+	DirectRaster.Fallback();
 	return ProxyInterface->Present(pSourceRect, pDestRect, hDestWindowOverride, nullptr);
 }
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetBackBuffer(UINT iBackBuffer, D3DBACKBUFFER_TYPE Type, IDirect3DSurface8 **ppBackBuffer)
@@ -454,6 +457,7 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::CopyRects(IDirect3DSurface8 *pSourceS
 		return D3DERR_INVALIDCALL;
 
 	auto pSourceSurfaceImpl = static_cast<Direct3DSurface8 *>(pSourceSurface);
+    DirectRaster.Resolve(pSourceSurfaceImpl->GetProxyInterface());
 	auto pDestinationSurfaceImpl = static_cast<Direct3DSurface8 *>(pDestinationSurface);
 
 	D3DSURFACE_DESC SourceDesc, DestinationDesc;
@@ -582,7 +586,7 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::SetRenderTarget(IDirect3DSurface8 *pR
 	if (pRenderTarget != nullptr)
 	{
 		auto pRenderTargetImpl = static_cast<Direct3DSurface8 *>(pRenderTarget);
-		hr = ProxyInterface->SetRenderTarget(0, pRenderTargetImpl->GetProxyInterface());
+		hr = ProxyInterface->SetRenderTarget(0, DirectRaster.Target(pRenderTargetImpl->GetProxyInterface()));
 		if (FAILED(hr))
 			return hr;
 	}
@@ -590,7 +594,7 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::SetRenderTarget(IDirect3DSurface8 *pR
 	if (pNewZStencil != nullptr)
 	{
 		auto pNewZStencilImpl = static_cast<Direct3DSurface8 *>(pNewZStencil);
-		hr = ProxyInterface->SetDepthStencilSurface(pNewZStencilImpl->GetProxyInterface());
+		hr = ProxyInterface->SetDepthStencilSurface(DirectRaster.Depth(pNewZStencilImpl->GetProxyInterface()));
 		if (FAILED(hr))
 			return hr;
 
@@ -619,6 +623,7 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetRenderTarget(IDirect3DSurface8 **p
 	if (FAILED(hr))
 		return hr;
 
+    DirectRaster.LogicalSurface(SurfaceInterface,false);
 	*ppRenderTarget = ProxyAddressLookupTable->FindAddress<Direct3DSurface8>(SurfaceInterface);
 
 	return D3D_OK;
@@ -634,6 +639,7 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetDepthStencilSurface(IDirect3DSurfa
 	if (FAILED(hr))
 		return hr;
 
+    DirectRaster.LogicalSurface(SurfaceInterface,true);
 	*ppZStencilSurface = ProxyAddressLookupTable->FindAddress<Direct3DSurface8>(SurfaceInterface);
 
 	return D3D_OK;
@@ -648,7 +654,14 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::EndScene()
 }
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::Clear(DWORD Count, const D3DRECT *pRects, DWORD Flags, D3DCOLOR Color, float Z, DWORD Stencil)
 {
-	return ProxyInterface->Clear(Count, pRects, Flags, Color, Z, Stencil);
+    if(Flags&D3DCLEAR_TARGET) DirectRaster.Prepare();
+    std::vector<D3DRECT> scaled;
+    if(Count && pRects && DirectRaster.Active()) {
+        scaled.assign(pRects,pRects+Count);
+        for(auto& rect:scaled) rect=DirectRaster.Rectangle(rect);
+        pRects=scaled.data();
+    }
+    return ProxyInterface->Clear(Count, pRects, Flags, Color, Z, Stencil);
 }
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::SetTransform(D3DTRANSFORMSTATETYPE State, const D3DMATRIX *pMatrix)
 {
@@ -664,23 +677,11 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::MultiplyTransform(D3DTRANSFORMSTATETY
 }
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::SetViewport(const D3DVIEWPORT8 *pViewport)
 {
-	IDirect3DSurface9 *pCurrentRenderTarget = nullptr;
-	if (SUCCEEDED(ProxyInterface->GetRenderTarget(0, &pCurrentRenderTarget)))
-	{
-		D3DSURFACE_DESC Desc;
-		pCurrentRenderTarget->GetDesc(&Desc);
-
-		pCurrentRenderTarget->Release();
-
-		if (pViewport->Y + pViewport->Height > Desc.Height || pViewport->X + pViewport->Width > Desc.Width)
-			return D3DERR_INVALIDCALL;
-	}
-
-	return ProxyInterface->SetViewport(pViewport);
+    return DirectRaster.SetViewport(pViewport);
 }
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetViewport(D3DVIEWPORT8 *pViewport)
 {
-	return ProxyInterface->GetViewport(pViewport);
+    return DirectRaster.GetViewport(pViewport);
 }
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::SetMaterial(const D3DMATERIAL8 *pMaterial)
 {
@@ -1126,24 +1127,32 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetCurrentTexturePalette(UINT *pPalet
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount)
 {
 	ApplyClipPlanes();
+	DirectRaster.BufferedVertices();
 	ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
 	return D3D_OK;
 }
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT MinIndex, UINT NumVertices, UINT StartIndex, UINT PrimitiveCount)
 {
 	ApplyClipPlanes();
+	DirectRaster.BufferedVertices();
 	ProxyInterface->DrawIndexedPrimitive(PrimitiveType, CurrentBaseVertexIndex, MinIndex, NumVertices, StartIndex, PrimitiveCount);
 	return D3D_OK;
 }
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT PrimitiveCount, const void *pVertexStreamZeroData, UINT VertexStreamZeroStride)
 {
 	ApplyClipPlanes();
+    std::vector<unsigned char> vertices;
+    const UINT count=PrimitiveType==D3DPT_TRIANGLELIST?PrimitiveCount*3:PrimitiveType==D3DPT_TRIANGLESTRIP || PrimitiveType==D3DPT_TRIANGLEFAN?PrimitiveCount+2:PrimitiveType==D3DPT_LINELIST?PrimitiveCount*2:PrimitiveType==D3DPT_LINESTRIP?PrimitiveCount+1:PrimitiveCount;
+    pVertexStreamZeroData=DirectRaster.Vertices(pVertexStreamZeroData,count,VertexStreamZeroStride,vertices);
+    NeuralUpscale::DirectOutput::SmoothScope smooth(DirectRaster,pVertexStreamZeroData,count,VertexStreamZeroStride);
 	ProxyInterface->DrawPrimitiveUP(PrimitiveType, PrimitiveCount, pVertexStreamZeroData, VertexStreamZeroStride);
 	return D3D_OK;
 }
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT MinVertexIndex, UINT NumVertexIndices, UINT PrimitiveCount, const void *pIndexData, D3DFORMAT IndexDataFormat, const void *pVertexStreamZeroData, UINT VertexStreamZeroStride)
 {
 	ApplyClipPlanes();
+    std::vector<unsigned char> vertices;
+    pVertexStreamZeroData=DirectRaster.Vertices(pVertexStreamZeroData,MinVertexIndex+NumVertexIndices,VertexStreamZeroStride,vertices);
 	ProxyInterface->DrawIndexedPrimitiveUP(PrimitiveType, MinVertexIndex, NumVertexIndices, PrimitiveCount, pIndexData, IndexDataFormat, pVertexStreamZeroData, VertexStreamZeroStride);
 	return D3D_OK;
 }

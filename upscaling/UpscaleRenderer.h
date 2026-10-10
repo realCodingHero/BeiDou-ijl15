@@ -6,13 +6,14 @@
 #include "FramePacer.h"
 
 namespace NeuralUpscale {
-enum class Algorithm { Cunny, Linear };
+enum class Algorithm { Cunny, Linear, Nearest };
 enum class Quality { Fast, Balanced };
 struct Settings {
     bool enabled = false;
     Algorithm algorithm = Algorithm::Cunny;
     Quality quality = Quality::Balanced;
     bool diagnostics = false;
+    bool directOutput = false;
 };
 const Settings& Configuration();
 unsigned FrameLimit();
@@ -23,7 +24,7 @@ public:
     explicit Renderer(IDirect3DDevice9* device) : device_(device) {}
     ~Renderer();
     HRESULT Render(IDirect3DSurface9* source, IDirect3DSurface9* destination, const Settings& settings, const RECT* viewport = nullptr, const RECT* output = nullptr);
-    bool Present(const RECT* source, const RECT* target, HWND overrideWindow, HRESULT& result);
+    bool Present(const RECT* source, const RECT* target, HWND overrideWindow, HRESULT& result, IDirect3DSurface9* directSource=nullptr);
     void Reset();
     ULONG InternalReferences() const { return internalReferences_; }
 private:

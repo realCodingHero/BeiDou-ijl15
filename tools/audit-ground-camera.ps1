@@ -59,4 +59,5 @@ foreach($path in @(rg --files --no-ignore "$Data\Map\Map" -g '*.img')) {
 $null=New-Item -ItemType Directory -Path $OutputDirectory -Force
 $lines | Set-Content -LiteralPath (Join-Path $OutputDirectory 'fixtures.txt') -Encoding ascii
 $summary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'maps.json') -Encoding utf8
+$caps | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'end-cap-opacity.json') -Encoding utf8
 "Read-only ground audit: $($caps.Count) end-cap canvases, $($summary.Count) maps with resolved offline bounds."

@@ -21,6 +21,10 @@ for newline in (b'\n', b'\r\n'):
     assert b'max_fps=60'+newline in after and b'; keep me'+newline in after
     assert b'diagnostics=false' not in after
     assert deploy.configure(after, 'balanced', 'linear', True) == after
+    sharp = deploy.configure(after, 'balanced', 'nearest')
+    assert b'algorithm=nearest'+newline in sharp
+    assert sharp.startswith(prefix) and sharp.endswith(suffix)
+    assert deploy.configure(sharp, 'balanced', 'linear', True) == after
     restored = deploy.configure(after, 'balanced', 'cunny', False)
     assert b'algorithm=cunny'+newline in restored and b'diagnostics=false'+newline in restored
     assert restored.startswith(prefix) and restored.endswith(suffix)
@@ -37,3 +41,9 @@ for raw in (b'\xff\xfe[\0x\0]', b'[upscaling]\n[UPSCALING]\n'):
     else:
         raise AssertionError('Ambiguous or unsupported INI accepted')
 print('PASS deployment config: ANSI bytes, unrelated sections, LF/CRLF, diagnostics, repeated mode switch, malformed input')
+
+raw=b'[upscaling]\nalgorithm=nearest\ndirect_output=false\n'
+a=deploy.configure(raw,'balanced','linear',direct_output=True)
+assert b'direct_output=true\n' in a and b'direct_output=false' not in a
+assert deploy.configure(a,'balanced','linear')==a
+assert b'direct_output=false\n' in deploy.configure(a,'balanced','linear',direct_output=False)
