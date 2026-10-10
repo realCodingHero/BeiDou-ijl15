@@ -54,6 +54,7 @@ HFONT font=nullptr,boldFont=nullptr;
 int sequence=0,character=0,selectedQuest=0,category=0,listPage=0,listOffset=0,detailOffset=0,detailPage=0;
 int sourceKind=0,sourceTarget=0,sourcePage=0,routeMap=0,routePage=0,selectedRow=-1,view=1,trackedQuest=0;
 int64_t meso=0;
+int completionFeatures=0,lastFeatureSequence=0,textScroll=0,textScrollMax=0;
 std::vector<Row> quests,detailRows,sourceRows,routeRows,trackRows;
 int questTotal=0,sourceTotal=0,detailTotal=0,routeTotal=0;
 std::wstring title,message,trackTitle;
@@ -64,6 +65,7 @@ struct Pending {Request request;DWORD sent;};
 std::deque<Request> queue;
 std::map<int,Pending> pending;
 struct Button {RECT rect;int id;std::wstring text;bool enabled;};
+struct RowHit {RECT rect;int index;};
 struct Window {
     alignas(8) unsigned char native[0x78]{};
     std::array<void*,13> mainMethods{};
@@ -71,6 +73,7 @@ struct Window {
     void* referenceDestructor=nullptr;
     bool initialized=false,shown=false,tracker=false,collapsed=false;
     int hover=-1;std::vector<Button> buttons;
+    std::vector<RowHit> rowHits;
     std::unique_ptr<Bitmap> image;
 };
 Window mainWindow,trackerWindow;
@@ -87,6 +90,26 @@ void Fill(HDC dc,RECT r,COLORREF c){HBRUSH b=CreateSolidBrush(c);FillRect(dc,&r,
 void Write(HDC dc,RECT r,const std::wstring& s,COLORREF c=RGB(36,49,62),bool bold=false,UINT flags=DT_LEFT|DT_SINGLELINE|DT_VCENTER|DT_END_ELLIPSIS) {
     auto old=SelectObject(dc,bold?boldFont:font);SetBkMode(dc,TRANSPARENT);SetTextColor(dc,c);
     DrawTextW(dc,s.c_str(),static_cast<int>(s.size()),&r,flags);SelectObject(dc,old);
+}
+int WrappedHeight(HDC dc,int width,const std::wstring& text,bool bold=false) {
+    RECT bounds{0,0,width,0};auto old=SelectObject(dc,bold?boldFont:font);
+    DrawTextW(dc,text.c_str(),static_cast<int>(text.size()),&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
+    SelectObject(dc,old);return bounds.bottom;
+}
+void TextPane(HDC dc,RECT bounds,const std::wstring& text) {
+    int height=WrappedHeight(dc,bounds.right-bounds.left-8,text);
+    int visibleHeight=int(bounds.bottom-bounds.top);
+    textScrollMax=(std::max)(0,height-visibleHeight);
+    textScroll=(std::min)(textScroll,textScrollMax);
+    int saved=SaveDC(dc);IntersectClipRect(dc,bounds.left,bounds.top,bounds.right-6,bounds.bottom);
+    RECT content{bounds.left,bounds.top-textScroll,bounds.right-8,bounds.top-textScroll+height};
+    Write(dc,content,text,RGB(66,85,102),false,DT_WORDBREAK|DT_NOPREFIX);RestoreDC(dc,saved);
+    if(textScrollMax>0){
+        Fill(dc,{bounds.right-4,bounds.top,bounds.right-1,bounds.bottom},RGB(229,235,242));
+        int thumb=(std::max)(10,visibleHeight*visibleHeight/(height+1));
+        int y=bounds.top+textScroll*(bounds.bottom-bounds.top-thumb)/textScrollMax;
+        Fill(dc,{bounds.right-4,y,bounds.right-1,y+thumb},RGB(109,146,180));
+    }
 }
 Bitmap* Skin(const std::wstring& path) {
     auto it=skins.find(path);if(it!=skins.end())return it->second.get();
@@ -149,7 +172,7 @@ void Enqueue(Request r) {
 void List(){Enqueue({0,0,0,category,listPage,0});}
 void Detail(){if(selectedQuest)Enqueue({1,selectedQuest,0,0,detailPage,1});}
 void Route(){if(selectedQuest && routeMap)Enqueue({3,selectedQuest,sourceKind,sourceTarget,routeMap,3,routePage});}
-void SelectQuest(int quest,const std::wstring& name){selectedQuest=quest;title=name;detailRows.clear();view=1;selectedRow=-1;detailOffset=detailPage=0;message=Text(L"loading");Detail();Dirty();}
+void SelectQuest(int quest,const std::wstring& name){selectedQuest=quest;title=name;detailRows.clear();view=1;selectedRow=-1;detailOffset=detailPage=textScroll=0;message=Text(L"loading");Detail();Dirty();}
 void Hide(Window& w){if(w.shown){w.shown=false;destroy(w.native);}w.buttons.clear();}
 void Show(Window& w);
 void* __fastcall DeleteReference(void* reference,void*,unsigned) {
@@ -170,11 +193,68 @@ void ButtonAt(Window& w,HDC dc,int id,RECT r,const wchar_t* label,bool active=tr
     Write(dc,r,Text(label),active?RGB(37,60,89):RGB(145,145,145),false,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
     w.buttons.push_back({r,id,Text(label),active});
 }
+bool CompletionAllowed(int kind) {
+    return kind==1?(completionFeatures&1)!=0:kind==2?(completionFeatures&2)!=0:kind==7?completionFeatures!=0:false;
+}
+std::wstring Amount(int64_t value) {
+    auto text=std::to_wstring(value);
+    for(int i=int(text.size())-3;i>0;i-=3)text.insert(i,1,L',');
+    return text;
+}
+void WriteAmount(HDC dc,RECT bounds,const std::wstring& text) {
+    LOGFONTW description{};GetObjectW(font,sizeof(description),&description);
+    HFONT fitted=nullptr;HGDIOBJ old=SelectObject(dc,font);SIZE size{};
+    GetTextExtentPoint32W(dc,text.c_str(),int(text.size()),&size);
+    while(size.cx>bounds.right-bounds.left && description.lfHeight<-5){
+        ++description.lfHeight;auto smaller=CreateFontIndirectW(&description);if(!smaller)break;
+        SelectObject(dc,smaller);if(fitted)DeleteObject(fitted);fitted=smaller;
+        GetTextExtentPoint32W(dc,text.c_str(),int(text.size()),&size);
+    }
+    SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(86,100,114));
+    DrawTextW(dc,text.c_str(),int(text.size()),&bounds,DT_RIGHT|DT_TOP|DT_SINGLELINE|DT_NOPREFIX);
+    SelectObject(dc,old);if(fitted)DeleteObject(fitted);
+}
+void MapTable(Window& w,HDC dc,const std::vector<Row>& rows) {
+    bool route=view==3;
+    int first=route?301:441,second=route?477:518;
+    Fill(dc,{265,63,587,87},RGB(217,231,245));
+    Write(dc,{270,63,first-4,87},Text(route?L"stepColumn":L"mapColumn"),RGB(42,73,105),true);
+    Write(dc,{first+5,63,second-4,87},Text(route?L"mapColumn":L"costColumn"),RGB(42,73,105),true);
+    Write(dc,{second+5,63,580,87},Text(route?L"viaColumn":L"accessColumn"),RGB(42,73,105),true);
+    int y=87,end=detailOffset;
+    for(int i=detailOffset;i<int(rows.size());++i) {
+        const auto& r=rows[i];int mapLeft=route?first:265,mapRight=route?second:first;
+        int nameHeight=WrappedHeight(dc,mapRight-mapLeft-12,r.label,i==selectedRow);
+        std::wstring last=route?r.info:Text((r.flags&8)?L"unlocked":L"locked");
+        std::wstring middle=route?r.label:Amount(r.cost);
+        int height=(std::max)(nameHeight+24,(std::max)(WrappedHeight(dc,second-first-10,middle),WrappedHeight(dc,60+(route?42:0),last))+12);
+        height=(std::max)(48,height);
+        if(y+height>321 && y>87)break;
+        int bottom=(std::min)(321,y+height);
+        Fill(dc,{265,y,587,bottom},i==selectedRow?RGB(225,239,252):(i%2?RGB(246,249,253):RGB(255,255,255)));
+        int saved=SaveDC(dc);IntersectClipRect(dc,265,y,581,bottom);
+        Write(dc,{mapLeft+6,y+5,mapRight-6,y+5+nameHeight},r.label,RGB(33,66,99),i==selectedRow,DT_WORDBREAK|DT_NOPREFIX);
+        Write(dc,{mapLeft+6,y+5+nameHeight,mapRight-6,y+21+nameHeight},std::to_wstring(r.id),RGB(126,138,150));
+        if(route)Write(dc,{269,y+7,first-4,bottom-5},std::to_wstring(routePage*ServerPageSize+i+1),RGB(59,98,140),true,DT_CENTER|DT_TOP|DT_WORDBREAK);
+        else WriteAmount(dc,{first+5,y+7,second-5,bottom-5},middle);
+        Write(dc,{second+5,y+7,579,bottom-5},last,route?RGB(92,108,122):(r.flags&8)?RGB(36,125,86):RGB(157,110,54),false,DT_WORDBREAK|DT_NOPREFIX);
+        RestoreDC(dc,saved);
+        Fill(dc,{265,bottom-1,587,bottom},RGB(224,232,240));
+        for(int x:{first,second})Fill(dc,{x,y,x+1,bottom},RGB(231,236,242));
+        w.rowHits.push_back({{265,y,581,bottom},i});y=bottom;end=i+1;
+    }
+    if(detailOffset>0 || end<int(rows.size())) {
+        Fill(dc,{583,87,586,321},RGB(231,236,242));
+        int thumb=(std::max)(14,234*(end-detailOffset)/(std::max)(1,int(rows.size())));
+        int top=87+(234-thumb)*detailOffset/(std::max)(1,int(rows.size())-(end-detailOffset));
+        Fill(dc,{583,top,586,top+thumb},RGB(108,145,180));
+    }
+}
 void Paint(Window& w) {
     int width=w.tracker?223:Width,height=w.tracker?(w.collapsed?25:170):Height;
     if(!w.image || w.image->width!=width || w.image->height!=height)w.image=std::make_unique<Bitmap>(width,height);
     if(!w.image->pixels)return;
-    HDC dc=w.image->dc;w.buttons.clear();Fill(dc,{0,0,width,height},RGB(250,251,253));
+    HDC dc=w.image->dc;w.buttons.clear();w.rowHits.clear();Fill(dc,{0,0,width,height},RGB(250,251,253));
     if(w.tracker) {
         Blit(dc,{0,0,223,25},L"UI/UIWindow.img/QuestAlarm/backgrndmax");
         for(int y=25;y<165;y+=18)Blit(dc,{0,y,223,(std::min)(165,y+18)},L"UI/UIWindow.img/QuestAlarm/backgrndcenter");
@@ -226,21 +306,28 @@ void Paint(Window& w) {
             Write(dc,{267,74,583,131},Text(L"select"),RGB(100,110,120),false,DT_WORDBREAK);
         } else {
             ButtonAt(w,dc,7,{264,30,355,55},L"back",view!=1);
-            ButtonAt(w,dc,8,{362,30,457,55},L"track");ButtonAt(w,dc,9,{464,30,588,55},L"all",view==1);
+            ButtonAt(w,dc,8,{362,30,457,55},L"track");
+            if(completionFeatures)ButtonAt(w,dc,9,{464,30,588,55},L"all",view==1);
             auto& rows=Rows();
-            if(rows.empty())Write(dc,{268,66,579,141},view==2?Text(L"noSource"):message,RGB(100,110,120),false,DT_WORDBREAK);
-            for(int i=detailOffset;i<int(rows.size()) && i<detailOffset+6;++i) {
+            if(rows.empty())Write(dc,{268,view==1?66:93,579,160},view==2?Text(L"noSource"):message,RGB(100,110,120),false,DT_WORDBREAK);
+            if(view==2 || view==3)MapTable(w,dc,rows);
+            else for(int i=detailOffset;i<int(rows.size()) && i<detailOffset+6;++i) {
                 auto& r=rows[i];int y=63+(i-detailOffset)*43;
                 Fill(dc,{265,y,587,y+41},i==selectedRow?RGB(224,237,249):RGB(245,247,250));
                 std::wstring progress=r.required>0?L"  "+std::to_wstring(r.current)+L"/"+std::to_wstring(r.required):L"";
                 Write(dc,{270,y,579,y+20},r.label+progress,r.flags&1?RGB(30,127,77):RGB(36,62,90),i==selectedRow);
                 Write(dc,{270,y+20,579,y+38},r.info,RGB(100,111,120));
+                w.rowHits.push_back({{265,y,587,y+41},i});
             }
-            if(selectedRow>=0 && selectedRow<int(rows.size())) {
+            std::wstring description;
+            if(view!=3 && selectedRow>=0 && selectedRow<int(rows.size())) {
                 const auto& r=rows[selectedRow];
-                Write(dc,{268,327,584,369},r.label+L"\n"+r.info,RGB(45,61,77),false,DT_WORDBREAK);
+                description=r.label+(view==2 || view==3?L" ("+std::to_wstring(r.id)+L")":L"")+L"\n"+r.info;
+                if(view==2)description+=L"\n"+Text(L"cost")+L": "+Amount(r.cost);
             }
-            Write(dc,{268,367,584,385},message,RGB(168,71,48));
+            if(!message.empty())description+=(description.empty()?L"":L"\n\n")+message;
+            Fill(dc,{265,326,587,327},RGB(224,232,240));
+            TextPane(dc,{268,333,587,383},description);
             int total=view==2?sourceTotal:view==3?routeTotal:detailTotal;
             int page=view==2?sourcePage:view==3?routePage:detailPage;
             if(total>50 || page>0) {
@@ -249,7 +336,8 @@ void Paint(Window& w) {
             }
             bool chosen=selectedRow>=0 && selectedRow<int(rows.size());
             ButtonAt(w,dc,10,{265,412,366,439},view==2?L"route":L"source",chosen && view!=3);
-            ButtonAt(w,dc,11,{371,412,472,439},view==2?L"warp":L"purchase",chosen && (view==2?(rows[selectedRow].flags&8)!=0:(rows[selectedRow].flags&2)!=0));
+            if(view==2 || (view==1 && chosen && CompletionAllowed(rows[selectedRow].kind)))
+                ButtonAt(w,dc,11,{371,412,472,439},view==2?L"warp":L"purchase",chosen && (view==2?(rows[selectedRow].flags&8)!=0:(rows[selectedRow].flags&2)!=0));
             ButtonAt(w,dc,12,{477,412,588,439},L"refresh");
         }
     }
@@ -283,11 +371,12 @@ int __fastcall MouseMove(void* input,void*,int x,int y) {
     int hover=-1;POINT p{x,y};for(const auto& b:w->buttons)if(b.enabled && PtInRect(&b.rect,p))hover=b.id;
     if(hover!=w->hover){w->hover=hover;Invalidate(*w);}return 1;
 }
-int __fastcall Wheel(void* input,void*,int x,int,int delta) {
+int __fastcall Wheel(void* input,void*,int x,int y,int delta) {
     auto w=Find(input,true);if(!w || w->tracker)return 1;
     // CWndMan passes wheel steps after dividing the Win32 delta by -120.
     if(x<250)listOffset=(std::max)(0,(std::min)(int(quests.size())-ListRowsPerPage,listOffset+(delta>0?3:-3)));
-    else detailOffset=(std::max)(0,(std::min)(int(Rows().size())-6,detailOffset+(delta>0?2:-2)));
+    else if(y>=326 && y<385)textScroll=(std::max)(0,(std::min)(textScrollMax,textScroll+(delta>0?24:-24)));
+    else detailOffset=(std::max)(0,(std::min)(int(Rows().size())-(view==1?6:1),detailOffset+(delta>0?2:-2)));
     Dirty();return 1;
 }
 void Click(Window& w,int id) {
@@ -305,12 +394,12 @@ void Click(Window& w,int id) {
         Dirty();return;
     }
     if(id==6){List();Detail();return;}
-    if(id==7){view=1;selectedRow=-1;detailOffset=0;Detail();return;}
+    if(id==7){view=1;selectedRow=-1;detailOffset=textScroll=0;Detail();return;}
     if(id==8){trackedQuest=selectedQuest;trackTitle=title;trackRows=detailRows;Show(trackerWindow);Dirty();return;}
-    if(id==9){message=Text(L"loading");Enqueue({4,selectedQuest,7,0,0,4});Dirty();return;}
+    if(id==9 && CompletionAllowed(7)){message=Text(L"loading");textScroll=0;Enqueue({4,selectedQuest,7,0,0,4});Dirty();return;}
     if(id==12){if(view==2)Enqueue({2,selectedQuest,sourceKind,sourceTarget,sourcePage,2});else if(view==3)Route();else Detail();return;}
     if(id==13 || id==14) {
-        auto& page=view==2?sourcePage:view==3?routePage:detailPage;page+=(id==13?-1:1);detailOffset=0;selectedRow=-1;
+        auto& page=view==2?sourcePage:view==3?routePage:detailPage;page+=(id==13?-1:1);detailOffset=textScroll=0;selectedRow=-1;
         if(view==2)Enqueue({2,selectedQuest,sourceKind,sourceTarget,sourcePage,2});else if(view==3)Route();else Detail();return;
     }
     if(id==21){quote={};Detail();Dirty();return;}
@@ -319,7 +408,7 @@ void Click(Window& w,int id) {
     if(id==10 && view==1){sourceKind=r.kind;sourceTarget=r.id;sourcePage=0;Enqueue({2,selectedQuest,r.kind,r.id,0,2});}
     else if(id==10 && view==2){routeMap=r.id;routePage=0;Route();}
     else if(id==11 && view==2)Enqueue({4,selectedQuest,sourceKind,sourceTarget,r.id,4});
-    else if(id==11 && view==1)Enqueue({4,selectedQuest,r.kind,r.id,0,4});
+    else if(id==11 && view==1 && CompletionAllowed(r.kind))Enqueue({4,selectedQuest,r.kind,r.id,0,4});
 }
 Request quotedRequest{};
 void __fastcall MouseButton(void* input,void*,unsigned msg,unsigned,int x,int y) {
@@ -332,8 +421,8 @@ void __fastcall MouseButton(void* input,void*,unsigned msg,unsigned,int x,int y)
     if(x>=9 && x<240 && y>=61 && y<381) {
         int i=listOffset+(y-61)/32;
         if(i<int(quests.size()))SelectQuest(quests[i].id,quests[i].label);
-    } else if(x>=265 && x<588 && y>=63 && y<321) {
-        int i=detailOffset+(y-63)/43;if(i<int(Rows().size())){selectedRow=i;Dirty();}
+    } else {
+        for(const auto& hit:w->rowHits)if(PtInRect(&hit.rect,p)){selectedRow=hit.index;textScroll=0;Dirty();break;}
     }
 }
 bool InField() {
@@ -354,14 +443,14 @@ void ExpirePending(DWORD now) {
 void __fastcall Update(void* self,void*) {
     auto w=Find(self);if(!w)return;
     reinterpret_cast<NativeVoid>(0x009E067E)(self);
-    if(!InField()) {Hide(mainWindow);Hide(trackerWindow);queue.clear();pending.clear();quote={};trackedQuest=selectedQuest=character=0;return;}
+    if(!InField()) {Hide(mainWindow);Hide(trackerWindow);queue.clear();pending.clear();quote={};trackedQuest=selectedQuest=character=completionFeatures=lastFeatureSequence=0;return;}
     // Both native windows can update in the same frame. Only one request is dispatched every 150 ms.
     DWORD now=GetTickCount();
     if(now-lastRefresh>=2000){lastRefresh=now;
         if(mainWindow.shown && view==1 && !quote.token)Detail();
         if(trackedQuest)Enqueue({1,trackedQuest,0,0,0,7});
     }
-    if(mainWindow.shown && !quote.token && now-lastListRefresh>=10000){lastListRefresh=now;List();}
+    if(mainWindow.shown && now-lastListRefresh>=(view!=1 || quote.token?2000u:10000u)){lastListRefresh=now;List();}
     if(quote.token && now-quoteTime>=30000){quote={};message=Text(L"quoteExpired");Dirty();}
     ExpirePending(now);
     if(!queue.empty() && now-lastSend>=150) {
@@ -417,7 +506,18 @@ bool QuestHelperUI::Receive(const unsigned char* data,size_t size) {
     auto found=pending.find(s.sequence);if(found==pending.end())return true;
     Request r=found->second.request;pending.erase(found);
     if(character && character!=s.character) {queue.clear();pending.clear();quests.clear();detailRows.clear();trackRows.clear();trackedQuest=selectedQuest=0;quote={};Hide(trackerWindow);}
+    if(character!=s.character)lastFeatureSequence=0;
     character=s.character;meso=s.meso;
+    if(s.sequence>=lastFeatureSequence){
+        lastFeatureSequence=s.sequence;
+        if(completionFeatures!=s.features){
+            completionFeatures=s.features;
+            if(quote.token && quotedRequest.map==0){quote={};message=Text(L"featuresChanged");textScroll=0;}
+            queue.erase(std::remove_if(queue.begin(),queue.end(),[](const Request& q){
+                return q.map==0 && (q.action==4 || q.action==5) && (!CompletionAllowed(q.kind) || q.action==5);
+            }),queue.end());
+        }
+    }
     if(s.view==6){if(r.quest && r.quest!=(r.purpose==7?trackedQuest:selectedQuest))return true;message=s.title;quote={};if(r.purpose==7){trackedQuest=0;Hide(trackerWindow);}else if(r.purpose==1){selectedQuest=0;detailRows.clear();List();}Dirty();return true;}
     if(r.purpose==0 && s.view==0 && r.target==category && r.map==listPage){
         questTotal=s.total;
@@ -427,10 +527,10 @@ bool QuestHelperUI::Receive(const unsigned char* data,size_t size) {
     else if(r.purpose==7 && s.view==1 && s.quest==trackedQuest){trackRows=std::move(s.rows);trackTitle=s.title;}
     else if(s.quest==selectedQuest) {
         if(s.view==1 && view==1 && r.map==detailPage && !quote.token){detailRows=std::move(s.rows);detailTotal=s.total;title=s.title;if(message==Text(L"loading") || message==Text(L"timeout"))message.clear();}
-        else if(s.view==2 && r.kind==sourceKind && r.target==sourceTarget && r.map==sourcePage){sourceRows=std::move(s.rows);sourceTotal=s.total;view=2;detailOffset=0;selectedRow=-1;message.clear();}
-        else if(s.view==3 && r.map==routeMap && r.token==routePage){routeRows=std::move(s.rows);routeTotal=s.total;view=3;detailOffset=0;selectedRow=-1;message=s.message;}
-        else if(s.view==4){quote=std::move(s);quotedRequest=r;quoteTime=GetTickCount();}
-        else if(s.view==5){quote={};message=s.message;view=1;Detail();List();}
+        else if(s.view==2 && r.kind==sourceKind && r.target==sourceTarget && r.map==sourcePage){sourceRows=std::move(s.rows);sourceTotal=s.total;view=2;detailOffset=textScroll=0;selectedRow=-1;message.clear();}
+        else if(s.view==3 && r.map==routeMap && r.token==routePage){routeRows=std::move(s.rows);routeTotal=s.total;view=3;detailOffset=textScroll=0;selectedRow=-1;message=s.message;}
+        else if(s.view==4){if(r.map==0 && s.features!=completionFeatures){message=Text(L"featuresChanged");return true;}quote=std::move(s);quotedRequest=r;quoteTime=GetTickCount();}
+        else if(s.view==5){quote={};message=s.message;textScroll=0;view=1;Detail();List();}
     }
     Dirty();return true;
 }
