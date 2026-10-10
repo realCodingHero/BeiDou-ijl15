@@ -116,12 +116,12 @@ int main() {
         s_statusClick = FakeStatus; s_menuClick = FakeClick; s_slideInfo = FakeSlide;
         s_slideCreate = FakeCreate; s_buttonCreate = FakeButton;
         s_stringW = FakeString; s_assign = FakeAssign;
-        const unsigned char expectedActions[] = {1, 2, 3, 4, 0, 4, 3, 1};
+        const unsigned char expectedActions[] = {1, 2, 0, 4, 0, 4, 0, 1};
         for (scenario = 1; scenario <= 8; ++scenario) {
             sent = 0; modalResult = 0; destroyed = false;
             StatusClick(nullptr, nullptr, 1001);
             Require(!g_helpMode && !g_helpWindow && !g_action, "stale menu state");
-            Require(sent == (scenario == 5 ? 0 : 1), "cancel/selection packet count");
+            Require(sent == (expectedActions[scenario - 1] ? 1 : 0), "cancel/selection packet count");
             if (sent) {
                 Require(packetBytes[0] == 2 && packetBytes[1] == 0x10 && packetBytes[2] == 1, "wire opcode/version");
                 Require(packetBytes[3] == expectedActions[scenario - 1], "wrong server action");

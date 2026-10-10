@@ -18,7 +18,7 @@ function Read-ExecutableBytes([uint32]$address,[int]$count){
  }
  throw ('Unmapped executable address '+$address.ToString('X'))
 }
-foreach($entry in @(@(0x9de383,'B84A68AE00'),@(0x9de4d2,'B8D868AE00'),@(0x9e00af,'B8486CAE00'),@(0x9e0502,'B8946CAE00'))){
+foreach($entry in @(@(0x9de383,'B84A68AE00'),@(0x9de4d2,'B8D868AE00'),@(0x9e00af,'B8486CAE00'),@(0x9e0502,'B8946CAE00'),@(0x9e03c5,'B85C6CAE00'),@(0x9e0447,'B8706CAE00'))){
  if([Convert]::ToHexString([byte[]](Read-ExecutableBytes $entry[0] 5)) -ne $entry[1]){throw 'Unsupported native quest window ABI'}
 }
 if([BitConverter]::ToUInt32([byte[]](Read-ExecutableBytes (0xb3f078+11*4) 4),0) -ne 0x9e0502){throw 'Incorrect native Draw virtual slot'}
@@ -43,6 +43,20 @@ for($i=0;$i -lt $paths.Count;$i++){
  $property=$images[$imgName];foreach($part in $parts[1..($parts.Length-1)]){$property=$property[$part]}
  $property.PngProperty.GetImage($false).Save((Join-Path $out "$i.bmp"),[Drawing.Imaging.ImageFormat]::Bmp)
 }
+$ok=$false
+$quest=$r.WzImageFromIMGFile((Join-Path $Client 'Data\Quest\QuestInfo.img'),[MapleLib.WzLib.WzAESConstant]::WZ_GMSIV,'QuestInfo.img',[ref]$ok)
+if(!$ok){throw 'Cannot parse original quest description'}
+[IO.File]::WriteAllText((Join-Path $out 'quest-description.txt'),$quest['2000']['1'].Value,[Text.UTF8Encoding]::new($false))
+$npc=$r.WzImageFromIMGFile((Join-Path $Client 'Data\Npc\1032001.img'),[MapleLib.WzLib.WzAESConstant]::WZ_GMSIV,'1032001.img',[ref]$ok)
+if(!$ok){throw 'Cannot parse original NPC portrait'}
+$portrait=$npc['stand']['0'].PngProperty.GetImage($false)
+$data=$portrait.LockBits([Drawing.Rectangle]::new(0,0,$portrait.Width,$portrait.Height),[Drawing.Imaging.ImageLockMode]::ReadOnly,[Drawing.Imaging.PixelFormat]::Format32bppArgb)
+try {
+ $pixels=[byte[]]::new($portrait.Width*$portrait.Height*4)
+ for($y=0;$y -lt $portrait.Height;$y++){[Runtime.InteropServices.Marshal]::Copy([IntPtr]::Add($data.Scan0,$y*$data.Stride),$pixels,$y*$portrait.Width*4,$portrait.Width*4)}
+ $stream=[IO.BinaryWriter]::new([IO.File]::Create((Join-Path $out 'npc-portrait.rgba')))
+ try{$stream.Write([int]$portrait.Width);$stream.Write([int]$portrait.Height);$stream.Write($pixels)}finally{$stream.Dispose()}
+}finally{$portrait.UnlockBits($data);$portrait.Dispose()}
 $vc=(Get-ChildItem "$ToolchainRoot\VC\Tools\MSVC" -Directory | Sort-Object Name -Descending | Select-Object -First 1).FullName
 $sdk="$ToolchainRoot\Windows Kits\10";$v=(Get-ChildItem "$sdk\Include" -Directory | Sort-Object Name -Descending | Select-Object -First 1).Name
 $savedPath,$savedInclude,$savedLib=$env:PATH,$env:INCLUDE,$env:LIB
