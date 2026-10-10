@@ -1,4 +1,6 @@
 #include "WorldViewport.h"
+#include "BossHpNumber.h"
+#include "ConfirmedScalingPolicies.h"
 #include "UpscaleLoader.h"
 #include "d3d8.hpp"
 #include "WzLib/IWzGr2D.h"
@@ -43,7 +45,16 @@ RECT ColorBounds(DWORD rgb) {
 }
 }
 int main(int argc,char** argv) {
+    WorldViewport::SetSceneScaleForTesting(1.0); // Retain baseline regression coverage.
+
     if(argc!=2)return 2;
+    assert(BossHpNumber::Format(12332104321ULL)=="123E3210W4321");
+    assert(BossHpNumber::Format(0)=="0");
+    assert(BossHpNumber::Format(9999)=="9999");
+    assert(BossHpNumber::Format(10000)=="1W");
+    assert(BossHpNumber::Format(100000000)=="1E");
+    assert(BossHpNumber::Format(100010001)=="1E1W1");
+    assert(BossHpNumber::Format(2147483647)=="21E4748W3647");
     setvbuf(stdout,nullptr,_IONBF,0);
     SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX);
     wchar_t exe[MAX_PATH];GetModuleFileNameW(nullptr,exe,MAX_PATH);
@@ -95,6 +106,21 @@ int main(int argc,char** argv) {
     assert(red.right-red.left==59 && red.bottom-red.top==39);
     assert(green.right-green.left==59 && green.bottom-green.top==39);
     assert(blue.right-blue.left==59 && blue.bottom-blue.top==39);
+    // Screen HP bar must survive both vertical and horizontal map margins.
+    for(const RECT bounds : {RECT{-570,-695,660,-95},RECT{-300,-2000,300,1000},RECT{-3000,-2000,3000,2000}}) {
+        WorldViewport::SetContextForTesting(&current,field,bounds,1920,1080);
+        auto boss=make(-700,-530,int(0xC00614A5),0xffaa3377,nullptr,1600,37);
+        assert(!BossHpNumber::Draw(boss,0,100));
+        assert(!BossHpNumber::Draw(boss,100,0));
+        assert(BossHpNumber::Draw(boss,66000000,140000000));
+        for(int i=0;i<2;++i) {Check(gr->raw_UpdateCurrentTime(410+i),"boss time");Check(gr->raw_RenderFrame(),"boss frame");}
+        const auto hpBar=ColorBounds(0xaa3377),number=ColorBounds(0xffffff);
+        printf("boss bar (%ld,%ld)-(%ld,%ld), number (%ld,%ld)-(%ld,%ld)\n",hpBar.left,hpBar.top,hpBar.right,hpBar.bottom,number.left,number.top,number.right,number.bottom);
+        assert(hpBar.right-hpBar.left==1599 && hpBar.bottom-hpBar.top==36);
+        assert(number.right>=number.left && number.top>=hpBar.top && number.bottom<hpBar.top+20);
+        assert(abs((number.left+number.right)-(hpBar.left+35+hpBar.right))<=2);
+        boss->Release();
+    }
     auto bar=make(-600,490,int(0xC00615D0),0xffcc00cc,nullptr,1200,40);
     // Real camera/Ratio vectors reproduce authored rx=-70, ry=-50. Growing
     // the backdrop must not multiply motion by 1.8 (126px instead of 70px).
@@ -262,6 +288,140 @@ int main(int argc,char** argv) {
     for(int y=5;y<250;++y)if((*reinterpret_cast<DWORD*>(pixels.data()+(y*captureWidth+1500)*4)&0xffffff)!=0x20d0e0)++joinGaps;
     printf("AquaRoad backdrop join gaps=%d\n",joinGaps);assert(joinGaps==0);
     lower->Release();upper->Release();
+    // Single-map uniform-background trial, with a neighboring forest control.
+    for(int mapId:{240000000,240010000}) {
+        const WorldViewport::ConfirmedPolicy* p=nullptr;
+        for(const auto& candidate:WorldViewport::confirmedPolicies)if(candidate.map==mapId)p=&candidate;
+        assert(p);
+        WorldViewport::SetContextForTesting(&current,field,p->bounds,1920,1080);
+        WorldViewport::BeginTerrain(field);WorldViewport::BeginBackgrounds(field);
+        for(size_t i=0;i<p->count;++i) {
+            const auto& b=p->layers[i];WorldViewport::RegisterBackground(field,b.index,b.front,b.ry,b.x,b.rx,b.type,b.y);
+        }
+        const auto b=p->bounds;
+        *reinterpret_cast<RECT*>(field+0xF0)={b.left+960,b.top+540,b.right-960,b.bottom-540};
+        WorldViewport::AdjustCamera(field);assert(WorldViewport::GetPolicyForTesting()==mapId);
+        if(mapId==240000000)assert(WorldViewport::GetViewForTesting().camera.bottom==68);
+        auto decorative=make(0,-200,int(0xBFFE0C00u)+1000,0xffaabb33,nullptr,60,40);
+        auto attached=make(200,-200,int(0xBFFE0C00u)+11000,0xff33bbaa,nullptr,60,40);
+        Check(gr->raw_UpdateCurrentTime(955),"uniform background clock");Check(gr->raw_RenderFrame(),"uniform background frame");
+        const auto a=ColorBounds(0xaabb33),c=ColorBounds(0x33bbaa);
+        const int w=mapId==240000000 ? 60:108,h=mapId==240000000 ? 40:72;
+        assert(a.right-a.left+1==w && a.bottom-a.top+1==h);
+        assert(c.right-c.left+1==60 && c.bottom-c.top+1==40);
+        printf("PASS uniform trial %d: decorative=%dx%d attached=60x40, camera retained\n",mapId,w,h);
+        decorative->Release();attached->Release();
+    }
+    // Confirmed finite sky planes: actual projection and camera Ratio, at
+    // both vertical limits. Unrelated actor and HUD roots retain native size.
+    IWzVector2D* skyCenter=nullptr;Check(gr->get_center(&skyCenter),"sky center");
+    WorldViewport::SetGraphicsForTesting(gr);
+    const int oldSkyX=skyCenter->Getx(),oldSkyY=skyCenter->Gety();
+    IWzVector2D* fixedScreen=nullptr;
+    assert(SetCurrentDirectoryA(argv[1]));
+    Check(create(L"Shape2D#Vector2D",&__uuidof(IWzVector2D),reinterpret_cast<void**>(&fixedScreen),nullptr),"screen vector");
+    assert(SetCurrentDirectoryW(directory.c_str()));
+    VARIANT fixedOrigin{};fixedOrigin.vt=VT_UNKNOWN;fixedOrigin.punkVal=skyCenter;
+    Check(fixedScreen->put_origin(fixedOrigin),"screen origin");
+    Check(fixedScreen->raw_Ratio(skyCenter,100,100,0,0),"screen ratio");
+    fixedOrigin.punkVal=fixedScreen;Check(marker->put_origin(fixedOrigin),"capture screen origin");Check(hud->put_origin(fixedOrigin),"HUD screen origin");
+    for(const auto& p:WorldViewport::confirmedPolicies) if(p.leftIndex>=0) {
+        WorldViewport::SetContextForTesting(&current,field,p.bounds,1920,1080);
+        WorldViewport::BeginTerrain(field);WorldViewport::BeginBackgrounds(field);
+        for(size_t i=0;i<p.count;++i){const auto& b=p.layers[i];WorldViewport::RegisterBackground(field,b.index,b.front,b.ry,b.x,b.rx,b.type,b.y);}
+        const auto b=p.bounds;
+        *reinterpret_cast<RECT*>(field+0xF0)={b.left+960,b.top+540,b.right-960,b.bottom-540};WorldViewport::AdjustCamera(field);
+        const auto view=WorldViewport::GetViewForTesting();
+        Check(skyCenter->raw_RelMove(0,0),"wall construction origin");
+        assert(SetCurrentDirectoryA(argv[1]));IWzVector2D* ratio=nullptr;
+        Check(create(L"Shape2D#Vector2D",&__uuidof(IWzVector2D),reinterpret_cast<void**>(&ratio),nullptr),"wall vector");
+        assert(SetCurrentDirectoryW(directory.c_str()));
+        VARIANT ori{};ori.vt=VT_UNKNOWN;ori.punkVal=skyCenter;Check(ratio->put_origin(ori),"wall origin");
+        Check(ratio->raw_RelMove(0,0),"wall offset");Check(ratio->raw_Ratio(skyCenter,100,100,-20,-20),"wall ratio");
+        IWzGr2DLayer* wall[4]{};const DWORD colors[]={0xff88cc11,0xff11cc88,0xffcc8811,0xff8811cc};
+        for(int j=0;j<4;++j) {
+            wall[j]=make(j<2 ? p.leftEdge:p.rightEdge-180,(j%2)*80-100,
+                int(0xBFFE0C00u)+(j<2 ? p.leftIndex+j:p.rightIndex+j-2)*1000,colors[j],nullptr,180,60);
+            ori.punkVal=ratio;Check(wall[j]->put_origin(ori),"wall layer origin");
+        }
+        for(int cx:{int(view.camera.left),int((view.camera.left+view.camera.right)/2),int(view.camera.right)}) {
+            Check(skyCenter->raw_RelMove(cx,0),"wall camera");
+            for(int i=0;i<3;++i){Sleep(20);Check(gr->raw_UpdateCurrentTime(GetTickCount()),"wall clock");Check(gr->raw_RenderFrame(),"wall frame");}
+            RECT painted[4];
+            for(int j=0;j<4;++j) {
+                painted[j]=ColorBounds(colors[j]&0xffffff);
+                if(painted[j].right>=painted[j].left)
+                    assert(j<2 ? painted[j].left==view.clip.left:painted[j].right==view.clip.right-1);
+            }
+            assert(painted[0].left==painted[1].left && painted[0].right==painted[1].right);
+            assert(painted[2].left==painted[3].left && painted[2].right==painted[3].right);
+        }
+        printf("PASS wall groups %d: both hard edges outside at left/middle/right camera, paired alignment preserved\n",p.map);
+        for(auto layer:wall)layer->Release();ratio->Release();Check(skyCenter->raw_RelMove(0,0),"restore wall camera");
+    }
+    for(const auto& p:WorldViewport::confirmedPolicies) if(p.map==240000000) {
+        WorldViewport::SetContextForTesting(&current,field,p.bounds,1920,1080);
+        WorldViewport::BeginTerrain(field);WorldViewport::BeginBackgrounds(field);
+        for(size_t i=0;i<p.count;++i){const auto& b=p.layers[i];WorldViewport::RegisterBackground(field,b.index,b.front,b.ry,b.x,b.rx,b.type,b.y);}
+        const auto b=p.bounds;
+        *reinterpret_cast<RECT*>(field+0xF0)={b.left+960,b.top+540,b.right-960,b.bottom-540};WorldViewport::AdjustCamera(field);
+        Check(skyCenter->raw_RelMove(0,0),"light construction origin");
+        assert(SetCurrentDirectoryA(argv[1]));IWzVector2D* lightRatio=nullptr;
+        Check(create(L"Shape2D#Vector2D",&__uuidof(IWzVector2D),reinterpret_cast<void**>(&lightRatio),nullptr),"light vector");
+        assert(SetCurrentDirectoryW(directory.c_str()));
+        VARIANT ori{};ori.vt=VT_UNKNOWN;ori.punkVal=skyCenter;Check(lightRatio->put_origin(ori),"light origin");
+        Check(lightRatio->raw_RelMove(0,0),"light offset");Check(lightRatio->raw_Ratio(skyCenter,100,100,-80,-40),"light ratio");
+        auto light=make(0,-547,int(0xC0042360u)+17000,0xff55ddaa,nullptr,60,752);
+        ori.punkVal=lightRatio;Check(light->put_origin(ori),"light layer origin");
+        for(int cy:{-412,68}) {
+            Check(skyCenter->raw_RelMove(0,cy),"light camera");
+            for(int i=0;i<3;++i){Sleep(20);Check(gr->raw_UpdateCurrentTime(GetTickCount()),"light clock");Check(gr->raw_RenderFrame(),"light frame");}
+            const auto lightBounds=ColorBounds(0x55ddaa);
+            assert(lightBounds.top==0 && lightBounds.right-lightBounds.left+1==60);
+            printf("PASS Leafre foreground light: camera=%d top=%ld width=60 (native)\n",cy,lightBounds.top);
+        }
+        light->Release();lightRatio->Release();Check(skyCenter->raw_RelMove(0,0),"reset light camera");
+    }
+    for(const auto& policy:WorldViewport::confirmedPolicies) if(policy.skyIndex>=0) {
+        WorldViewport::SetContextForTesting(&current,field,policy.bounds,1920,1080);
+        WorldViewport::BeginTerrain(field);WorldViewport::BeginBackgrounds(field);
+        int rx=0,ry=0;
+        for(size_t i=0;i<policy.count;++i) {
+            const auto& b=policy.layers[i];
+            WorldViewport::RegisterBackground(field,b.index,b.front,b.ry,b.x,b.rx,b.type,b.y);
+            if(b.index==policy.skyIndex){rx=b.rx;ry=b.ry;}
+        }
+        const auto b=policy.bounds;
+        *reinterpret_cast<RECT*>(field+0xF0)={b.left+960,b.top+540,b.right-960,b.bottom-540};
+        WorldViewport::AdjustCamera(field);
+        assert(WorldViewport::GetPolicyForTesting()==policy.map);
+        const auto view=WorldViewport::GetViewForTesting();
+        Check(skyCenter->raw_RelMove(0,0),"sky vector construction origin");
+        assert(SetCurrentDirectoryA(argv[1]));
+        IWzVector2D* ratio=nullptr;
+        Check(create(L"Shape2D#Vector2D",&__uuidof(IWzVector2D),reinterpret_cast<void**>(&ratio),nullptr),"sky ratio");
+        assert(SetCurrentDirectoryW(directory.c_str()));
+        VARIANT ori{};ori.vt=VT_UNKNOWN;ori.punkVal=skyCenter;Check(ratio->put_origin(ori),"sky origin");
+        Check(ratio->raw_RelMove(0,0),"sky offset");Check(ratio->raw_Ratio(skyCenter,100,100,rx,ry),"sky native ratio");
+        auto sky=make(-600,policy.skyTop,int(0xBFFE0C00u)+policy.skyIndex*1000,0xff20d0e0,nullptr,1200,policy.skyBottom-policy.skyTop);
+        ori.punkVal=ratio;Check(sky->put_origin(ori),"sky layer origin");
+        for(int cy:{int(view.camera.top),int(view.camera.bottom)}) {
+            Check(skyCenter->raw_RelMove(0,cy),"sky camera limit");
+            for(int i=0;i<3;++i) {Sleep(20);Check(gr->raw_UpdateCurrentTime(GetTickCount()),"sky clock");Check(gr->raw_RenderFrame(),"sky frame");}
+            for(int y:{int(view.clip.top+2),int(view.clip.bottom-3)})
+                if((*reinterpret_cast<DWORD*>(pixels.data()+(y*captureWidth+1000)*4)&0xffffff)!=0x20d0e0) {
+                    const auto painted=ColorBounds(0x20d0e0);
+                    printf("FAIL sky map=%d cy=%d y=%d color=%08lX painted=(%ld,%ld,%ld,%ld) center=%d ratio=%d layer=%d clip=%ld,%ld\n",policy.map,cy,y,*reinterpret_cast<DWORD*>(pixels.data()+(y*captureWidth+1000)*4),painted.left,painted.top,painted.right,painted.bottom,skyCenter->Gety(),ratio->Gety(),sky->Gety(),view.clip.top,view.clip.bottom);exit(1);
+                }
+            blue=ColorBounds(0x0000ff);
+            if(blue.right-blue.left!=59 || blue.bottom-blue.top!=39) {printf("FAIL sky HUD map=%d center=%d bounds=%ld,%ld,%ld,%ld\n",policy.map,cy,blue.left,blue.top,blue.right,blue.bottom);exit(1);}
+        }
+        printf("PASS native sky %d: both camera limits covered, HUD unchanged\n",policy.map);
+        sky->Release();ratio->Release();
+    }
+    Check(skyCenter->raw_RelMove(oldSkyX,oldSkyY),"restore sky camera");skyCenter->Release();
+    VARIANT resetOrigin{};Check(marker->put_origin(resetOrigin),"restore capture origin");Check(hud->put_origin(resetOrigin),"restore HUD origin");fixedScreen->Release();
+    WorldViewport::SetGraphicsForTesting(nullptr);
     // Use real PCOM property/canvas methods, including the alpha-channel read.
     // Reproduce the two towns' bottom end caps and apply the resulting camera.
     for (int town=0;town<2;++town) {
@@ -318,6 +478,55 @@ int main(int argc,char** argv) {
             town ? "100000000":"103000000",view.camera.bottom,camera->bottom,oldGaps,newGaps);
         assert(newGaps==0);property->Release();cap->Release();
     }
+    WorldViewport::SetContextForTesting(&current,field,{-728,-413,728,413},1920,1080);
+    WorldViewport::SetSceneScaleForTesting(1.5);
+    for(RECT bounds:{RECT{-3000,-2000,3000,2000},RECT{-3045,-183,1326,287},RECT{-400,-2500,400,450}}) {
+        WorldViewport::SetContextForTesting(&current,field,bounds,1920,1080);
+        auto actor=make(-20,-20,int(0xC0000000),0xff4488ee,nullptr,60,40);
+        auto buff=make(850,-480,int(0xC006156C),0xff88ee44,nullptr,32,32);
+        auto boss=make(-700,-530,int(0xC00614A5),0xffaa3377,nullptr,1600,37);
+        assert(BossHpNumber::Draw(boss,66000000,140000000));
+        for(int i=0;i<3;++i){Sleep(20);Check(gr->raw_UpdateCurrentTime(GetTickCount()),"zoom clock");Check(gr->raw_RenderFrame(),"zoom frame");}
+        const auto a=ColorBounds(0x4488ee),b=ColorBounds(0x88ee44),h=ColorBounds(0xaa3377);
+        printf("1.5 zoom: actor=%ldx%ld buff=%ldx%ld boss=%ldx%ld\n",a.right-a.left+1,a.bottom-a.top+1,b.right-b.left+1,b.bottom-b.top+1,h.right-h.left+1,h.bottom-h.top+1);
+        assert(a.right-a.left+1==90 && a.bottom-a.top+1==60);
+        assert(b.right-b.left+1==32 && b.bottom-b.top+1==32);
+        assert(h.right-h.left+1==1600 && h.bottom-h.top+1==37);
+        actor->Release();buff->Release();boss->Release();
+    }
+    WorldViewport::SetContextForTesting(&current,field,{-3000,-2000,3000,2000},1920,1080);
+    WorldViewport::BeginBackgrounds(field);
+    WorldViewport::RegisterBackground(field,1,0,-5);
+    WorldViewport::RegisterBackground(field,2,0,-5);
+    auto zoomLower=make(-600,-273,int(0xBFFE0C00)+1000,0xff20d0e0,nullptr,1200,600);
+    auto zoomUpper=make(-600,-867,int(0xBFFE0C00)+2000,0xff20d0e0,nullptr,1200,594);
+    for(int i=0;i<3;++i){Sleep(20);Check(gr->raw_UpdateCurrentTime(GetTickCount()),"zoom join clock");Check(gr->raw_RenderFrame(),"zoom join frame");}
+    for(int y=5;y<250;++y) assert((*reinterpret_cast<DWORD*>(pixels.data()+(y*captureWidth+1500)*4)&0xffffff)==0x20d0e0);
+    zoomLower->Release();zoomUpper->Release();
+    WorldViewport::SetGraphicsForTesting(gr);
+    IWzVector2D* zoomCenter=nullptr;Check(gr->get_center(&zoomCenter),"zoom center");
+    const int zx=zoomCenter->Getx(),zy=zoomCenter->Gety();
+    IWzVector2D* zoomRatio=nullptr;
+    assert(SetCurrentDirectoryA(argv[1]));
+    Check(create(L"Shape2D#Vector2D",&__uuidof(IWzVector2D),reinterpret_cast<void**>(&zoomRatio),nullptr),"zoom ratio");
+    assert(SetCurrentDirectoryW(directory.c_str()));
+    VARIANT zo{};zo.vt=VT_UNKNOWN;zo.punkVal=zoomCenter;
+    Check(zoomRatio->put_origin(zo),"zoom origin");Check(zoomRatio->raw_RelMove(0,0),"zoom offset");
+    Check(zoomRatio->raw_Ratio(zoomCenter,100,100,-70,-50),"zoom ratio values");
+    WorldViewport::BeginBackgrounds(field);WorldViewport::RegisterBackground(field,17,0,-50,0,-70,1);
+    auto zoomBack=make(0,0,int(0xBFFE0C00)+17000,0xff20d0e0,nullptr,60,40);
+    zo.punkVal=zoomRatio;Check(zoomBack->put_origin(zo),"zoom backdrop origin");
+    auto zoomAt=[&](int value) {
+        Check(zoomCenter->raw_RelMove(value,value),"zoom camera");
+        for(int i=0;i<3;++i){Sleep(20);Check(gr->raw_UpdateCurrentTime(GetTickCount()),"zoom motion clock");Check(gr->raw_RenderFrame(),"zoom motion frame");}
+        return ColorBounds(0x20d0e0);
+    };
+    const auto za=zoomAt(0),zb=zoomAt(100);
+    assert(zb.left-za.left==-105 && zb.top-za.top==-75);
+    printf("PASS 1.5 zoom: joined backdrop gap-free; parallax delta -105,-75 for logical -70,-50\n");
+    zoomBack->Release();zoomRatio->Release();Check(zoomCenter->raw_RelMove(zx,zy),"zoom restore");zoomCenter->Release();
+    WorldViewport::SetGraphicsForTesting(nullptr);
+    WorldViewport::SetSceneScaleForTesting(1.0);
     WorldViewport::SetContextForTesting(&current,field,{-728,-413,728,413},1920,1080);
     // Exercise the hook under many layers without diagnostic pixel readback.
     // This is a local overhead measurement, not an in-game FPS guarantee.

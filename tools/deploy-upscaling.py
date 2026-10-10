@@ -8,8 +8,8 @@ import re
 import shutil
 
 
-def configure(raw, quality, algorithm='cunny', diagnostics=None):
-    if algorithm not in ('cunny', 'linear') or quality not in ('fast', 'balanced'):
+def configure(raw, quality, algorithm='cunny', diagnostics=None, direct_output=None):
+    if algorithm not in ('cunny', 'linear', 'nearest') or quality not in ('fast', 'balanced'):
         raise ValueError('Unsupported scaling algorithm or quality')
     if raw.startswith((b'\xff\xfe', b'\xfe\xff')) or b'\x00' in raw:
         raise ValueError('This client requires an ANSI/UTF-8 INI, not UTF-16')
@@ -22,6 +22,8 @@ def configure(raw, quality, algorithm='cunny', diagnostics=None):
     settings = {b'enabled': b'true', b'algorithm': algorithm.encode('ascii'), b'quality': quality.encode('ascii')}
     if diagnostics is not None:
         settings[b'diagnostics'] = b'true' if diagnostics else b'false'
+    if direct_output is not None:
+        settings[b'direct_output'] = b'true' if direct_output else b'false'
     entries = [key+b'='+value+newline for key, value in settings.items()]
     if not starts:
         return raw + (b'' if not raw or raw.endswith(b'\n') else newline) + newline + b'[upscaling]'+newline+b''.join(entries)
@@ -41,9 +43,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--client', type=Path, required=True)
     parser.add_argument('--quality', choices=['fast', 'balanced'], default='balanced')
-    parser.add_argument('--algorithm', choices=['cunny', 'linear'], default='cunny')
+    parser.add_argument('--algorithm', choices=['cunny', 'linear', 'nearest'], default='cunny')
     parser.add_argument('--module-only', action='store_true', help='Keep the accepted ijl15.dll; update only the scaling DLL')
     parser.add_argument('--diagnostics', action='store_true', default=None, help='Enable continuous five-second timing reports')
+    parser.add_argument('--direct-output', action='store_true', default=None)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     client = args.client.resolve(strict=True)
@@ -65,7 +68,7 @@ def main():
             with (client/name).open('r+b'):  # Check locks without changing bytes.
                 pass
     original = config.read_bytes()
-    updated = configure(original, args.quality, args.algorithm, args.diagnostics)
+    updated = configure(original, args.quality, args.algorithm, args.diagnostics, args.direct_output)
     backup = client/'upscaling-backups'/datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     backup.mkdir(parents=True)
     shutil.copy2(config, backup/'config.ini')
@@ -74,7 +77,7 @@ def main():
             shutil.copy2(client/name, backup/name)
     manifest = {'client': str(client), 'installed_sha256': {name: sha(source) for name,source in binaries.items()},
                 'config_before_sha256': sha(config), 'source_directory': str(root), 'quality': args.quality,
-                'algorithm': args.algorithm, 'module_only': args.module_only}
+                'algorithm': args.algorithm, 'module_only': args.module_only, 'direct_output': args.direct_output}
     notices = client/'upscaling-licenses'
     notices.mkdir(exist_ok=True)
     for source, target in [('LICENSE','BeiDou-AGPL-3.0.txt'), ('third_party/d3d8to9/LICENSE.md','d3d8to9-BSD-2-Clause.txt'),

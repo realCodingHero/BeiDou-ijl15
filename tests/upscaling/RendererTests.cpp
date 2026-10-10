@@ -86,6 +86,27 @@ void TestBorderlessOutput(IDirect3DDevice9* device) {
     Require(renderer.Render(source.Get(),destination.Get(),settings,nullptr,&bad)==E_INVALIDARG,"reject invalid output viewport");
     puts("PASS GPU borderless: 4:3, 16:9, ultrawide, portrait and downscale pixels/margins, native state and resource budget");
 }
+void TestNearest(IDirect3DDevice9* device) {
+    Renderer renderer(device);Settings settings;settings.enabled=true;settings.algorithm=Algorithm::Nearest;
+    auto source=Target(device,8,8);
+    Check(device->ColorFill(source.Get(),nullptr,0xff000000),"nearest black");
+    for(int y=0;y<8;++y)for(int x=0;x<8;++x)if((x+y)%2) {
+        RECT r{x,y,x+1,y+1};Check(device->ColorFill(source.Get(),&r,0xffffffff),"nearest white");
+    }
+    for(int size:{8,12,16,19,4}) {
+        auto output=Target(device,size,size);Check(renderer.Render(source.Get(),output.Get(),settings),"nearest render");
+        auto read=Target(device,size,size,true);Check(device->GetRenderTargetData(output.Get(),read.Get()),"nearest readback");
+        D3DLOCKED_RECT lock{};Check(read->LockRect(&lock,nullptr,D3DLOCK_READONLY),"nearest lock");
+        int white=0,black=0;
+        for(int y=0;y<size;++y)for(int x=0;x<size;++x) {
+            DWORD c=reinterpret_cast<DWORD*>(static_cast<char*>(lock.pBits)+y*lock.Pitch)[x]&0xffffff;
+            Require(c==0 || c==0xffffff,"nearest never mixes edge colors");white+=c!=0;black+=c==0;
+        }
+        if(size>=8)Require(white && black,"nearest retains both checker colors");
+        read->UnlockRect();Require(renderer.InternalReferences()<=4,"nearest resource budget");
+    }
+    puts("PASS nearest: identity, fractional/integer enlargement and shrink contain no blended pixels");
+}
 int main(int argc, char** argv) {
     if (argc < 2) return 2;
     const std::filesystem::path folder(argv[1]);
@@ -102,6 +123,7 @@ int main(int argc, char** argv) {
     pp.BackBufferWidth=w; pp.BackBufferHeight=h; pp.BackBufferFormat=D3DFMT_X8R8G8B8;
     ComPtr<IDirect3DDevice9> device;
     Check(d3d->CreateDevice(0,D3DDEVTYPE_HAL,window,D3DCREATE_SOFTWARE_VERTEXPROCESSING,&pp,&device), "create device");
+    TestNearest(device.Get());
     TestLoginCrop(device.Get());
     TestBorderlessOutput(device.Get());
     auto source=Target(device.Get(),w,h), upload=Target(device.Get(),w,h,true);

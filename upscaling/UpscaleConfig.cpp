@@ -19,9 +19,11 @@ const Settings& Configuration() {
         INIReader config(Directory() + "config.ini");
         if (config.ParseError()) return result;
         result.enabled = config.GetBoolean("upscaling", "enabled", false);
+        result.directOutput = config.GetBoolean("upscaling", "direct_output", false);
         result.diagnostics = config.GetBoolean("upscaling", "diagnostics", false);
         const std::string algorithm = config.Get("upscaling", "algorithm", "cunny");
         if (algorithm == "linear") result.algorithm = Algorithm::Linear;
+        else if (algorithm == "nearest") result.algorithm = Algorithm::Nearest;
         else if (algorithm != "cunny") result.enabled = false;
         const std::string quality = config.Get("upscaling", "quality", "balanced");
         if (quality == "fast") result.quality = Quality::Fast;

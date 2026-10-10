@@ -94,6 +94,21 @@ __declspec(naked) void AdaptiveWorldCamera() {
         jmp dword ptr[worldCameraResume]
     }
 }
+// Native ShowToolTip gets a raw cursor point for hit testing but receives
+// the field's inverse-scaled x/y for placement. Use its raw point for both.
+DWORD buffTooltipNative=0x007B2E58;
+DWORD buffTooltipResume=0x0094D15A;
+__declspec(naked) void AdaptiveBuffTooltip() {
+    __asm {
+        mov eax, [esp+4]
+        mov edx, [eax]
+        mov [esp+8], edx
+        mov edx, [eax+4]
+        mov [esp+12], edx
+        push dword ptr[buffTooltipResume]
+        jmp dword ptr[buffTooltipNative]
+    }
+}
 DWORD worldCursorResume = 0x009E313A;
 DWORD worldCursorSkip = 0x009E317B;
 __declspec(naked) void AdaptiveWorldCursor() {

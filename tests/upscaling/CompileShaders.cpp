@@ -11,7 +11,7 @@ int main(int argc, char** argv) {
         if (file.path().extension() != ".hlsl") continue;
         ID3DBlob *code = nullptr, *errors = nullptr;
         HRESULT hr = D3DCompileFromFile(file.path().c_str(), nullptr, nullptr,
-            "main", "ps_3_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &code, &errors);
+            "main", file.path().stem()==L"SmoothSprite" ? "ps_2_0" : "ps_3_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &code, &errors);
         if (FAILED(hr)) {
             printf("FAIL %s: %s\n", file.path().filename().string().c_str(), errors ? static_cast<char*>(errors->GetBufferPointer()) : "compile");
             if (errors) errors->Release();

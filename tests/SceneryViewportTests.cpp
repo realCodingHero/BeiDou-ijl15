@@ -32,6 +32,8 @@ bool Same(const WorldViewport::View& a,const WorldViewport::View& b){
 }
 }
 int main(int argc,char** argv){
+    WorldViewport::SetSceneScaleForTesting(1.0); // Retain baseline regression coverage.
+
     using namespace WorldViewport;
     const RECT doors{-3045,-183,1326,287};
     std::vector<RECT> pillars{{-100,-422,100,336}};

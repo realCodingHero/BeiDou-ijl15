@@ -492,6 +492,15 @@
       "instruction": "mov edx, 0x1d0"
     },
     {
+      "address": 5454585,
+      "size": 4,
+      "kind": "Integer",
+      "guard": 5454584,
+      "guard_size": 5,
+      "original": "68a41406c0",
+      "instruction": "push 0xc00614a4"
+    },
+    {
       "address": 5454596,
       "size": 4,
       "kind": "Integer",
@@ -2515,6 +2524,15 @@
       "guard_size": 5,
       "original": "682c010000",
       "instruction": "push 0x12c"
+    },
+    {
+      "address": 9752917,
+      "size": 5,
+      "kind": "Jump",
+      "guard": 9752917,
+      "guard_size": 5,
+      "original": "e8fe5ce6ff",
+      "instruction": "call 0x7b2e58"
     },
     {
       "address": 9782324,

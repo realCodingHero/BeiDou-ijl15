@@ -52,10 +52,10 @@ void __fastcall Drag(void*,void*,int s,void* p,int x,int y) {
 int __fastcall IsField(void*,void*,const void* rtti) { assert(rtti==reinterpret_cast<void*>(0xBED758));return 1; }
 void CheckBounds(RECT r,int width,int height) {
     auto v=WorldViewport::Fit(r,width,height);
-    assert(v.scale==1);
+    assert(v.scale==1 || v.scale==1.5);
     assert(v.height*v.scale<=height+1e-8 && v.width*v.scale<=width+1e-8);
     assert(std::abs(v.clip.right-v.clip.left-v.width*v.scale)<2.001);
-    assert(std::abs(v.clip.bottom-v.clip.top-v.height*v.scale)<1e-8);
+    assert(std::abs(v.clip.bottom-v.clip.top-v.height*v.scale)<1.001);
     assert(v.clip.left>=0 && v.clip.right<=width && v.clip.top>=0 && v.clip.bottom<=height);
     assert(std::abs(v.clip.left-(width-v.clip.right))<=1);
     assert(std::abs(v.clip.top-(height-v.clip.bottom))<=1);
@@ -74,6 +74,9 @@ void CheckBounds(RECT r,int width,int height) {
 }
 }
 int main(int argc,char** argv) {
+    assert(WorldViewport::Fit({-3000,-2000,3000,2000},1920,1080).scale==1.5);
+    WorldViewport::SetSceneScaleForTesting(1.0); // Retain baseline regression coverage.
+
     static_assert(sizeof(void*)==4,"Native x86 ABI");
     for(RECT r: {RECT{-809,-633,2765,179},RECT{-2740,-748,809,179},RECT{-400,-300,400,300},
         RECT{-3600,-1700,2700,255},RECT{-400,-6000,400,595},RECT{-3045,-183,1326,287},
@@ -107,7 +110,9 @@ int main(int argc,char** argv) {
     Layer world(int(0xC0000000)), equipment(5,&world), ui(int(0xC00615D0)), uiChild(-1,&ui), cursorLayer(0x7ffffffd);
     Layer buff(int(0xC006156C)), cooldown(int(0xC006156C)), buffChild(int(0xC0000000),&buff);
     Layer worldChild(int(0xC006156C),&world), fieldEffect(int(0xC0061508)), adjacentWorld(int(0xC006156B));
-    for(Layer* layer:{&world,&equipment,&worldChild,&fieldEffect,&adjacentWorld,&ui,&uiChild,&cursorLayer,&buff,&cooldown,&buffChild}) for(int fail=0;fail<3;++fail) {
+    Layer boss(int(0xC00614A5)), bossChild(-1,&boss);
+    Layer teleport(int(0xC00614A4));
+    for(Layer* layer:{&boss,&bossChild,&world,&equipment,&worldChild,&fieldEffect,&adjacentWorld,&ui,&uiChild,&cursorLayer,&buff,&cooldown,&buffChild}) for(int fail=0;fail<3;++fail) {
         d.failure=fail;d.writes=0;calls=0;
         const bool isWorld=layer==&world || layer==&equipment || layer==&worldChild || layer==&fieldEffect || layer==&adjacentWorld;
         expectedScale=(!fail && isWorld) ? flight.scale:1;
@@ -183,6 +188,14 @@ int main(int argc,char** argv) {
         assert(!memcmp(&d.projection,&originalProjection,sizeof(Matrix)));
     }
     d.failure=0;expectedScale=1;
+    WorldViewport::SetBuffCountForTesting(3);
+    assert(WorldViewport::BuffHit({1900,30},3,1920));
+    assert(!WorldViewport::BuffHit({1900,55},3,1920));
+    assert(!WorldViewport::BuffHit({1800,30},3,1920));
+    assert(!WorldViewport::BuffHit({1900,30},0,1920));
+    assert(WorldViewport::MouseMove(nullptr,nullptr,1900,30)==42);
+    assert(WorldViewport::MouseMove(nullptr,nullptr,1800,30)==0);
+    WorldViewport::SetBuffCountForTesting(0);
     WorldViewport::DrawLayerForTesting(&ui,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
     expectedScale=narrow.scale;throwDraw=true;
     try {WorldViewport::DrawLayerForTesting(&world,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));assert(false);}
@@ -217,13 +230,41 @@ int main(int argc,char** argv) {
     assert(WorldViewport::ForegroundEdgeOffset(cave,1920,-852,-100,0)==0);
     assert(WorldViewport::ForegroundEdgeOffset(cave,1920,1000,-90,0)==0);
     assert(WorldViewport::ForegroundEdgeOffset({-400,-1000,400,1000},784,-350,-90,0)==0);
+    // Production zoom: logical camera bounds, projected clips, input and HUD.
+    WorldViewport::SetSceneScaleForTesting(1.5);
+    for(RECT bounds:{RECT{-2500,-1443,2645,800},RECT{-3045,-183,1326,287},
+                    RECT{-360,-2500,440,450},RECT{-400,-300,400,300}}) {
+        auto v=WorldViewport::Fit(bounds,1920,1080);
+        assert(v.scale==1.5 && v.width<=1280 && v.height<=720);
+        assert(v.clip.right-v.clip.left==int(v.width*1.5));
+        assert(v.clip.bottom-v.clip.top==int(v.height*1.5));
+        for(LONG x:{v.camera.left,v.camera.right})for(LONG y:{v.camera.top,v.camera.bottom}) {
+            assert(x-v.width/2>=bounds.left+8 && x+v.width/2<=bounds.right-8);
+            assert(y-v.height/2>=bounds.top+8 && y+v.height/2<=bounds.bottom-8);
+        }
+        current=map;WorldViewport::SetContextForTesting(&current,map,bounds,1920,1080);
+        for(Layer* layer:{&world,&equipment,&teleport,&buff,&boss,&ui}) {
+            expectedScale=(layer==&world || layer==&equipment || layer==&teleport) ? 1.5:1.;
+            WorldViewport::DrawLayerForTesting(layer,&context,reinterpret_cast<void (__thiscall*)(void*,void*)>(&Draw));
+            assert(!memcmp(&d.projection,&originalProjection,sizeof(Matrix)));
+            assert(d.viewport.width==1920 && d.viewport.height==1080);
+        }
+        const POINT sample{960,600};const auto mapped=WorldViewport::Inverse(sample,1920,1080,1.5);
+        assert(WorldViewport::MouseMove(nullptr,nullptr,sample.x,sample.y)==42);
+        assert(inputX==mapped.x && inputY==mapped.y);
+        const int bottom=int(v.camera.top+v.height/2-20);
+        WorldViewport::ConstrainBottom(v,bottom);
+        assert(v.camera.bottom+v.height/2<=bottom);
+        assert(v.clip.bottom-v.clip.top==int(v.height*1.5));
+    }
+    WorldViewport::SetSceneScaleForTesting(1.0);
     int maps=0;
     if(argc==2) {
         std::ifstream file(argv[1]); assert(file);
         std::string line;
         while(std::getline(file,line)) {
             std::istringstream row(line);long id;RECT r{};
-            if(row>>id>>r.left>>r.top>>r.right>>r.bottom) { CheckBounds(r,1920,1080);++maps; }
+            if(row>>id>>r.left>>r.top>>r.right>>r.bottom) { CheckBounds(r,1920,1080);WorldViewport::SetSceneScaleForTesting(1.5);CheckBounds(r,1920,1080);WorldViewport::SetSceneScaleForTesting(1.0);++maps; }
         }
         assert(maps>4000);
     }

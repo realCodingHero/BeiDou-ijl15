@@ -143,7 +143,7 @@ HRESULT Renderer::Prepare(UINT w, UINT h, UINT tw, UINT th, const Settings& sett
         return device_->CreatePixelShader(reinterpret_cast<const DWORD*>(code.data), &shader);
     };
     if (!copy_ && FAILED(hr = makeShader(NeuralShaders::Copy, copy_))) return hr;
-    if (settings.algorithm == Algorithm::Linear) {
+    if (settings.algorithm != Algorithm::Cunny) {
         if (w != width_ || h != height_ || !input_.image)
             if (FAILED(hr = CreateTexture(input_, w, h))) return hr;
         // Retain only the input texture and one copy shader. In particular, a
@@ -240,7 +240,7 @@ HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* desti
         dst.Height = output->bottom-output->top;
         if (FAILED(hr = device_->ColorFill(destination, nullptr, 0xff000000))) return hr;
     }
-    if (settings.algorithm == Algorithm::Linear && src.Width == dst.Width && src.Height == dst.Height && source != destination)
+    if (settings.algorithm != Algorithm::Cunny && src.Width == dst.Width && src.Height == dst.Height && source != destination)
         return device_->StretchRect(source, viewport, destination, output, D3DTEXF_NONE);
     if (FAILED(hr = Prepare(src.Width, src.Height, dst.Width, dst.Height, settings))) return hr;
     if (FAILED(hr = device_->StretchRect(source, viewport, input_.surface.Get(), nullptr, D3DTEXF_NONE))) return hr;
@@ -268,10 +268,10 @@ HRESULT Renderer::RenderImpl(IDirect3DSurface9* source, IDirect3DSurface9* desti
     auto render = [&]() -> HRESULT {
         if (src.Width == dst.Width && src.Height == dst.Height)
             return Draw(destination, copy_.Get(), {input_.image.Get()}, src.Width, src.Height, false, nullptr, output);
-        if (settings.algorithm == Algorithm::Linear)
+        if (settings.algorithm != Algorithm::Cunny)
             // Explicit pixel centers avoid driver-dependent StretchRect
             // magnification offsets, while still using one bilinear GPU pass.
-            return Draw(destination, copy_.Get(), {input_.image.Get()}, src.Width, src.Height, true, nullptr, output);
+            return Draw(destination, copy_.Get(), {input_.image.Get()}, src.Width, src.Height, settings.algorithm == Algorithm::Linear, nullptr, output);
         IDirect3DTexture9* active = input_.image.Get();
         UINT aw = src.Width, ah = src.Height;
         if (dst.Width > src.Width && dst.Height > src.Height) {
@@ -352,7 +352,7 @@ void Renderer::SetBorderlessPresentation(HWND window, bool active) {
     }
 }
 
-bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND overrideWindow, HRESULT& result) {
+bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND overrideWindow, HRESULT& result, IDirect3DSurface9* directSource) {
     double frameStart = Milliseconds();
     const auto native = [&]() { SetLoginPresentation(nullptr, false); SetBorderlessPresentation(nullptr, false); ResetTiming(); return false; };
     if (!Configuration().enabled || disabledUntilReset_) return native();
@@ -463,7 +463,7 @@ bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND over
             crop ? login.right-login.left : description.Width,
             crop ? login.bottom-login.top : description.Height, fitted);
         const bool letterbox = borderlessOutput && !EqualRect(&fitted, &client);
-        if (SUCCEEDED(hr)) hr = Render(source.Get(), target.Get(), settings, crop ? &login : nullptr, letterbox ? &fitted : nullptr);
+        if (SUCCEEDED(hr)) hr = Render(directSource && !crop ? directSource : source.Get(), target.Get(), settings, crop ? &login : nullptr, letterbox ? &fitted : nullptr);
         const double submitEnd = Milliseconds();
         if (SUCCEEDED(hr)) {
             if (!activeLogged_) {
@@ -472,7 +472,7 @@ bool Renderer::Present(const RECT* sourceRect, const RECT* targetRect, HWND over
                 Log("active: %ux%u -> %ldx%ld, CuNNy=%s, windowed=1, backend=%s, interval=0x%08x, device_refresh=%uHz, max_fps=%u, timer_fps=%u", description.Width, description.Height,
                     client.right, client.bottom, neural ? "yes" : "no",
                     description.Width == client.right && description.Height == client.bottom ? "pixel-copy" :
-                    Configuration().algorithm == Algorithm::Linear ? "single-pass-linear" : "shader-resample",
+                    Configuration().algorithm == Algorithm::Nearest ? "single-pass-nearest" : Configuration().algorithm == Algorithm::Linear ? "single-pass-linear" : "shader-resample",
                     outputInterval_, displayRefresh_, limit, timerRate);
                 activeLogged_ = true;
             }

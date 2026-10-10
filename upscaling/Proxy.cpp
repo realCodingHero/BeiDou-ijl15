@@ -25,7 +25,7 @@ extern "C" IDirect3D8* WINAPI Direct3DCreate8(UINT sdkVersion) {
             if (d3d) {
                 LoginViewportBridge::Enable();
                 NeuralUpscale::Log("BeiDou built-in upscaling: DX8 -> DX9, algorithm=%s, quality=%s",
-                    NeuralUpscale::Configuration().algorithm == NeuralUpscale::Algorithm::Linear ? "linear" : "cunny",
+                    NeuralUpscale::Configuration().algorithm == NeuralUpscale::Algorithm::Nearest ? "nearest" : NeuralUpscale::Configuration().algorithm == NeuralUpscale::Algorithm::Linear ? "linear" : "cunny",
                     NeuralUpscale::Configuration().quality == NeuralUpscale::Quality::Fast ? "fast" : "balanced");
                 return d3d;
             }

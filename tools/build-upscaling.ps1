@@ -55,12 +55,17 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Frame pacing tests failed' }
     & $Python -B (Join-Path $repoRoot 'tests\upscaling\reference.py') (Join-Path $outDir 'reference') prepare
     if ($LASTEXITCODE -ne 0) { throw 'Reference fixture creation failed' }
+    & $compiler @common (Join-Path $repoRoot 'tests\upscaling\DirectOutputTests.cpp') (Join-Path $outDir 'UpscaleRenderer.obj') (Join-Path $outDir 'UpscaleConfig.obj') ('/Fo' + $outDir + '\') /link /MACHINE:X86 d3d9.lib user32.lib ('/OUT:' + (Join-Path $outDir 'DirectOutputTests.exe'))
+    if ($LASTEXITCODE -ne 0) { throw 'Direct output fixture build failed' }
     if (!$SkipGpuTests) {
+        & (Join-Path $outDir 'DirectOutputTests.exe')
+        if ($LASTEXITCODE -ne 0) { throw 'Direct output fixture failed' }
+
         & (Join-Path $outDir 'RendererTests.exe') (Join-Path $outDir 'reference')
         if ($LASTEXITCODE -ne 0) { throw 'GPU renderer tests failed' }
         & $Python -B (Join-Path $repoRoot 'tests\upscaling\reference.py') (Join-Path $outDir 'reference') compare
         if ($LASTEXITCODE -ne 0) { throw 'Independent reference comparison failed' }
-        foreach ($mode in @('enabled','linear','disabled','login')) {
+        foreach ($mode in @('enabled','linear','nearest','disabled','login','direct')) {
             & (Join-Path $outDir 'fixture\ProxyTests.exe') (Join-Path $outDir 'BeiDouUpscale.dll') $mode
             if ($LASTEXITCODE -ne 0) { throw "Proxy tests failed: $mode" }
         }

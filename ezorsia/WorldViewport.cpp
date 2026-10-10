@@ -1,4 +1,5 @@
 #include "WorldViewport.h"
+#include "ConfirmedScalingPolicies.h"
 #include "detours.h"
 #include <algorithm>
 #include <cmath>
@@ -11,12 +12,37 @@
 
 namespace {
 int renderWidth = 800, renderHeight = 600;
+double sceneScale = 1.5; // Uniform actor size; never fit magnification to map bounds.
 void** stageSlot = reinterpret_cast<void**>(0x00BEDED4);
 const void* activeMap = nullptr; // Identity only; no retained game/COM objects.
 WorldViewport::View activeView;
 const void* loadingMap=nullptr;
 struct Backdrop { int z,x,rx,ry,type; bool front; int y; };
 std::vector<Backdrop> loadingBackdrops, activeBackdrops;
+std::vector<WorldViewport::SceneBackdrop> loadingScene;
+const WorldViewport::ConfirmedPolicy* activePolicy=nullptr;
+const WorldViewport::ConfirmedPolicy* MatchPolicy(RECT bounds,const std::vector<WorldViewport::GroundTile>& tiles) {
+    for(const auto& p:WorldViewport::confirmedPolicies) {
+        if(!EqualRect(&bounds,&p.bounds) || loadingScene.size()!=p.count) continue;
+        if(p.ground) {
+            if(tiles.size()!=p.capCount) continue;
+            bool capsMatch=true;
+            for(size_t i=0;i<p.capCount && capsMatch;++i) {
+                const auto& a=p.caps[i];
+                capsMatch=std::any_of(tiles.begin(),tiles.end(),[&](const WorldViewport::GroundTile& b){return a.layer==b.layer && a.left==b.left && a.top==b.top && a.right==b.right && a.solidBottom==b.solidBottom;});
+            }
+            if(!capsMatch) continue;
+        }
+        bool match=true;
+        for(size_t i=0;i<p.count && match;++i) {
+            const auto& a=p.layers[i];
+            auto b=std::find_if(loadingScene.begin(),loadingScene.end(),[&](const WorldViewport::SceneBackdrop& v){return v.index==a.index;});
+            match=b!=loadingScene.end() && a.front==b->front && a.x==b->x && a.y==b->y && a.rx==b->rx && a.ry==b->ry && a.type==b->type;
+        }
+        if(match) return &p;
+    }
+    return nullptr;
+}
 RECT activeBounds{};
 #ifdef WORLD_VIEWPORT_TESTING
 void* testGraphics=nullptr;
@@ -40,6 +66,7 @@ void* originalSubmitQuad = nullptr;
 thread_local bool alignWorldTexels=false;
 #ifdef WORLD_VIEWPORT_TESTING
 bool testTexelAlignment=true;
+int testBuffCount=0;
 #endif
 struct TexelScope {
     bool saved=alignWorldTexels;
@@ -176,9 +203,9 @@ struct ProjectionScope {
     Matrix saved{};
     Viewport savedViewport{};
     bool applied = false, viewportApplied=false;
-    ProjectionScope(void* dev, double scale, const RECT& clip, double dx=0, double dy=0) : device(dev) {
+    ProjectionScope(void* dev, double scale, const RECT& clip, double dx=0, double dy=0,double verticalScale=0) : device(dev) {
         if (!dev || FAILED(Method<GetTransform>(dev,0x98)(dev,3,&saved))) return;
-        double sx=scale,sy=scale;
+        double sx=scale,sy=verticalScale>0 ? verticalScale:scale;
         if (clip.left || clip.top || clip.right!=renderWidth || clip.bottom!=renderHeight) {
             if (FAILED(Method<GetViewport>(dev,0xA4)(dev,&savedViewport))) return;
             Viewport cropped=savedViewport;
@@ -219,16 +246,22 @@ void __fastcall RenderLayer(void* layer, void*, void* context) {
     auto root=RootLayer(layer);
     // Screen roots are negative too. TemporaryStatView creates both its icon
     // (7B406D) and cooldown (7B4310) at C006156C, 100 below the status bar.
-    // Exclude that HUD band explicitly; lower field-effect bands remain world.
+    // Boss HP is assigned C00614A5 at 00533AF8. Native C00614A4 is
+    // shared with teleport (00958083) and must remain world-scaled.
+    // Exclude only these roots; adjacent field-effect bands remain world.
     const int z=root ? *reinterpret_cast<int*>(static_cast<unsigned char*>(root)+0x44):0;
-    const bool world=root && z<int(0xC00615D0u) && z!=int(0xC006156Cu) && context && HasScene();
-    double scale=world ? DrawScale():1.0,dx=0,dy=0;
+    const bool world=root && z<int(0xC00615D0u) && z!=int(0xC006156Cu) && z!=int(0xC00614A5u) && context && HasScene();
+    const double zoom=world ? DrawScale():1.0;
+    double scale=1.0,dx=0,dy=0,verticalScale=0;
     if(world) {
         const auto entry=std::find_if(activeBackdrops.begin(),activeBackdrops.end(),
             [z](const Backdrop& b){return b.z==z;});
         if(entry!=activeBackdrops.end()) {
             if(!entry->front) {
-                scale=(std::max)(scale,activeView.height/600.0);
+                // Leafre-only trial: retain native dimensions on every backdrop.
+                // Exact scene matching keeps the surrounding forest unchanged.
+                if(!activePolicy || !activePolicy->uniformBackground)
+                    scale=(std::max)(scale,activeView.height/600.0);
                 // LoadBack's static/tiled vectors use Ratio(center,100,100,rx,ry).
                 // Grow artwork and tile spacing, not camera-driven motion.
                 // Auto-scroll types 4..7 have a different time-based vector path.
@@ -236,27 +269,57 @@ void __fastcall RenderLayer(void* layer, void*, void* context) {
                 if(entry->type>=0 && entry->type<=3 && CameraCenter(center)) {
                     dx=(1-scale)*center.x*entry->rx/100.0;
                     dy=(1-scale)*center.y*entry->ry/100.0;
+                    if(activePolicy) {
+                        const int index=(z-int(0xBFFE0C00u))/1000;
+                        const bool left=activePolicy->leftIndex>=0 && index>=activePolicy->leftIndex && index<=activePolicy->leftIndex+1;
+                        const bool right=activePolicy->rightIndex>=0 && index>=activePolicy->rightIndex && index<=activePolicy->rightIndex+1;
+                        // Move the complete upper/lower wall pair by one offset.
+                        // Both authored cut edges must remain outside the view.
+                        if(left || right) dx+=WorldViewport::BackdropSideOffset(activeView.width,scale,
+                            right ? activePolicy->rightEdge:activePolicy->leftEdge,entry->rx,center.x,right);
+                    }
+                    if(activePolicy && activePolicy->skyIndex>=0 &&
+                        z==int(0xBFFE0C00u)+activePolicy->skyIndex*1000) {
+                        verticalScale=scale;
+                        WorldViewport::CoverBackdrop(activeView.height,activePolicy->skyTop,
+                            activePolicy->skyBottom,entry->ry,center.y,verticalScale,dy);
+                    }
                 }
             } else {
                 dx=WorldViewport::ForegroundEdgeOffset(activeBounds,activeView.width,
                     entry->x,entry->rx,entry->type);
+                // Audited Leafre minar/ani/0..4 have hard top edges, but fade
+                // naturally at the bottom. Translate only when the top enters
+                // the visible area; retain native dimensions and horizontal motion.
+                if(activePolicy && activePolicy->map==240000000) {
+                    const int index=(z-int(0xC0042360u))/1000-17;
+                    static const int originTop[]={-376,-304,-365,-363,-310};
+                    POINT center{};
+                    if(index>=0 && index<5 && CameraCenter(center))
+                        dy=WorldViewport::ForegroundTopOffset(activeView.height,
+                            entry->y+originTop[index],entry->ry,center.y);
+                }
             }
         }
     }
+    // All corrections above operate in logical world pixels. Apply the common
+    // zoom last, including translations, so parallax and joined art agree.
+    scale*=zoom; dx*=zoom; dy*=zoom;
+    if(verticalScale>0) verticalScale*=zoom;
     const bool clipped=world && (activeView.clip.left || activeView.clip.top ||
         activeView.clip.right!=renderWidth || activeView.clip.bottom!=renderHeight);
-    if (!world || (scale<=1.0 && !clipped && dx==0 && dy==0)) {
+    if (!world || (scale<=1.0 && verticalScale<=1.0 && !clipped && dx==0 && dy==0)) {
         originalDrawLayer(layer,context);
 #ifdef WORLD_VIEWPORT_TESTING
         if (drawObserver) drawObserver(layer,context,1.0);
 #endif
         return;
     }
-    ProjectionScope projection(*static_cast<void**>(context),scale,activeView.clip,dx,dy);
+    ProjectionScope projection(*static_cast<void**>(context),scale,activeView.clip,dx,dy,verticalScale);
     if (!projection.applied) { originalDrawLayer(layer,context); return; }
     // Preserve native point/automatic sampling and correct the native 1:1 UV
     // bias only inside this draw. No cached vertices/textures are modified.
-    TexelScope texels(scale>1.0);
+    TexelScope texels(scale>1.0 || verticalScale>1.0);
     originalDrawLayer(layer,context);
 #ifdef WORLD_VIEWPORT_TESTING
     if (drawObserver) drawObserver(layer,context,scale);
@@ -276,6 +339,10 @@ void Log(const char* message) {
 }
 
 namespace WorldViewport {
+#ifdef WORLD_VIEWPORT_TESTING
+void SetBuffCountForTesting(int count) {testBuffCount=count;}
+void SetSceneScaleForTesting(double scale) { sceneScale=scale; }
+#endif
 MapShape Classify(RECT bounds) {
     const int64_t w=int64_t(bounds.right)-bounds.left,h=int64_t(bounds.bottom)-bounds.top;
     if(w<=16 || h<=16) return MapShape::Normal;
@@ -304,9 +371,10 @@ View FitRegion(RECT bounds,int width,int height) {
     bounds.right=bounds.left+LONG(innerWidth); bounds.bottom=bounds.top+LONG(innerHeight);
     // Map dimensions must never change actor size. Center finite scenes
     // with margins; the final window presentation scales all maps equally.
-    view.width=(std::min)(double(width),innerWidth);
-    view.height=(std::min)(double(height),innerHeight);
-    const int visibleWidth=int(view.width),visibleHeight=int(view.height);
+    view.scale=sceneScale;
+    view.width=(std::min)(double(width)/view.scale,innerWidth);
+    view.height=(std::min)(double(height)/view.scale,innerHeight);
+    const int visibleWidth=int(std::floor(view.width*view.scale+1e-8)),visibleHeight=int(std::floor(view.height*view.scale+1e-8));
     const int left=(width-visibleWidth)/2,top=(height-visibleHeight)/2;
     view.clip={left,top,left+visibleWidth,top+visibleHeight};
     const double hw=view.width/2, hh=view.height/2;
@@ -326,13 +394,38 @@ View FitScenery(RECT bounds,int width,int height,const std::vector<RECT>& scener
     }
     return FitRegion(bounds,width,height);
 }
-bool ConstrainGround(View& view, RECT bounds, const std::vector<GroundTile>& tiles) try {
+bool ConstrainBottom(View& view,int bottom) {
+    if(view.height<=0 || view.width<=0 || bottom>=view.camera.bottom+view.height/2) return false;
+    const LONG limit=LONG(std::floor(bottom-view.height/2));
+    if(limit>=view.camera.top) {view.camera.bottom=limit;return true;}
+    // Preserve the authored top edge and native actor size on finite scenes.
+    const double top=view.camera.top-view.height/2;
+    const int height=2*int(std::floor((bottom-top)/2));
+    if(height<=0 || height>=view.height) return false;
+    const int screenHeight=view.clip.top+view.clip.bottom;
+    const int pixels=int(std::floor(height*view.scale+1e-8));
+    view.height=height;view.clip.top=(screenHeight-pixels)/2;view.clip.bottom=view.clip.top+pixels;
+    view.camera.top=view.camera.bottom=LONG(top+height/2);
+    return true;
+}
+void CoverBackdrop(double height,int top,int bottom,int ry,int cameraY,double& sy,double& dy) {
+    if(height<=0 || bottom<=top) return;
+    // Only allowlisted near-opaque sky gradients use this vertical extension.
+    // Horizontal tiling and camera parallax remain unchanged; never scale actors.
+    sy=(std::max)(sy,(height+2)/(bottom-top));
+    const double parallax=cameraY*ry/100.0;
+    const double low=height/2+1-sy*bottom-parallax;
+    const double high=-height/2-1-sy*top-parallax;
+    const double shift=(std::min)(high,(std::max)(low,0.0));
+    dy=(1-sy)*parallax+shift;
+}
+bool ConstrainGround(View& view, RECT bounds, const std::vector<GroundTile>& tiles,bool allowFinite) try {
     // Henesys Park has a deliberate 180px ravine in its bottom tile row.
     // Its native fallback also leaves no vertical camera travel at 1080p.
     // Restrict this exception to the audited bounds; arbitrary platform gaps
     // elsewhere are not evidence of a safe map-wide bottom.
     const bool park=bounds.left==-118 && bounds.top==-56 && bounds.right==4708 && bounds.bottom==1010;
-    if (view.width<=0 || view.height<=0 || (!park && view.camera.top>=view.camera.bottom)) return false;
+    if (view.width<=0 || view.height<=0 || (!park && !allowFinite && view.camera.top>=view.camera.bottom)) return false;
     std::map<std::pair<int,int>,std::vector<GroundTile>> rows;
     for (const auto& tile:tiles) {
         if (tile.right>tile.left && tile.solidBottom>tile.top)
@@ -361,6 +454,7 @@ bool ConstrainGround(View& view, RECT bounds, const std::vector<GroundTile>& til
         consider();
     }
     if (bestBottom==INT_MIN) return false;
+    if(allowFinite) return ConstrainBottom(view,bestBottom);
     if(park && bestBottom-view.height/2<view.camera.top) {
         const double top=view.camera.top-view.height/2;
         const int height=2*int(std::floor((bestBottom-top)/2));
@@ -533,11 +627,11 @@ bool InstallGraphics(HMODULE module) {
     }
     if (DetourTransactionCommit() != NO_ERROR) return false;
     layerVtable=base+0x2E3F0; graphicsReady=true;
-    Log("World viewport ready: native-size world, scoped scenery, independent HUD and backdrop motion.");
+    Log("World viewport ready: uniform 1.5x world, scoped scenery, independent HUD and backdrop motion.");
     return true;
 }
 void __cdecl AdjustCamera(void* map) {
-    activeMap=nullptr; activeView={}; activeBackdrops.clear();
+    activeMap=nullptr; activeView={}; activeBackdrops.clear();activePolicy=nullptr;
     if (!graphicsReady || renderHeight <= 720 || !IsField(map)) return;
     auto camera = reinterpret_cast<RECT*>(static_cast<unsigned char*>(map)+0xF0);
     // Before native short-map clamping, recover the exact bounds the engine
@@ -553,7 +647,9 @@ void __cdecl AdjustCamera(void* map) {
         } catch (...) {sceneryValid=false;}
     }
     if (view.width<=0 || view.height<=0 || bounds.right-bounds.left<=16 || bounds.bottom-bounds.top<=16) return;
-    const bool groundAdjusted=terrainMap==map && terrainValid && ConstrainGround(view,bounds,groundTiles);
+    activePolicy=loadingMap==map ? MatchPolicy(bounds,groundTiles):nullptr;
+    const bool groundAdjusted=terrainMap==map && terrainValid && ConstrainGround(view,bounds,groundTiles,activePolicy && activePolicy->ground);
+    if(activePolicy && activePolicy->bottom) ConstrainBottom(view,activePolicy->bottom);
     // Audited Leafre minar/back/27: y=577, originY=31, height=63.
     // This horizontal scrolling foreground terminates at world Y=609.
     // Keep its bottom outside the viewport instead of exposing terrain below
@@ -571,6 +667,10 @@ void __cdecl AdjustCamera(void* map) {
     sceneryCanvases.clear();sceneryAnimations.clear();
     *camera=view.camera; activeView=view; activeMap=map; activeBounds=bounds;
     if (loadingMap==map) activeBackdrops=loadingBackdrops;
+    if(activePolicy) {
+        char policyLine[100];sprintf_s(policyLine,"confirmedPolicy=%d layers=%u caps=%u",
+            activePolicy->map,unsigned(loadingScene.size()),unsigned(groundTiles.size()));Log(policyLine);
+    }
     char line[400]; sprintf_s(line,"bounds=(%ld,%ld,%ld,%ld) view=%.2fx%.2f zoom=%.4f camera=(%ld,%ld,%ld,%ld) clip=(%ld,%ld,%ld,%ld) backdrops=%u groundCamera=%d shape=%d scenery=%u",
         bounds.left,bounds.top,bounds.right,bounds.bottom,view.width,view.height,view.scale,
         camera->left,camera->top,camera->right,camera->bottom,
@@ -578,7 +678,7 @@ void __cdecl AdjustCamera(void* map) {
 }
 void __cdecl AdjustWorldCursor(POINT* screen) { if (screen) *screen=MapPoint(screen->x,screen->y); }
 void __cdecl BeginBackgrounds(void* map) {
-    loadingMap=map; loadingBackdrops.clear();
+    loadingMap=map; loadingBackdrops.clear();loadingScene.clear();
     if (map==activeMap) activeBackdrops.clear();
 }
 double ForegroundEdgeOffset(RECT bounds,double visibleWidth,int x,int rx,int type) {
@@ -592,9 +692,21 @@ double ForegroundEdgeOffset(RECT bounds,double visibleWidth,int x,int rx,int typ
     const double amount=(visibleWidth-800)*(100+rx)/200.0;
     return left ? -amount:amount;
 }
+double ForegroundTopOffset(double visibleHeight,int top,int ry,int cameraY) {
+    if(visibleHeight<=0) return 0;
+    return (std::min)(0.0,-visibleHeight/2-1-(top+cameraY*ry/100.0));
+}
+double BackdropSideOffset(double visibleWidth,double scale,int edge,int rx,int cameraX,bool right) {
+    if(visibleWidth<=0 || scale<=0) return 0;
+    const double position=scale*edge+cameraX*rx/100.0;
+    return right ? (std::max)(0.0,visibleWidth/2+2-position):
+        (std::min)(0.0,-visibleWidth/2-2-position);
+}
 bool RegisterBackground(void* map,int index,int front,int ry,int x,int rx,int type,int y) {
     if (!graphicsReady || renderHeight<=720 || !IsField(map)) return false;
     if (loadingMap!=map) BeginBackgrounds(map);
+    if(index>=0 && index<128 && loadingScene.size()<128)
+        loadingScene.push_back({index,front!=0,x,y,rx,ry,type});
     if(index>=0 && index<128 && ((!front && ry>-100) || (front && type==0 && rx>-100 && rx<0) ||
         (front && type==4 && ry==-100))) {
         const int z=int(front ? 0xC0042360u:0xBFFE0C00u)+index*1000;
@@ -609,8 +721,22 @@ void __fastcall MouseButton(void*,void*,unsigned message,unsigned flags,int x,in
     POINT p=MapPoint(x,y);
     Method<void (__thiscall*)(void*,unsigned,unsigned,int,int)>(handler,8)(handler,message,flags,p.x,p.y);
 }
+bool BuffHit(POINT p,int count,int width) {
+    // CTemporaryStatView::ShowToolTip: [23,55), 32 pixels per icon.
+    return count>0 && count<=128 && p.y>=23 && p.y<55 &&
+        p.x>=width-6-count*32 && p.x<width-6;
+}
+static bool OverBuff(int x,int y) {
+#ifdef WORLD_VIEWPORT_TESTING
+    const int count=testBuffCount;
+#else
+    auto ctx=*reinterpret_cast<unsigned char**>(0x00BE7918);
+    const int count=ctx ? *reinterpret_cast<int*>(ctx+0x2EA8+0xC):0;
+#endif
+    return BuffHit({x,y},count,renderWidth);
+}
 int __fastcall MouseMove(void*,void*,int x,int y) {
-    auto handler=Handler(); if (!handler || !AcceptPoint(x,y)) return 0;
+    auto handler=Handler(); if (!handler || (!AcceptPoint(x,y) && !OverBuff(x,y))) return 0;
     POINT p=MapPoint(x,y);
     return Method<int (__thiscall*)(void*,int,int)>(handler,12)(handler,p.x,p.y);
 }
@@ -625,8 +751,11 @@ void __fastcall DragMove(void*,void*,int state,void* object,int x,int y) {
     Method<void (__thiscall*)(void*,int,void*,int,int)>(handler,24)(handler,state,object,p.x,p.y);
 }
 #ifdef WORLD_VIEWPORT_TESTING
+View GetViewForTesting() {return activeView;}
+int GetPolicyForTesting() {return activePolicy ? activePolicy->map:0;}
+void SetGroundForTesting(void* map,const std::vector<GroundTile>& tiles) {terrainMap=map;terrainValid=true;groundTiles=tiles;}
 void SetContextForTesting(void** slot,void* map,RECT bounds,int width,int height) {
-    Configure(width,height); stageSlot=slot; activeMap=map;
+    Configure(width,height); stageSlot=slot; activeMap=map;activePolicy=nullptr;
     activeView=Fit(bounds,width,height); activeBounds=bounds; graphicsReady=true;
 }
 void DrawLayerForTesting(void* layer,void* context,DrawLayer original) {
