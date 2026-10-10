@@ -488,6 +488,9 @@ void __fastcall Key(void* input,void*,unsigned key,unsigned flags) {
     if(w->modal){if(key==VK_RETURN && !confirming && quote.token && meso>=quote.price && GetTickCount()-quoteTime<30000){Enqueue({5,quotedRequest.quest,quotedRequest.kind,quotedRequest.target,quotedRequest.map,5,quote.token});confirming=true;Dirty();}return;}
     if(key==VK_UP || key==VK_DOWN){auto entries=ListEntries();listOffset=(std::max)(0,(std::min)(int(entries.size())-9,listOffset+(key==VK_UP?-1:1)));Dirty();}
 }
+int __fastcall InputEnabled(void* input,void*) {
+    auto w=Find(input,true);return w && !Blocked(*w)?1:0;
+}
 int __fastcall MouseMove(void* input,void*,int x,int y) {
     auto w=Find(input,true);if(!w || Blocked(*w))return 1;
     if(w->dragScroll>=0 && w->dragScroll<int(w->scrollbars.size())) {
@@ -604,6 +607,8 @@ void Show(Window& w) {
         w.mainMethods[0]=reinterpret_cast<void*>(Update);w.mainMethods[9]=reinterpret_cast<void*>(HitTest);w.mainMethods[11]=reinterpret_cast<void*>(Draw);
         w.inputMethods[0]=reinterpret_cast<void*>(Key);w.inputMethods[2]=reinterpret_cast<void*>(MouseButton);
         w.inputMethods[3]=reinterpret_cast<void*>(MouseMove);w.inputMethods[4]=reinterpret_cast<void*>(Wheel);
+        // CWndMan checks IUIMsgHandler::IsEnabled before changing input focus.
+        w.inputMethods[8]=reinterpret_cast<void*>(InputEnabled);
         *reinterpret_cast<void***>(w.native)=w.mainMethods.data();*reinterpret_cast<void***>(w.native+4)=w.inputMethods.data();w.initialized=true;
         w.referenceDestructor=reinterpret_cast<void*>(DeleteReference);
         *reinterpret_cast<void***>(w.native+8)=&w.referenceDestructor;
