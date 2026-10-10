@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "HpMpAlert.h"
 #include "BossRoomAssistDisplay.h"
+#include "QuestHelperUI.h"
 namespace {
 constexpr DWORD kSaveGlobalAddr = 0x0049C8E7;
 constexpr DWORD kUIStatusBarPtr = 0x00BEBF9C;
@@ -164,6 +165,12 @@ static void __fastcall SaveGlobal_Hook(void* pThis, void* edx) {
 using ProcessPacket_t = void(__fastcall*)(void* pThis, void* edx, CInPacket* packet);
 static ProcessPacket_t s_ProcessPacket = reinterpret_cast<ProcessPacket_t>(kProcessPacketAddr);
 static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* packet) {
+    if (packet && packet->Data && packet->Size >= 6) {
+        const auto* data = static_cast<const unsigned char*>(packet->Data);
+        const WORD opcode = *reinterpret_cast<const WORD*>(data + 4);
+        if (opcode == 0x1003) { QuestHelperUI::Receive(data + 6, packet->Size - 6); return; }
+        if (opcode == kOpcodeSetField) QuestHelperUI::FieldChange();
+    }
     if (packet != nullptr) {
         __try {
             if (packet->Data != nullptr && packet->Size >= 6) {

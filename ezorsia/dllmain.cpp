@@ -12,6 +12,7 @@
 #include "BossRoomAssistDisplay.h"
 #include "WindowScaling.h"
 #include "HelpMenu.h"
+#include "QuestHelperUI.h"
 #include "UpscaleLoader.h"
 #pragma comment(lib, "ws2_32.lib")
 
@@ -236,6 +237,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		HookSelectCharMacFix(true);
 		AutoLogin::Hook(true);
 		HelpMenu::Install(reader.GetBoolean("optional", "native_help_menu", false));
+		QuestHelperUI::Install(reader.GetBoolean("optional", "native_quest_helper", false), iniPath);
 		//Hook_get_unknown(true);
 		//Hook_get_resource_object(true); //helper function hooks  //ty teto for helping me get started
 		//Hook_com_ptr_t_IWzProperty__ctor(true);

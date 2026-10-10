@@ -2,6 +2,15 @@
 // checks modal cleanup/packet ordering without logging in or changing a player.
 #include "../ezorsia/HelpMenu.cpp"
 #include <stdexcept>
+namespace QuestHelperUI {
+bool active = false;
+int opened = 0;
+bool Enabled() { return active; }
+void Open() {
+    if (g_helpMode || g_helpWindow || g_action) throw std::runtime_error("quest window opened before modal cleanup");
+    ++opened;
+}
+}
 
 namespace {
 int scenario, sent, nativeCalls, nativeId, modalResult, highlights;
@@ -118,6 +127,11 @@ int main() {
                 Require(packetBytes[3] == expectedActions[scenario - 1], "wrong server action");
             }
         }
+        QuestHelperUI::active = true;
+        scenario = 3; sent = 0; modalResult = 0; destroyed = false;
+        StatusClick(nullptr, nullptr, 1001);
+        Require(QuestHelperUI::opened == 1 && sent == 0 && destroyed, "native quest entry did not replace legacy request after cleanup");
+        QuestHelperUI::active = false;
         sent = 0; int before = nativeCalls;
         StatusClick(nullptr, nullptr, 1007);
         Require(nativeCalls == before + 1 && nativeId == 1007 && sent == 0, "original interface menu changed");
