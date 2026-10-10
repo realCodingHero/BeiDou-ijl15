@@ -55,7 +55,7 @@ int& WindowInt(void* window, size_t offset) {
 
 void SendAction(unsigned char action) {
     if (action < 1 || action > kEntryCount) return;
-    if (action == 3 && QuestHelperUI::Enabled()) { QuestHelperUI::Open(); return; }
+    if (action == 3) { if (QuestHelperUI::Enabled()) QuestHelperUI::Open(); return; }
     void* socket = *s_socket;
     if (!socket) return;
     unsigned char bytes[] = {0x02, 0x10, 0x01, action};
