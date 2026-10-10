@@ -27,10 +27,12 @@ using NativeCtor=void*(__thiscall*)(void*);
 using NativeCreate=void(__thiscall*)(void*,int,int,int,int,int,int,void*,int);
 using NativeVoid=void(__thiscall*)(void*);
 using NativeDraw=void(__thiscall*)(void*,RECT*);
+using NativeInvalidate=void(__thiscall*)(void*,RECT*);
 NativeCtor ctor=reinterpret_cast<NativeCtor>(0x009DE383);
 NativeCreate create=reinterpret_cast<NativeCreate>(0x009DE4D2);
 NativeVoid destroy=reinterpret_cast<NativeVoid>(0x009E00AF);
-NativeVoid invalidate=reinterpret_cast<NativeVoid>(0x009E00A6);
+// CWnd::InvalidateRect queues a redraw; 0x009E00A6 only resets mouse coordinates.
+NativeInvalidate invalidateRect=reinterpret_cast<NativeInvalidate>(0x009E04C9);
 NativeDraw baseDraw=reinterpret_cast<NativeDraw>(0x009E0502);
 
 struct Bitmap {
@@ -110,7 +112,9 @@ bool Upload(void* canvas,const Bitmap& image) {
     if(!tw || !th || tw>4096 || th>4096)return false;
     for(int y=0;y<image.height;y+=th)for(int x=0;x<image.width;x+=tw) {
         void* raw=nullptr;
-        if(FAILED(Method<GetRaw>(canvas,0x34)(canvas,x/tw,y/th,&raw)) || !raw)return false;
+        // IWzCanvas::get_rawCanvas selects the tile containing a PIXEL coordinate.
+        // Passing tile indices repeatedly selects (0,0) on the GPU allocator.
+        if(FAILED(Method<GetRaw>(canvas,0x34)(canvas,x,y,&raw)) || !raw)return false;
         int format=0;Method<Size>(raw,0x0C)(raw,reinterpret_cast<unsigned*>(&format));
         unsigned rw=0,rh=0;Method<Size>(raw,0x14)(raw,&rw);Method<Size>(raw,0x18)(raw,&rh);
         unsigned copyWidth=(std::min)(tw,unsigned(image.width-x)),copyHeight=(std::min)(th,unsigned(image.height-y));
@@ -127,13 +131,14 @@ bool Upload(void* canvas,const Bitmap& image) {
                 else for(unsigned col=0;col<count;++col)reinterpret_cast<WORD*>(dst)[col]=WORD(0xF000|((src[col]>>12)&0xF00)|((src[col]>>8)&0xF0)|((src[col]>>4)&0xF));
             }
         }
-        if(SUCCEEDED(hr))Method<Unlock>(raw,0x20)(raw,nullptr);
+        if(SUCCEEDED(hr) && FAILED(Method<Unlock>(raw,0x20)(raw,nullptr)))valid=false;
         Method<Release>(raw,8)(raw);
         if(!valid)return false;
     }
     return true;
 }
-void Dirty(){if(mainWindow.shown)invalidate(mainWindow.native);if(trackerWindow.shown)invalidate(trackerWindow.native);}
+void Invalidate(Window& w){invalidateRect(w.native,nullptr);}
+void Dirty(){if(mainWindow.shown)Invalidate(mainWindow);if(trackerWindow.shown)Invalidate(trackerWindow);}
 void Enqueue(Request r) {
     for(const auto& q:queue)if(q.action==r.action && q.quest==r.quest && q.kind==r.kind && q.target==r.target && q.map==r.map && q.purpose==r.purpose)return;
     if(queue.size()<16)queue.push_back(r);
@@ -258,9 +263,9 @@ void __fastcall Key(void* input,void*,unsigned key,unsigned flags) {
 int __fastcall MouseMove(void* input,void*,int x,int y) {
     auto w=Find(input,true);if(!w)return 1;
     int hover=-1;POINT p{x,y};for(const auto& b:w->buttons)if(b.enabled && PtInRect(&b.rect,p))hover=b.id;
-    if(hover!=w->hover){w->hover=hover;invalidate(w->native);}return 1;
+    if(hover!=w->hover){w->hover=hover;Invalidate(*w);}return 1;
 }
-int __fastcall Wheel(void* input,void*,int delta,int x,int) {
+int __fastcall Wheel(void* input,void*,int x,int,int delta) {
     auto w=Find(input,true);if(!w || w->tracker)return 1;
     if(x<250)listOffset=(std::max)(0,(std::min)(int(quests.size())-10,listOffset+(delta>0?-3:3)));
     else detailOffset=(std::max)(0,(std::min)(int(Rows().size())-6,detailOffset+(delta>0?-2:2)));
@@ -334,7 +339,7 @@ void __fastcall Update(void* self,void*) {
     }
 }
 void Show(Window& w) {
-    if(w.shown){invalidate(w.native);return;}
+    if(w.shown){Invalidate(w);return;}
     if(!w.initialized) {
         ctor(w.native);memcpy(w.mainMethods.data(),reinterpret_cast<void*>(0x00B3F078),w.mainMethods.size()*4);
         memcpy(w.inputMethods.data(),reinterpret_cast<void*>(0x00B3F02C),w.inputMethods.size()*4);
@@ -347,7 +352,7 @@ void Show(Window& w) {
     }
     int x=w.tracker?(std::max)(0,Client::m_nGameWidth-233):(std::max)(0,(Client::m_nGameWidth-Width)/2);
     int y=w.tracker?90:(std::max)(0,(Client::m_nGameHeight-Height)/2);
-    w.shown=true;create(w.native,x,y,w.tracker?223:Width,w.tracker?(w.collapsed?25:170):Height,10,1,nullptr,w.tracker?0:1);invalidate(w.native);
+    w.shown=true;create(w.native,x,y,w.tracker?223:Width,w.tracker?(w.collapsed?25:170):Height,10,1,nullptr,w.tracker?0:1);Invalidate(w);
 }
 }
 bool QuestHelperUI::Install(bool value,const char* config) {
@@ -357,6 +362,7 @@ bool QuestHelperUI::Install(bool value,const char* config) {
         memcmp(reinterpret_cast<void*>(0x9DE383),"\xB8\x4A\x68\xAE\x00",5) ||
         memcmp(reinterpret_cast<void*>(0x9E00AF),"\xB8\x48\x6C\xAE\x00",5) ||
         memcmp(reinterpret_cast<void*>(0x9E0502),"\xB8\x94\x6C\xAE\x00",5) ||
+        memcmp(reinterpret_cast<void*>(0x9E04C9),"\x33\xC0\x39\x44\x24\x04",6) ||
         *reinterpret_cast<unsigned*>(0x00B3F078+11*4)!=0x009E0502 ||
         memcmp(reinterpret_cast<void*>(0x9DE4D2),"\xB8\xD8\x68\xAE\x00",5))return false;
     wchar_t path[MAX_PATH];GetModuleFileNameW(nullptr,path,MAX_PATH);labelFile=path;
