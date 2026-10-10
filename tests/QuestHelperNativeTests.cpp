@@ -7,6 +7,8 @@ int Client::m_nGameWidth=1280;
 int Client::m_nGameHeight=720;
 bool Client::SwitchChinese=true;
 namespace {
+int redraws=0;
+void __fastcall InvalidateStub(void*,void*,RECT* rect){assert(!rect);++redraws;}
 struct RawTile {
     void** methods;
     int width,height;
@@ -21,7 +23,7 @@ HRESULT __stdcall TileLock(void* p,int* pitch,VARIANT* address){auto& t=*static_
 HRESULT __stdcall TileUnlock(void*,RECT*){return S_OK;}
 HRESULT __stdcall CanvasTileWidth(void*,unsigned* value){*value=512;return S_OK;}
 HRESULT __stdcall CanvasTileHeight(void*,unsigned* value){*value=256;return S_OK;}
-HRESULT __stdcall CanvasTile(void* p,int x,int y,void** out){auto& c=*static_cast<TiledCanvas*>(p);if(x<0 || x>1 || y<0 || y>1)return E_INVALIDARG;*out=&c.tiles[y*2+x];return S_OK;}
+HRESULT __stdcall CanvasTile(void* p,int x,int y,void** out){auto& c=*static_cast<TiledCanvas*>(p);if(x<0 || x>=600 || y<0 || y>=450)return E_INVALIDARG;*out=&c.tiles[(y/256)*2+x/512];return S_OK;}
 void TestNarrowTiles(const Bitmap& source){
     void* rawMethods[9]{};rawMethods[2]=reinterpret_cast<void*>(TileRelease);rawMethods[3]=reinterpret_cast<void*>(TileFormat);
     rawMethods[5]=reinterpret_cast<void*>(TileWidth);rawMethods[6]=reinterpret_cast<void*>(TileHeight);
@@ -63,6 +65,16 @@ int main(int argc,char** argv) {
     assert(mainWindow.buttons.size()>=7 && trackerWindow.buttons.size()==3);
     trackerWindow.collapsed=true;Paint(trackerWindow);assert(trackerWindow.image->height==25 && trackerWindow.buttons.size()==2);
     trackerWindow.collapsed=false;Paint(trackerWindow);assert(trackerWindow.image->height==170);
+    const auto originalInvalidate=invalidateRect;
+    invalidateRect=reinterpret_cast<NativeInvalidate>(InvalidateStub);
+    mainWindow.shown=trackerWindow.shown=true;Dirty();assert(redraws==2);
+    mainWindow.shown=trackerWindow.shown=false;
+    quests.resize(25);listOffset=5;Wheel(mainWindow.native+4,nullptr,40,80,-120);assert(listOffset==8);
+    Wheel(mainWindow.native+4,nullptr,40,80,120);assert(listOffset==5);
+    detailRows.resize(20);detailOffset=5;Wheel(mainWindow.native+4,nullptr,300,80,-120);assert(detailOffset==7);
+    Wheel(mainWindow.native+4,nullptr,300,80,120);assert(detailOffset==5);
+    invalidateRect=originalInvalidate;
+    puts("PASS native redraw queue and wheel ABI: both windows repaint and each pane scrolls in the correct direction");
     view=3;detailPage=2;queue.clear();SelectQuest(1001,title);
     assert(view==1 && detailPage==0 && selectedRow==-1 && queue.front().quest==1001);
     // Exercise the actual UI dispatch state without opening a game session.
