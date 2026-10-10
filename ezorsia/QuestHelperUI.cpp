@@ -112,15 +112,17 @@ bool Upload(void* canvas,const Bitmap& image) {
         void* raw=nullptr;
         if(FAILED(Method<GetRaw>(canvas,0x34)(canvas,x/tw,y/th,&raw)) || !raw)return false;
         int format=0;Method<Size>(raw,0x0C)(raw,reinterpret_cast<unsigned*>(&format));
+        unsigned rw=0,rh=0;Method<Size>(raw,0x14)(raw,&rw);Method<Size>(raw,0x18)(raw,&rh);
+        unsigned copyWidth=(std::min)(tw,unsigned(image.width-x)),copyHeight=(std::min)(th,unsigned(image.height-y));
         int pitch=0;VARIANT address{};
         HRESULT hr=Method<Lock>(raw,0x1C)(raw,&pitch,&address);
         void* destination=address.vt==VT_I4?reinterpret_cast<void*>(address.lVal):(address.vt&VT_BYREF)?address.byref:nullptr;
-        bool valid=SUCCEEDED(hr) && destination && (format==1 || format==2) && pitch>=int(tw*(format==2?4:2));
+        bool valid=SUCCEEDED(hr) && destination && (format==1 || format==2) && rw>=copyWidth && rh>=copyHeight && pitch>=int(copyWidth*(format==2?4:2));
         if(valid) {
-            for(unsigned row=0;row<(std::min)(th,unsigned(image.height-y));++row) {
+            for(unsigned row=0;row<copyHeight;++row) {
                 const DWORD* src=image.pixels+(y+row)*image.width+x;
                 auto dst=static_cast<unsigned char*>(destination)+row*pitch;
-                unsigned count=(std::min)(tw,unsigned(image.width-x));
+                unsigned count=copyWidth;
                 if(format==2)memcpy(dst,src,count*4);
                 else for(unsigned col=0;col<count;++col)reinterpret_cast<WORD*>(dst)[col]=WORD(0xF000|((src[col]>>12)&0xF00)|((src[col]>>8)&0xF0)|((src[col]>>4)&0xF));
             }
