@@ -1,7 +1,8 @@
 param(
  [string]$Client='C:\Game\BeiDou-Client-research',
  [string]$ToolchainRoot='C:\Game\BeiDou-Server\tools\msvc',
- [string]$MapleLibDirectory='C:\Game\BeiDou-Server\tools\WzBridge\bin\Release\net10.0-windows'
+ [string]$MapleLibDirectory='C:\Game\BeiDou-Server\tools\WzBridge\bin\Release\net10.0-windows',
+ [string]$WzInclude='C:\Game\BeiDou-Server\tools\kaentake-src\external\WzLib\include'
 )
 $ErrorActionPreference='Stop'
 # Verify the actual executable before compiling the native ABI fixture.
@@ -22,6 +23,8 @@ foreach($entry in @(@(0x9de383,'B84A68AE00'),@(0x9de4d2,'B8D868AE00'),@(0x9e00af
 }
 if([BitConverter]::ToUInt32([byte[]](Read-ExecutableBytes (0xb3f078+11*4) 4),0) -ne 0x9e0502){throw 'Incorrect native Draw virtual slot'}
 if([Convert]::ToHexString([byte[]](Read-ExecutableBytes 0x9e067b 3)) -ne 'C20400'){throw 'Incorrect native Draw parameter count'}
+if([Convert]::ToHexString([byte[]](Read-ExecutableBytes 0x9e04c9 6)) -ne '33C039442404'){throw 'Incorrect native InvalidateRect address'}
+if([Convert]::ToHexString([byte[]](Read-ExecutableBytes 0x9e04ff 3)) -ne 'C20400'){throw 'Incorrect native InvalidateRect parameter count'}
 if([Convert]::ToHexString([byte[]](Read-ExecutableBytes 0x424717 4)) -ne '0FB7710C'){throw 'Incorrect native packet length field'}
 if([Convert]::ToHexString([byte[]](Read-ExecutableBytes 0x424710 3)) -ne '8B5114'){throw 'Incorrect native packet offset field'}
 Write-Output 'PASS actual v83 executable: constructor/create/destroy/draw signatures, Draw slot 11 and one-argument ABI'
@@ -60,4 +63,9 @@ try {
  if($LASTEXITCODE -ne 0){throw 'Native fixture build failed'}
  & "$out\QuestHelperNativeTests.exe" $Client $out "$repo\resources\QuestHelperUI.ini"
  if($LASTEXITCODE -ne 0){throw "Native UI tests failed: $LASTEXITCODE"}
+ & "$vc\bin\Hostx64\x86\cl.exe" @common /DNOMINMAX /DWORLD_VIEWPORT_TESTING /D_CRT_SECURE_NO_WARNINGS /I"$repo\third_party\d3d8to9\source" /I"$WzInclude" "$repo\tests\QuestHelperGraphicsTests.cpp" "$repo\ezorsia\WorldViewport.cpp" "$repo\ezorsia\UpscaleLoader.cpp" /Fo"$out\" /link /MACHINE:X86 "$repo\detours\detours.lib" user32.lib gdi32.lib oleaut32.lib ole32.lib comsuppw.lib /OUT:"$out\QuestHelperGraphicsTests.exe"
+ if($LASTEXITCODE -ne 0){throw 'Graphics fixture build failed'}
+ Copy-Item -LiteralPath (Join-Path $Client 'BeiDouUpscale.dll') -Destination (Join-Path $out 'BeiDouUpscale.dll') -Force
+ & "$out\QuestHelperGraphicsTests.exe" $Client $out
+ if($LASTEXITCODE -ne 0){throw "Graphics tests failed: $LASTEXITCODE"}
 }finally{$env:PATH,$env:INCLUDE,$env:LIB=$savedPath,$savedInclude,$savedLib}
