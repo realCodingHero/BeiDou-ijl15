@@ -12,6 +12,7 @@ namespace {
 using QuestProtocol::Row;
 using QuestProtocol::Snapshot;
 constexpr int Width=600,Height=450;
+constexpr int ListRowsPerPage=10,ServerPageSize=50;
 constexpr GUID CanvasGuid={0x7600dc6c,0x9328,0x4bff,{0x96,0x24,0x5b,0x0f,0x5c,0x01,0x17,0x9e}};
 template<class T> T Method(void* p,unsigned offset){return reinterpret_cast<T>((*static_cast<void***>(p))[offset/4]);}
 using Release=ULONG(__stdcall*)(void*);
@@ -131,7 +132,9 @@ bool Upload(void* canvas,const Bitmap& image) {
                 else for(unsigned col=0;col<count;++col)reinterpret_cast<WORD*>(dst)[col]=WORD(0xF000|((src[col]>>12)&0xF00)|((src[col]>>8)&0xF0)|((src[col]>>4)&0xF));
             }
         }
-        if(SUCCEEDED(hr) && FAILED(Method<Unlock>(raw,0x20)(raw,nullptr)))valid=false;
+        // A null rectangle unlocks without notifying an already cached GPU texture.
+        RECT changed{0,0,LONG(copyWidth),LONG(copyHeight)};
+        if(SUCCEEDED(hr) && FAILED(Method<Unlock>(raw,0x20)(raw,valid?&changed:nullptr)))valid=false;
         Method<Release>(raw,8)(raw);
         if(!valid)return false;
     }
@@ -176,6 +179,7 @@ void Paint(Window& w) {
         Blit(dc,{0,0,223,25},L"UI/UIWindow.img/QuestAlarm/backgrndmax");
         for(int y=25;y<165;y+=18)Blit(dc,{0,y,223,(std::min)(165,y+18)},L"UI/UIWindow.img/QuestAlarm/backgrndcenter");
         Blit(dc,{0,165,223,170},L"UI/UIWindow.img/QuestAlarm/backgrndbottom");
+        Fill(dc,{5,2,144,23},RGB(250,251,253));
         Write(dc,{8,2,140,23},Text(L"tracker"),RGB(35,53,78),true);
         ButtonAt(w,dc,102,{146,3,177,23},w.collapsed?L"+":L"-");
         ButtonAt(w,dc,100,{180,3,218,23},L"close");
@@ -191,20 +195,25 @@ void Paint(Window& w) {
         Blit(dc,{0,0,250,Height},L"UI/UIWindow.img/Quest/backgrnd");
         Blit(dc,{250,0,Width,Height},L"UI/UIWindow.img/Quest/backgrnd2");
         Fill(dc,{252,21,598,Height-3},RGB(253,253,253));
+        // Quest/backgrnd includes a baked-in native caption. Keep its frame only.
+        Fill(dc,{7,2,247,21},RGB(253,253,253));
         Write(dc,{9,1,250,21},Text(L"title"),RGB(25,48,72),true);
         Write(dc,{264,1,531,22},title,RGB(25,48,72),true);
         ButtonAt(w,dc,1,{535,2,594,21},L"close");
         ButtonAt(w,dc,2,{9,30,124,55},L"progress");ButtonAt(w,dc,3,{127,30,240,55},L"ready");
         if(quests.empty())Write(dc,{13,75,235,110},Text(L"empty"));
-        for(int i=listOffset;i<int(quests.size()) && i<listOffset+10;++i) {
+        for(int i=listOffset;i<int(quests.size()) && i<listOffset+ListRowsPerPage;++i) {
             const auto& q=quests[i];int y=61+(i-listOffset)*32;
             Fill(dc,{9,y,239,y+31},q.id==selectedQuest?RGB(215,232,249):RGB(248,249,251));
             std::wstring status=q.flags&1?Text(L"finished"):q.flags&4?Text(L"medal"):L"Lv."+std::to_wstring(q.current);
             Write(dc,{14,y,234,y+19},q.label,RGB(35,68,103),q.id==selectedQuest);
             Write(dc,{14,y+18,234,y+31},status,q.flags&1?RGB(28,133,75):RGB(115,121,127));
         }
-        Write(dc,{13,386,237,404},std::to_wstring(listPage*50+listOffset+1)+L" / "+std::to_wstring(questTotal),RGB(113,117,123));
-        ButtonAt(w,dc,4,{9,412,82,439},L"prev",listPage>0);ButtonAt(w,dc,5,{87,412,160,439},L"next",(listPage+1)*50<questTotal);
+        int visiblePage=(listPage*ServerPageSize+listOffset)/ListRowsPerPage;
+        int pages=(std::max)(1,(questTotal+ListRowsPerPage-1)/ListRowsPerPage);
+        Write(dc,{13,386,237,404},std::to_wstring(visiblePage+1)+L" / "+std::to_wstring(pages),RGB(113,117,123));
+        ButtonAt(w,dc,4,{9,412,82,439},L"prev",listPage>0 || listOffset>0);
+        ButtonAt(w,dc,5,{87,412,160,439},L"next",(visiblePage+1)*ListRowsPerPage<questTotal);
         ButtonAt(w,dc,6,{165,412,239,439},L"refresh");
         if(quote.token) {
             Write(dc,{265,43,587,82},Text(L"quote"),RGB(85,94,109),false,DT_WORDBREAK);
@@ -255,6 +264,15 @@ void __fastcall Draw(void* self,void*,RECT* rect) {
         Upload(canvas,*w->image);Method<Release>(canvas,8)(canvas);
     }
 }
+int __fastcall HitTest(void* self,void*,int x,int y,void** control) {
+    if(control)*control=nullptr;
+    auto w=Find(self);if(!w)return 0;
+    int width=w->tracker?223:Width,height=w->tracker?(w->collapsed?25:170):Height;
+    if(x<0 || y<0 || x>=width || y>=height)return 0;
+    // CWndMan handles dragging when HitTest returns 1. Painted buttons stay client hits.
+    POINT p{x,y};for(const auto& b:w->buttons)if(PtInRect(&b.rect,p))return 2;
+    return y<25?1:2;
+}
 void __fastcall Key(void* input,void*,unsigned key,unsigned flags) {
     auto w=Find(input,true);if(!w || flags&0x80000000)return;
     if(key==VK_ESCAPE){if(quote.token){quote={};Detail();Dirty();}else Hide(*w);}
@@ -267,20 +285,29 @@ int __fastcall MouseMove(void* input,void*,int x,int y) {
 }
 int __fastcall Wheel(void* input,void*,int x,int,int delta) {
     auto w=Find(input,true);if(!w || w->tracker)return 1;
-    if(x<250)listOffset=(std::max)(0,(std::min)(int(quests.size())-10,listOffset+(delta>0?-3:3)));
-    else detailOffset=(std::max)(0,(std::min)(int(Rows().size())-6,detailOffset+(delta>0?-2:2)));
+    // CWndMan passes wheel steps after dividing the Win32 delta by -120.
+    if(x<250)listOffset=(std::max)(0,(std::min)(int(quests.size())-ListRowsPerPage,listOffset+(delta>0?3:-3)));
+    else detailOffset=(std::max)(0,(std::min)(int(Rows().size())-6,detailOffset+(delta>0?2:-2)));
     Dirty();return 1;
 }
 void Click(Window& w,int id) {
     if(w.tracker){if(id==100){trackedQuest=0;Hide(w);}else if(id==101){SelectQuest(trackedQuest,trackTitle);QuestHelperUI::Open();}else if(id==102){w.collapsed=!w.collapsed;Hide(w);Show(w);}return;}
     auto& rows=Rows();bool chosen=selectedRow>=0 && selectedRow<int(rows.size());
     if(id==1){quote={};Hide(w);return;}
-    if(id==2 || id==3){category=id==3?1:0;listPage=listOffset=0;List();return;}
-    if(id==4 || id==5){listPage+=(id==4?-1:1);listOffset=0;List();return;}
+    if(id==2 || id==3){category=id==3?1:0;listPage=listOffset=0;selectedQuest=0;selectedRow=-1;view=1;
+        quests.clear();detailRows.clear();questTotal=0;title.clear();message.clear();quote={};List();Dirty();return;}
+    if(id==4 || id==5){
+        int page=(listPage*ServerPageSize+listOffset)/ListRowsPerPage+(id==4?-1:1);
+        if(page<0 || page*ListRowsPerPage>=questTotal)return;
+        int batch=page*ListRowsPerPage/ServerPageSize,offset=page*ListRowsPerPage%ServerPageSize;
+        if(batch!=listPage){listPage=batch;listOffset=offset;quests.clear();List();}
+        else listOffset=offset;
+        Dirty();return;
+    }
     if(id==6){List();Detail();return;}
     if(id==7){view=1;selectedRow=-1;detailOffset=0;Detail();return;}
     if(id==8){trackedQuest=selectedQuest;trackTitle=title;trackRows=detailRows;Show(trackerWindow);Dirty();return;}
-    if(id==9){Enqueue({4,selectedQuest,7,0,0,4});return;}
+    if(id==9){message=Text(L"loading");Enqueue({4,selectedQuest,7,0,0,4});Dirty();return;}
     if(id==12){if(view==2)Enqueue({2,selectedQuest,sourceKind,sourceTarget,sourcePage,2});else if(view==3)Route();else Detail();return;}
     if(id==13 || id==14) {
         auto& page=view==2?sourcePage:view==3?routePage:detailPage;page+=(id==13?-1:1);detailOffset=0;selectedRow=-1;
@@ -315,6 +342,15 @@ bool InField() {
     using Kind=int(__thiscall*)(void*,const void*);
     return Method<Kind>(input,0x48)(input,reinterpret_cast<void*>(0x00BED758))!=0;
 }
+void ExpirePending(DWORD now) {
+    bool timedOut=false;
+    for(auto it=pending.begin();it!=pending.end();)if(now-it->second.sent>10000){
+        const auto& r=it->second.request;
+        if(r.purpose!=7 && r.quest==selectedQuest && message==Text(L"loading"))timedOut=true;
+        it=pending.erase(it);
+    }else++it;
+    if(timedOut){message=Text(L"timeout");Dirty();}
+}
 void __fastcall Update(void* self,void*) {
     auto w=Find(self);if(!w)return;
     reinterpret_cast<NativeVoid>(0x009E067E)(self);
@@ -326,8 +362,8 @@ void __fastcall Update(void* self,void*) {
         if(trackedQuest)Enqueue({1,trackedQuest,0,0,0,7});
     }
     if(mainWindow.shown && !quote.token && now-lastListRefresh>=10000){lastListRefresh=now;List();}
-    if(quote.token && now-quoteTime>=30000){quote={};message=Text(L"quote");Dirty();}
-    for(auto it=pending.begin();it!=pending.end();)if(now-it->second.sent>10000)it=pending.erase(it);else++it;
+    if(quote.token && now-quoteTime>=30000){quote={};message=Text(L"quoteExpired");Dirty();}
+    ExpirePending(now);
     if(!queue.empty() && now-lastSend>=150) {
         void* socket=*reinterpret_cast<void**>(0x00BE7914);if(!socket)return;
         Request r=queue.front();queue.pop_front();int seq=++sequence;
@@ -343,7 +379,7 @@ void Show(Window& w) {
     if(!w.initialized) {
         ctor(w.native);memcpy(w.mainMethods.data(),reinterpret_cast<void*>(0x00B3F078),w.mainMethods.size()*4);
         memcpy(w.inputMethods.data(),reinterpret_cast<void*>(0x00B3F02C),w.inputMethods.size()*4);
-        w.mainMethods[0]=reinterpret_cast<void*>(Update);w.mainMethods[11]=reinterpret_cast<void*>(Draw);
+        w.mainMethods[0]=reinterpret_cast<void*>(Update);w.mainMethods[9]=reinterpret_cast<void*>(HitTest);w.mainMethods[11]=reinterpret_cast<void*>(Draw);
         w.inputMethods[0]=reinterpret_cast<void*>(Key);w.inputMethods[2]=reinterpret_cast<void*>(MouseButton);
         w.inputMethods[3]=reinterpret_cast<void*>(MouseMove);w.inputMethods[4]=reinterpret_cast<void*>(Wheel);
         *reinterpret_cast<void***>(w.native)=w.mainMethods.data();*reinterpret_cast<void***>(w.native+4)=w.inputMethods.data();w.initialized=true;
@@ -383,10 +419,14 @@ bool QuestHelperUI::Receive(const unsigned char* data,size_t size) {
     if(character && character!=s.character) {queue.clear();pending.clear();quests.clear();detailRows.clear();trackRows.clear();trackedQuest=selectedQuest=0;quote={};Hide(trackerWindow);}
     character=s.character;meso=s.meso;
     if(s.view==6){if(r.quest && r.quest!=(r.purpose==7?trackedQuest:selectedQuest))return true;message=s.title;quote={};if(r.purpose==7){trackedQuest=0;Hide(trackerWindow);}else if(r.purpose==1){selectedQuest=0;detailRows.clear();List();}Dirty();return true;}
-    if(r.purpose==0 && s.view==0 && r.target==category && r.map==listPage){quests=std::move(s.rows);questTotal=s.total;}
+    if(r.purpose==0 && s.view==0 && r.target==category && r.map==listPage){
+        questTotal=s.total;
+        if(listPage>0 && listPage*ServerPageSize>=questTotal){listPage=(std::max)(0,(questTotal-1)/ServerPageSize);listOffset=0;List();}
+        else{quests=std::move(s.rows);listOffset=(std::min)(listOffset,(std::max)(0,(int(quests.size())-1)/ListRowsPerPage*ListRowsPerPage));}
+    }
     else if(r.purpose==7 && s.view==1 && s.quest==trackedQuest){trackRows=std::move(s.rows);trackTitle=s.title;}
     else if(s.quest==selectedQuest) {
-        if(s.view==1 && view==1 && r.map==detailPage && !quote.token){detailRows=std::move(s.rows);detailTotal=s.total;title=s.title;message.clear();}
+        if(s.view==1 && view==1 && r.map==detailPage && !quote.token){detailRows=std::move(s.rows);detailTotal=s.total;title=s.title;if(message==Text(L"loading") || message==Text(L"timeout"))message.clear();}
         else if(s.view==2 && r.kind==sourceKind && r.target==sourceTarget && r.map==sourcePage){sourceRows=std::move(s.rows);sourceTotal=s.total;view=2;detailOffset=0;selectedRow=-1;message.clear();}
         else if(s.view==3 && r.map==routeMap && r.token==routePage){routeRows=std::move(s.rows);routeTotal=s.total;view=3;detailOffset=0;selectedRow=-1;message=s.message;}
         else if(s.view==4){quote=std::move(s);quotedRequest=r;quoteTime=GetTickCount();}
