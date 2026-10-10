@@ -168,6 +168,12 @@
     <ClInclude Include="HelpMenu.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="QuestHelperUI.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="QuestHelperProtocol.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="HpMpAlert.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -225,6 +231,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="HelpMenu.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="QuestHelperUI.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="HpMpAlert.cpp">
