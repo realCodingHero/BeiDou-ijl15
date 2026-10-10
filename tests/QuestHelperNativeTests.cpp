@@ -52,6 +52,8 @@ void Save(const Bitmap& b,const std::filesystem::path& path) {
     BITMAPINFOHEADER h{};h.biSize=sizeof(h);h.biWidth=b.width;h.biHeight=-b.height;h.biPlanes=1;h.biBitCount=32;
     std::ofstream out(path,std::ios::binary);out.write(reinterpret_cast<char*>(&f),sizeof(f));out.write(reinterpret_cast<char*>(&h),sizeof(h));out.write(reinterpret_cast<char*>(b.pixels),b.width*b.height*4);
 }
+std::wstring Utf8(const std::string& bytes){if(bytes.empty())return L"";int size=MultiByteToWideChar(CP_UTF8,0,bytes.data(),int(bytes.size()),nullptr,0);std::wstring value(size,L'\0');MultiByteToWideChar(CP_UTF8,0,bytes.data(),int(bytes.size()),value.data(),size);return value;}
+std::wstring ReadText(const std::filesystem::path& path){std::ifstream file(path,std::ios::binary);assert(file.is_open());return Utf8(std::string((std::istreambuf_iterator<char>(file)),{}));}
 }
 int main(int argc,char** argv) {
     setvbuf(stdout,nullptr,_IONBF,0);
@@ -60,8 +62,10 @@ int main(int argc,char** argv) {
     completionFeatures=3;
     font=CreateFontW(-12,0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,NONANTIALIASED_QUALITY,0,L"SimSun");
     boldFont=CreateFontW(-12,0,0,0,FW_BOLD,0,0,0,DEFAULT_CHARSET,0,0,NONANTIALIASED_QUALITY,0,L"SimSun");
-    const wchar_t* paths[]={L"UI/UIWindow.img/Quest/backgrnd",L"UI/UIWindow.img/Quest/backgrnd2",L"UI/UIWindow.img/QuestAlarm/backgrndmax",L"UI/UIWindow.img/QuestAlarm/backgrndcenter",L"UI/UIWindow.img/QuestAlarm/backgrndbottom",L"UI/Basic.img/BtOK/normal/0",L"UI/Basic.img/BtOK/mouseOver/0",L"UI/Basic.img/BtOK/disabled/0",L"UI/UIWindow.img/Quest/BtDetail/normal/0",L"UI/UIWindow.img/Quest/BtDetail/mouseOver/0",L"UI/UIWindow.img/Quest/BtDetail/pressed/0",L"UI/UIWindow.img/Quest/BtDetail/disabled/0",L"UI/Basic.img/BtClose/normal/0",L"UI/Basic.img/BtClose/mouseOver/0",L"UI/Basic.img/BtClose/pressed/0",L"UI/Basic.img/BtClose/disabled/0"};
-    for(int i=0;i<int(std::size(paths));++i) {
+    std::ifstream pathFile(directory/"skin-paths.txt");std::vector<std::wstring> paths;std::string pathLine;
+    while(std::getline(pathFile,pathLine)){if(!pathLine.empty() && pathLine.back()=='\r')pathLine.pop_back();std::wstring path(pathLine.begin(),pathLine.end());paths.push_back(L"UI/"+path);}
+    assert(paths.size()==32);
+    for(int i=0;i<int(paths.size());++i) {
         auto file=directory/(std::to_string(i)+".bmp");HBITMAP bitmap=static_cast<HBITMAP>(LoadImageW(nullptr,file.c_str(),IMAGE_BITMAP,0,0,LR_LOADFROMFILE|LR_CREATEDIBSECTION));assert(bitmap);
         BITMAP info{};GetObject(bitmap,sizeof(info),&info);auto b=std::make_unique<Bitmap>(info.bmWidth,info.bmHeight);
         HDC src=CreateCompatibleDC(nullptr);auto old=SelectObject(src,bitmap);BitBlt(b->dc,0,0,b->width,b->height,src,0,0,SRCCOPY);SelectObject(src,old);DeleteDC(src);DeleteObject(bitmap);GdiFlush();
@@ -75,13 +79,25 @@ int main(int argc,char** argv) {
     mainWindow.initialized=confirmWindow.initialized=true;confirmWindow.modal=true;enabled=true;
     auto hasButton=[](Window& w,int id){for(const auto& b:w.buttons)if(b.id==id)return true;return false;};
     auto buttonEnabled=[](Window& w,int id){for(const auto& b:w.buttons)if(b.id==id)return b.enabled;return false;};
-    auto caption=[](Window& w,int id){for(const auto& b:w.buttons)if(b.id==id)return b.text;return std::wstring();};
+    auto caption=[](Window& w,int id){for(const auto& b:w.buttons)if(b.id==id)return b.text;for(const auto& tab:w.tabs)if(tab.id==id)return tab.text;return std::wstring();};
     // Use the real installed WZ description and transparent NPC frame.
     std::ifstream descriptionFile(directory/"quest-description.txt",std::ios::binary);
     std::string descriptionBytes((std::istreambuf_iterator<char>(descriptionFile)),{});
     int count=MultiByteToWideChar(CP_UTF8,0,descriptionBytes.data(),int(descriptionBytes.size()),nullptr,0);
     std::wstring originalDescription(count,L'\0');MultiByteToWideChar(CP_UTF8,0,descriptionBytes.data(),int(descriptionBytes.size()),originalDescription.data(),count);
     resourceText[L"Quest/QuestInfo.img/2000/1"]=originalDescription;
+    std::ifstream tokenFile(directory/"token-resources.tsv");std::string tokenLine;
+    while(std::getline(tokenFile,tokenLine)){if(!tokenLine.empty() && tokenLine.back()=='\r')tokenLine.pop_back();auto tab=tokenLine.find('\t');assert(tab!=std::string::npos);resourceText[Utf8(tokenLine.substr(0,tab))]=Utf8(tokenLine.substr(tab+1));}
+    for(int id:{8048,2089,28269})resourceText[L"Quest/QuestInfo.img/"+std::to_wstring(id)+L"/1"]=ReadText(directory/("quest-"+std::to_string(id)+".txt"));
+    selectedQuest=8048;int originalCounterMob=_wtoi(resourceText[L"Quest/Check.img/8048/1/mob/0/id"].c_str());assert(originalCounterMob>0);
+    detailRows={{originalCounterMob,1,0,53,100,0,L"绿蘑菇",L""}};auto cleaned=Description(8048);
+    assert(cleaned.find(L"53/100")!=std::wstring::npos && cleaned.find(L"80481")==std::wstring::npos && cleaned.find(L"#")==std::wstring::npos);
+    selectedQuest=28269;cleaned=Description(28269);assert(cleaned.find(resourceText[L"String/Npc.img/1012109/name"])!=std::wstring::npos && cleaned.find(L"#@") ==std::wstring::npos && cleaned.find(L"1012109")==std::wstring::npos);
+    selectedQuest=2089;detailRows={{4000003,2,0,12,30,0,L"树枝",L""},{4000004,2,0,7,30,0,L"绿液球",L""},{4000010,2,0,1,10,0,L"绿水灵珠",L""}};cleaned=Description(2089);
+    assert(cleaned.find(L"12/30")!=std::wstring::npos && cleaned.find(L"7/30")!=std::wstring::npos && cleaned.find(L"1/10")!=std::wstring::npos);
+    for(int id:{4000003,4000004,4000010}){assert(cleaned.find(resourceText[L"String/Etc.img/Etc/"+std::to_wstring(id)+L"/name"])!=std::wstring::npos);assert(cleaned.find(std::to_wstring(id))==std::wstring::npos);}
+    assert(cleaned.find(L"#")==std::wstring::npos);selectedQuest=0;detailRows.clear();
+    puts("PASS actual quest markup: 8048 kill counter, 28269 NPC reference, 2089 nested item names and colored progress numbers");
     resourceText[L"String/Etc.img/4000018/name"]=L"木块";resourceText[L"String/Etc.img/4000003/name"]=L"树枝";
     resourceText[L"Etc/QuestCategory.img/30"]=L"金银岛";resourceText[L"Etc/QuestCategory.img/20"]=L"彩虹岛";
     resourceText[L"Quest/QuestInfo.img/2000/area"]=L"30";resourceText[L"Quest/QuestInfo.img/2001/area"]=L"20";
@@ -93,9 +109,12 @@ int main(int argc,char** argv) {
     quests={{2000,0,0,20,0,0,L"酋长的家修理",L""},{2001,0,1,15,0,0,L"准备出发",L""},{29001,0,4,30,0,0,L"金银岛探险家",L""}};
     questTotal=3;progressCount=2;readyCount=1;mainWindow.shown=true;Paint(mainWindow);
     assert(mainWindow.image->width==250 && caption(mainWindow,2)==L"进行中 2" && caption(mainWindow,3)==L"可交付 1");
+    assert(mainWindow.tabs.size()==2 && !hasButton(mainWindow,2) && !hasButton(mainWindow,3));
+    assert(mainWindow.scrollbars.size()==1 && mainWindow.scrollbars.front().maximum==0);
+    assert(caption(mainWindow,16)==L"-");
     auto entries=ListEntries();assert(entries.size()==5 && entries.back().group==100000 && entries.back().index==-1);
     assert(hasButton(mainWindow,16) && !hasButton(mainWindow,17));
-    Click(mainWindow,16);assert(ListEntries().size()==3);Click(mainWindow,16);assert(ListEntries().size()==6);
+    Click(mainWindow,16);assert(ListEntries().size()==3);Paint(mainWindow);assert(caption(mainWindow,16)==L"+");Click(mainWindow,16);assert(ListEntries().size()==6);
     Click(mainWindow,16);SelectQuest(2000,L"酋长的家修理");assert(!mainWindow.collapsed && mainWindow.x==110 && mainWindow.y==90);
     assert(mainWindow.animating && mainWindow.drawer==0);AdvanceDrawer(mainWindow.drawerStart+100);Paint(mainWindow);
     assert(mainWindow.drawer==175 && mainWindow.image->width==600);
@@ -105,9 +124,17 @@ int main(int argc,char** argv) {
     detailRows={{4000018,2,2,12,50,1800,L"木块",L"缺少 38 个"},{4000003,2,2,26,30,200,L"树枝",L"缺少 4 个"},{1032001,6,0,0,0,0,L"汉斯",L"交付 NPC"}};
     questNpc=1032001;questDescription=Description(2000);selectedRow=0;detailTotal=3;Paint(mainWindow);
     assert(questDescription.find(L"木块")!=std::wstring::npos && questDescription.find(L"12/50")!=std::wstring::npos && questDescription.find(L"#")==std::wstring::npos);
+    assert(ObjectiveCaption(detailRows.front()).find(L"(4000018)")!=std::wstring::npos);
     assert(!hasButton(mainWindow,8) && hasButton(mainWindow,9) && mainWindow.rowHits.size()==2);
     assert(descriptionScrollMax>0);Wheel(mainWindow.native+4,nullptr,300,150,1);assert(descriptionScroll>0);
     Save(*mainWindow.image,directory/"quest-main.bmp");
+    message.clear();selectedRow=2;Paint(mainWindow);assert(mainWindow.rowHits.size()==3);
+    assert(textScrollMax==0);Save(*mainWindow.image,directory/"quest-details-expanded.bmp");
+    detailRows.push_back({1110100,1,0,53,100,0,L"绿蘑菇",L"等级 15，账号累计击杀 23"});Paint(mainWindow);
+    bool descriptionBar=false,conditionBar=false;for(const auto& bar:mainWindow.scrollbars){assert(bar.track.right-bar.track.left==12);if(bar.value==&descriptionScroll){descriptionBar=true;assert(bar.track.left==579);}if(bar.value==&detailOffset){conditionBar=true;assert(bar.track.left==579);}}
+    assert(descriptionBar && conditionBar && ObjectiveCaption(detailRows.back()).find(L"(1110100)")!=std::wstring::npos);
+    assert(GetPixel(mainWindow.image->dc,320,370)==RGB(253,253,253)); // No duplicate NPC text below the conditions.
+    Save(*mainWindow.image,directory/"quest-scrollbar-alignment.bmp");detailRows.pop_back();message=Text(L"loading");
     SetExpanded(false);AdvanceDrawer(mainWindow.drawerStart+100);assert(mainWindow.drawer==175);
     SetExpanded(true);assert(mainWindow.animating);AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);assert(mainWindow.drawer==350);
     SetExpanded(false);AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Paint(mainWindow);assert(mainWindow.image->width==250 && selectedQuest==2000);
@@ -125,6 +152,7 @@ int main(int argc,char** argv) {
     quests.resize(50);for(int i=0;i<50;++i){quests[i]={2000+i,0,0,10,0,0,L"任务 "+std::to_wstring(i),L""};resourceText[L"Quest/QuestInfo.img/"+std::to_wstring(2000+i)+L"/area"]=L"30";}
     questTotal=61;listOffset=listPage=0;Paint(mainWindow);assert(!mainWindow.scrollbars.empty());
     auto bar=mainWindow.scrollbars.front();assert(bar.value==&listOffset && bar.maximum==1302);
+    queue.clear();Click(mainWindow,101);assert(listOffset==20);Click(mainWindow,100);assert(listOffset==0 && queue.empty());
     MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONDOWN,0,235,bar.thumb.top+3);
     MouseMove(mainWindow.native+4,nullptr,235,350);assert(listOffset>0);
     Paint(mainWindow);MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONUP,0,235,350);assert(mainWindow.dragScroll==-1);
@@ -168,6 +196,7 @@ int main(int argc,char** argv) {
     auto receive=[&](Snapshot snapshot,Request request){pending.emplace(snapshot.sequence,Pending{request,GetTickCount()});auto b=wire(snapshot);assert(QuestHelperUI::Receive(b.data(),b.size()));};
     Snapshot quoted;quoted.sequence=10;quoted.quest=selectedQuest;quoted.view=4;quoted.token=123;quoted.price=800;quoted.features=3;quoted.message=L"确认支付金币并传送至选定目的地？";
     receive(quoted,queue.front());assert(confirmWindow.shown && quote.token==123 && view==3);Paint(mainWindow);Paint(confirmWindow);
+    assert(GetPixel(confirmWindow.image->dc,1,120)!=RGB(253,253,253) && GetPixel(confirmWindow.image->dc,348,120)!=RGB(253,253,253));
     Save(*confirmWindow.image,directory/"quest-confirm.bmp");
     queue.clear();int originalQuest=selectedQuest,originalOffset=listOffset;
     Click(mainWindow,2);Click(mainWindow,7);Wheel(mainWindow.native+4,nullptr,40,100,1);Key(mainWindow.native+4,nullptr,VK_ESCAPE,0);
@@ -209,7 +238,7 @@ int main(int argc,char** argv) {
     Snapshot readyList=remembered;readyList.sequence=21;readyList.total=1;readyList.rows={{2001,0,1,15,0,0,L"可交付的任务",L""}};
     receive(readyList,{0,0,0,1,0,0});assert(selectedQuest==0);SelectQuest(2001,L"可交付的任务");AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);
     Click(mainWindow,2);remembered.sequence=22;receive(remembered,{0,0,0,0,1,0});assert(selectedQuest==2055 && listPage==1);
-    AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Click(mainWindow,3);readyList.sequence=23;receive(readyList,{0,0,0,1,0,0});assert(selectedQuest==2001 && !mainWindow.collapsed);
+    AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Paint(mainWindow);mouse(mainWindow.native+4,WM_LBUTTONUP,0,170,36);readyList.sequence=23;receive(readyList,{0,0,0,1,0,0});assert(selectedQuest==2001 && !mainWindow.collapsed);
     AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Key(mainWindow.native+4,nullptr,VK_ESCAPE,0);OpenMain();readyList.sequence=24;
     receive(readyList,{0,0,0,1,0,0});assert(selectedQuest==2001 && !mainWindow.collapsed);
     AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Click(mainWindow,1);OpenMain();readyList.sequence=25;readyList.rows.clear();readyList.total=0;
@@ -252,4 +281,5 @@ int main(int argc,char** argv) {
     }
     Method<Release>(canvas,8)(canvas);
     puts("PASS actual v83 PCOM/Canvas: UI raster upload and tile boundaries; generated categories, NPC/description, payment and table previews");
+    auto term=reinterpret_cast<void(__cdecl*)()>(GetProcAddress(pcom,"PcTermModule"));assert(term);term();
 }
