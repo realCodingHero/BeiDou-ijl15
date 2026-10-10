@@ -54,7 +54,7 @@ int64_t meso=0;
 std::vector<Row> quests,detailRows,sourceRows,routeRows,trackRows;
 int questTotal=0,sourceTotal=0,detailTotal=0,routeTotal=0;
 std::wstring title,message,trackTitle;
-DWORD lastRefresh=0,lastSend=0,quoteTime=0;
+DWORD lastRefresh=0,lastListRefresh=0,lastSend=0,quoteTime=0;
 Snapshot quote;
 struct Request {int action,quest,kind,target,map,purpose;int64_t token=0;};
 struct Pending {Request request;DWORD sent;};
@@ -139,6 +139,7 @@ void Enqueue(Request r) {
 void List(){Enqueue({0,0,0,category,listPage,0});}
 void Detail(){if(selectedQuest)Enqueue({1,selectedQuest,0,0,detailPage,1});}
 void Route(){if(selectedQuest && routeMap)Enqueue({3,selectedQuest,sourceKind,sourceTarget,routeMap,3,routePage});}
+void SelectQuest(int quest,const std::wstring& name){selectedQuest=quest;title=name;detailRows.clear();view=1;selectedRow=-1;detailOffset=detailPage=0;message=Text(L"loading");Detail();Dirty();}
 void Hide(Window& w){if(w.shown){w.shown=false;destroy(w.native);}w.buttons.clear();}
 void Show(Window& w);
 void* __fastcall DeleteReference(void* reference,void*,unsigned) {
@@ -160,15 +161,16 @@ void ButtonAt(Window& w,HDC dc,int id,RECT r,const wchar_t* label,bool active=tr
     w.buttons.push_back({r,id,Text(label),active});
 }
 void Paint(Window& w) {
-    int width=w.tracker?223:Width,height=w.tracker?170:Height;
-    if(!w.image)w.image=std::make_unique<Bitmap>(width,height);
+    int width=w.tracker?223:Width,height=w.tracker?(w.collapsed?25:170):Height;
+    if(!w.image || w.image->width!=width || w.image->height!=height)w.image=std::make_unique<Bitmap>(width,height);
     if(!w.image->pixels)return;
     HDC dc=w.image->dc;w.buttons.clear();Fill(dc,{0,0,width,height},RGB(250,251,253));
     if(w.tracker) {
         Blit(dc,{0,0,223,25},L"UI/UIWindow.img/QuestAlarm/backgrndmax");
         for(int y=25;y<165;y+=18)Blit(dc,{0,y,223,(std::min)(165,y+18)},L"UI/UIWindow.img/QuestAlarm/backgrndcenter");
         Blit(dc,{0,165,223,170},L"UI/UIWindow.img/QuestAlarm/backgrndbottom");
-        Write(dc,{8,2,179,23},Text(L"tracker"),RGB(35,53,78),true);
+        Write(dc,{8,2,140,23},Text(L"tracker"),RGB(35,53,78),true);
+        ButtonAt(w,dc,102,{146,3,177,23},w.collapsed?L"+":L"-");
         ButtonAt(w,dc,100,{180,3,218,23},L"close");
         if(!w.collapsed) {
             Write(dc,{8,29,215,49},trackTitle,RGB(27,82,129),true);
@@ -263,7 +265,7 @@ int __fastcall Wheel(void* input,void*,int delta,int x,int) {
     Dirty();return 1;
 }
 void Click(Window& w,int id) {
-    if(w.tracker){if(id==100){trackedQuest=0;Hide(w);}else if(id==101){QuestHelperUI::Open();selectedQuest=trackedQuest;Detail();}return;}
+    if(w.tracker){if(id==100){trackedQuest=0;Hide(w);}else if(id==101){SelectQuest(trackedQuest,trackTitle);QuestHelperUI::Open();}else if(id==102){w.collapsed=!w.collapsed;Hide(w);Show(w);}return;}
     auto& rows=Rows();bool chosen=selectedRow>=0 && selectedRow<int(rows.size());
     if(id==1){quote={};Hide(w);return;}
     if(id==2 || id==3){category=id==3?1:0;listPage=listOffset=0;List();return;}
@@ -295,7 +297,7 @@ void __fastcall MouseButton(void* input,void*,unsigned msg,unsigned,int x,int y)
     if(w->tracker || quote.token)return;
     if(x>=9 && x<240 && y>=61 && y<381) {
         int i=listOffset+(y-61)/32;
-        if(i<int(quests.size())){selectedQuest=quests[i].id;title=quests[i].label;detailRows.clear();view=1;selectedRow=-1;detailOffset=detailPage=0;message=Text(L"loading");Detail();Dirty();}
+        if(i<int(quests.size()))SelectQuest(quests[i].id,quests[i].label);
     } else if(x>=265 && x<588 && y>=63 && y<321) {
         int i=detailOffset+(y-63)/43;if(i<int(Rows().size())){selectedRow=i;Dirty();}
     }
@@ -316,6 +318,7 @@ void __fastcall Update(void* self,void*) {
         if(mainWindow.shown && view==1 && !quote.token)Detail();
         if(trackedQuest)Enqueue({1,trackedQuest,0,0,0,7});
     }
+    if(mainWindow.shown && !quote.token && now-lastListRefresh>=10000){lastListRefresh=now;List();}
     if(quote.token && now-quoteTime>=30000){quote={};message=Text(L"quote");Dirty();}
     for(auto it=pending.begin();it!=pending.end();)if(now-it->second.sent>10000)it=pending.erase(it);else++it;
     if(!queue.empty() && now-lastSend>=150) {
@@ -342,7 +345,7 @@ void Show(Window& w) {
     }
     int x=w.tracker?(std::max)(0,Client::m_nGameWidth-233):(std::max)(0,(Client::m_nGameWidth-Width)/2);
     int y=w.tracker?90:(std::max)(0,(Client::m_nGameHeight-Height)/2);
-    w.shown=true;create(w.native,x,y,w.tracker?223:Width,w.tracker?170:Height,10,1,nullptr,w.tracker?0:1);invalidate(w.native);
+    w.shown=true;create(w.native,x,y,w.tracker?223:Width,w.tracker?(w.collapsed?25:170):Height,10,1,nullptr,w.tracker?0:1);invalidate(w.native);
 }
 }
 bool QuestHelperUI::Install(bool value,const char* config) {
@@ -363,7 +366,7 @@ bool QuestHelperUI::Install(bool value,const char* config) {
     trackerWindow.tracker=true;enabled=true;return true;
 }
 bool QuestHelperUI::Enabled(){return enabled;}
-void QuestHelperUI::Open(){if(!enabled || !InField())return;Show(mainWindow);message=Text(L"loading");List();Detail();}
+void QuestHelperUI::Open(){if(!enabled || !InField())return;Show(mainWindow);message=Text(L"loading");lastListRefresh=GetTickCount();List();Detail();}
 bool QuestHelperUI::Receive(const unsigned char* data,size_t size) {
     if(!enabled)return true;
     Snapshot s;if(!QuestProtocol::Parse(data,size,s))return true;
@@ -371,7 +374,7 @@ bool QuestHelperUI::Receive(const unsigned char* data,size_t size) {
     Request r=found->second.request;pending.erase(found);
     if(character && character!=s.character) {queue.clear();pending.clear();quests.clear();detailRows.clear();trackRows.clear();trackedQuest=selectedQuest=0;quote={};Hide(trackerWindow);}
     character=s.character;meso=s.meso;
-    if(s.view==6){message=s.title;quote={};if(r.purpose==7){trackedQuest=0;Hide(trackerWindow);}else if(r.purpose==1){selectedQuest=0;detailRows.clear();List();}Dirty();return true;}
+    if(s.view==6){if(r.quest && r.quest!=(r.purpose==7?trackedQuest:selectedQuest))return true;message=s.title;quote={};if(r.purpose==7){trackedQuest=0;Hide(trackerWindow);}else if(r.purpose==1){selectedQuest=0;detailRows.clear();List();}Dirty();return true;}
     if(r.purpose==0 && s.view==0 && r.target==category && r.map==listPage){quests=std::move(s.rows);questTotal=s.total;}
     else if(r.purpose==7 && s.view==1 && s.quest==trackedQuest){trackRows=std::move(s.rows);trackTitle=s.title;}
     else if(s.quest==selectedQuest) {
