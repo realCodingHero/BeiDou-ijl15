@@ -7,6 +7,33 @@ int Client::m_nGameWidth=1280;
 int Client::m_nGameHeight=720;
 bool Client::SwitchChinese=true;
 namespace {
+struct RawTile {
+    void** methods;
+    int width,height;
+    std::vector<unsigned char> pixels;
+};
+struct TiledCanvas {void** methods;std::vector<RawTile> tiles;};
+ULONG __stdcall TileRelease(void*){return 1;}
+HRESULT __stdcall TileFormat(void*,unsigned* value){*value=2;return S_OK;}
+HRESULT __stdcall TileWidth(void* p,unsigned* value){*value=static_cast<RawTile*>(p)->width;return S_OK;}
+HRESULT __stdcall TileHeight(void* p,unsigned* value){*value=static_cast<RawTile*>(p)->height;return S_OK;}
+HRESULT __stdcall TileLock(void* p,int* pitch,VARIANT* address){auto& t=*static_cast<RawTile*>(p);*pitch=t.width*4;address->vt=VT_BYREF|VT_UI4;address->byref=t.pixels.data();return S_OK;}
+HRESULT __stdcall TileUnlock(void*,RECT*){return S_OK;}
+HRESULT __stdcall CanvasTileWidth(void*,unsigned* value){*value=512;return S_OK;}
+HRESULT __stdcall CanvasTileHeight(void*,unsigned* value){*value=256;return S_OK;}
+HRESULT __stdcall CanvasTile(void* p,int x,int y,void** out){auto& c=*static_cast<TiledCanvas*>(p);if(x<0 || x>1 || y<0 || y>1)return E_INVALIDARG;*out=&c.tiles[y*2+x];return S_OK;}
+void TestNarrowTiles(const Bitmap& source){
+    void* rawMethods[9]{};rawMethods[2]=reinterpret_cast<void*>(TileRelease);rawMethods[3]=reinterpret_cast<void*>(TileFormat);
+    rawMethods[5]=reinterpret_cast<void*>(TileWidth);rawMethods[6]=reinterpret_cast<void*>(TileHeight);
+    rawMethods[7]=reinterpret_cast<void*>(TileLock);rawMethods[8]=reinterpret_cast<void*>(TileUnlock);
+    void* canvasMethods[16]{};canvasMethods[13]=reinterpret_cast<void*>(CanvasTile);canvasMethods[14]=reinterpret_cast<void*>(CanvasTileWidth);canvasMethods[15]=reinterpret_cast<void*>(CanvasTileHeight);
+    TiledCanvas c{canvasMethods,{}};
+    for(int y=0;y<2;++y)for(int x=0;x<2;++x){int w=x?88:512,h=y?194:256;c.tiles.push_back({rawMethods,w,h,std::vector<unsigned char>(w*h*4+32,0xAB)});}
+    assert(Upload(&c,source));
+    for(int y=0;y<source.height;++y)for(int x=0;x<source.width;++x){auto& tile=c.tiles[(y/256)*2+x/512];DWORD color=0;memcpy(&color,tile.pixels.data()+((y%256)*tile.width+x%512)*4,4);assert(color==source.pixels[y*source.width+x]);}
+    for(const auto& t:c.tiles)for(size_t n=t.width*t.height*4;n<t.pixels.size();++n)assert(t.pixels[n]==0xAB);
+    puts("PASS tiled canvas: narrow edge tile strides, every pixel across four tiles and buffer guards");
+}
 void Save(const Bitmap& b,const std::filesystem::path& path) {
     BITMAPFILEHEADER f{};f.bfType=0x4D42;f.bfOffBits=sizeof(f)+sizeof(BITMAPINFOHEADER);f.bfSize=f.bfOffBits+b.width*b.height*4;
     BITMAPINFOHEADER h{};h.biSize=sizeof(h);h.biWidth=b.width;h.biHeight=-b.height;h.biPlanes=1;h.biBitCount=32;
@@ -64,6 +91,7 @@ int main(int argc,char** argv) {
     auto unsolicited=response(7,4000004);QuestHelperUI::Receive(unsolicited.data(),unsolicited.size());assert(detailRows[0].id==4000003);
     enabled=false;queue.clear();pending.clear();
     puts("PASS UI dispatch: route pagination/refresh, obsolete page responses and unsolicited packet isolation");
+    TestNarrowTiles(*mainWindow.image);
     // Verify writes into the ACTUAL v83 Canvas DLL, including tile boundaries.
     assert(SetCurrentDirectoryA(argv[1]));assert(SetDllDirectoryA(argv[1]));HMODULE pcom=LoadLibraryA("PCOM.dll");assert(pcom);
     auto init=reinterpret_cast<HRESULT(__cdecl*)()>(GetProcAddress(pcom,"PcInitModule"));assert(init && SUCCEEDED(init()));

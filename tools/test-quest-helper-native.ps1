@@ -22,6 +22,8 @@ foreach($entry in @(@(0x9de383,'B84A68AE00'),@(0x9de4d2,'B8D868AE00'),@(0x9e00af
 }
 if([BitConverter]::ToUInt32([byte[]](Read-ExecutableBytes (0xb3f078+11*4) 4),0) -ne 0x9e0502){throw 'Incorrect native Draw virtual slot'}
 if([Convert]::ToHexString([byte[]](Read-ExecutableBytes 0x9e067b 3)) -ne 'C20400'){throw 'Incorrect native Draw parameter count'}
+if([Convert]::ToHexString([byte[]](Read-ExecutableBytes 0x424717 4)) -ne '0FB7710C'){throw 'Incorrect native packet length field'}
+if([Convert]::ToHexString([byte[]](Read-ExecutableBytes 0x424710 3)) -ne '8B5114'){throw 'Incorrect native packet offset field'}
 Write-Output 'PASS actual v83 executable: constructor/create/destroy/draw signatures, Draw slot 11 and one-argument ABI'
 $repo=Split-Path -Parent $PSScriptRoot
 $out=Join-Path $repo 'out\quest-helper-native'
@@ -50,6 +52,10 @@ try {
  if($LASTEXITCODE -ne 0){throw 'Protocol fixture build failed'}
  & "$out\QuestHelperProtocolTests.exe"
  if($LASTEXITCODE -ne 0){throw 'Protocol tests failed'}
+ & "$vc\bin\Hostx64\x86\cl.exe" @common "$repo\tests\QuestHelperPacketHookTests.cpp" /Fo"$out\" /link /MACHINE:X86 /OUT:"$out\QuestHelperPacketHookTests.exe"
+ if($LASTEXITCODE -ne 0){throw 'Native receive hook fixture build failed'}
+ & "$out\QuestHelperPacketHookTests.exe"
+ if($LASTEXITCODE -ne 0){throw 'Native receive hook tests failed'}
  & "$vc\bin\Hostx64\x86\cl.exe" @common "$repo\tests\QuestHelperNativeTests.cpp" /Fo"$out\" /link /MACHINE:X86 user32.lib gdi32.lib oleaut32.lib /OUT:"$out\QuestHelperNativeTests.exe"
  if($LASTEXITCODE -ne 0){throw 'Native fixture build failed'}
  & "$out\QuestHelperNativeTests.exe" $Client $out "$repo\resources\QuestHelperUI.ini"
