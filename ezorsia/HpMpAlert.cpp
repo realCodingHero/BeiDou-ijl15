@@ -28,13 +28,15 @@ struct CInPacket {
     bool Loopback;
     int State;
     void* Data;
-    unsigned long Size;
+    unsigned short Size;
     unsigned short RawSeq;
     unsigned short DataLen;
     unsigned short Unknown;
     unsigned int Offset;
     void* Unk;
 };
+static_assert(offsetof(CInPacket, Size) == 0x0C && offsetof(CInPacket, Offset) == 0x14,
+    "v83 Decode2 reads a 16-bit length at +0x0C and a 32-bit offset at +0x14");
 using SendPacket_t = void(__fastcall*)(void* pThis, void* edx, COutPacket* packet);
 static SendPacket_t g_SendPacket = reinterpret_cast<SendPacket_t>(0x0049637B);
 static bool TryReadDword(DWORD address, DWORD& out) {
