@@ -65,4 +65,11 @@ int main(int argc,char** argv){
         assert((frame[(75+y)*800+100+x]&0xffffff)==(image.pixels[y*600+x]&0xffffff));
     }
     puts("PASS actual DirectX canvas: all six GPU tiles, narrow edge tiles, canvas readback and rendered screen pixels");
+    // The live UI repaints an already rendered/cached texture after packet and click events.
+    for(int i=0;i<600*450;++i)image.pixels[i]=0xff2288cc;
+    assert(Upload(canvas,image));
+    for(int n=0;n<3;++n){Check(gr->raw_UpdateCurrentTime(200+n*20),"repaint clock");Check(gr->raw_RenderFrame(),"repaint frame");}
+    for(POINT p:{POINT{20,20},POINT{280,280},POINT{530,300},POINT{590,440}})
+        assert((frame[(75+p.y)*800+100+p.x]&0xffffff)==0x2288cc);
+    puts("PASS actual DirectX repaint: a previously rendered texture displays new UI content");
 }
