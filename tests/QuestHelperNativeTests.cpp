@@ -20,7 +20,7 @@ HRESULT __stdcall TileFormat(void*,unsigned* value){*value=2;return S_OK;}
 HRESULT __stdcall TileWidth(void* p,unsigned* value){*value=static_cast<RawTile*>(p)->width;return S_OK;}
 HRESULT __stdcall TileHeight(void* p,unsigned* value){*value=static_cast<RawTile*>(p)->height;return S_OK;}
 HRESULT __stdcall TileLock(void* p,int* pitch,VARIANT* address){auto& t=*static_cast<RawTile*>(p);*pitch=t.width*4;address->vt=VT_BYREF|VT_UI4;address->byref=t.pixels.data();return S_OK;}
-HRESULT __stdcall TileUnlock(void*,RECT*){return S_OK;}
+HRESULT __stdcall TileUnlock(void* p,RECT* r){auto& t=*static_cast<RawTile*>(p);assert(r && r->left==0 && r->top==0 && r->right>0 && r->right<=t.width && r->bottom>0 && r->bottom<=t.height);return S_OK;}
 HRESULT __stdcall CanvasTileWidth(void*,unsigned* value){*value=512;return S_OK;}
 HRESULT __stdcall CanvasTileHeight(void*,unsigned* value){*value=256;return S_OK;}
 HRESULT __stdcall CanvasTile(void* p,int x,int y,void** out){auto& c=*static_cast<TiledCanvas*>(p);if(x<0 || x>=600 || y<0 || y>=450)return E_INVALIDARG;*out=&c.tiles[(y/256)*2+x/512];return S_OK;}
@@ -69,10 +69,45 @@ int main(int argc,char** argv) {
     invalidateRect=reinterpret_cast<NativeInvalidate>(InvalidateStub);
     mainWindow.shown=trackerWindow.shown=true;Dirty();assert(redraws==2);
     mainWindow.shown=trackerWindow.shown=false;
-    quests.resize(25);listOffset=5;Wheel(mainWindow.native+4,nullptr,40,80,-120);assert(listOffset==8);
-    Wheel(mainWindow.native+4,nullptr,40,80,120);assert(listOffset==5);
-    detailRows.resize(20);detailOffset=5;Wheel(mainWindow.native+4,nullptr,300,80,-120);assert(detailOffset==7);
-    Wheel(mainWindow.native+4,nullptr,300,80,120);assert(detailOffset==5);
+    quests.resize(25);listOffset=5;Wheel(mainWindow.native+4,nullptr,40,80,1);assert(listOffset==8);
+    Wheel(mainWindow.native+4,nullptr,40,80,-1);assert(listOffset==5);
+    detailRows.resize(20);detailOffset=5;Wheel(mainWindow.native+4,nullptr,300,80,1);assert(detailOffset==7);
+    Wheel(mainWindow.native+4,nullptr,300,80,-1);assert(detailOffset==5);
+    void* control=reinterpret_cast<void*>(1);
+    assert(HitTest(mainWindow.native,nullptr,20,10,&control)==1 && control==nullptr);
+    assert(HitTest(mainWindow.native,nullptr,560,10,&control)==2); // Close is a client hit.
+    assert(HitTest(mainWindow.native,nullptr,20,50,&control)==2);
+    assert(HitTest(mainWindow.native,nullptr,-1,10,&control)==0);
+    assert(HitTest(trackerWindow.native,nullptr,20,10,&control)==1);
+    assert(HitTest(trackerWindow.native,nullptr,195,10,&control)==2);
+    // Dispatch actual thiscall input ABI through a vtable with a +4 subobject.
+    using MouseInput=void(__thiscall*)(void*,unsigned,unsigned,int,int);
+    void* inputMethods[19]{};inputMethods[2]=reinterpret_cast<void*>(MouseButton);
+    *reinterpret_cast<void***>(mainWindow.native+4)=inputMethods;
+    auto mouse=Method<MouseInput>(mainWindow.native+4,8);
+    quests.resize(17);questTotal=17;listPage=listOffset=0;queue.clear();Paint(mainWindow);
+    auto buttonEnabled=[](int id){for(const auto& b:mainWindow.buttons)if(b.id==id)return b.enabled;return false;};
+    assert(!buttonEnabled(4) && buttonEnabled(5));
+    mouse(mainWindow.native+4,WM_LBUTTONUP,0,100,425);assert(listOffset==10 && listPage==0 && queue.empty());
+    Paint(mainWindow);assert(buttonEnabled(4) && !buttonEnabled(5));
+    mouse(mainWindow.native+4,WM_LBUTTONUP,0,40,425);assert(listOffset==0 && queue.empty());
+    quests.resize(50);questTotal=61;listOffset=40;Paint(mainWindow);
+    mouse(mainWindow.native+4,WM_LBUTTONUP,0,100,425);assert(listPage==1 && listOffset==0 && queue.back().map==1);
+    quests.resize(11);Paint(mainWindow);queue.clear();
+    mouse(mainWindow.native+4,WM_LBUTTONUP,0,100,425);assert(listPage==1 && listOffset==10 && queue.empty());
+    Paint(mainWindow);assert(!buttonEnabled(5));
+    mouse(mainWindow.native+4,WM_LBUTTONUP,0,40,425);Paint(mainWindow);
+    mouse(mainWindow.native+4,WM_LBUTTONUP,0,40,425);assert(listPage==0 && listOffset==40 && queue.back().map==0);
+    quests={{1001,0,0,20,0,0,L"quest one",L""},{1002,0,1,15,0,0,L"quest two",L""}};
+    questTotal=2;listPage=listOffset=0;view=1;quote={};queue.clear();Paint(mainWindow);
+    mouse(mainWindow.native+4,WM_LBUTTONUP,0,40,100);assert(selectedQuest==1002 && queue.back().action==1 && queue.back().quest==1002);
+    Paint(mainWindow);queue.clear();mouse(mainWindow.native+4,WM_LBUTTONUP,0,500,42);
+    assert(queue.back().action==4 && queue.back().kind==7 && queue.back().quest==1002);
+    Paint(mainWindow);queue.clear();mouse(mainWindow.native+4,WM_LBUTTONUP,0,170,42);
+    assert(category==1 && selectedQuest==0 && title.empty() && queue.back().target==1);
+    Paint(mainWindow);queue.clear();mouse(mainWindow.native+4,WM_LBUTTONUP,0,50,42);
+    assert(category==0 && queue.back().target==0);
+    puts("PASS input dispatch: draggable title/client buttons, quest selection, quote request, both filters and 10-row pagination across 50-row server batches");
     invalidateRect=originalInvalidate;
     puts("PASS native redraw queue and wheel ABI: both windows repaint and each pane scrolls in the correct direction");
     view=3;detailPage=2;queue.clear();SelectQuest(1001,title);
@@ -98,9 +133,23 @@ int main(int argc,char** argv) {
     };
     view=1;detailPage=1;detailRows.clear();pending.emplace(5,Pending{{1,1001,0,0,0,1},0});
     auto stale=response(5,4000002);QuestHelperUI::Receive(stale.data(),stale.size());assert(detailRows.empty());
-    pending.emplace(6,Pending{{1,1001,0,0,1,1},0});auto current=response(6,4000003);
-    QuestHelperUI::Receive(current.data(),current.size());assert(detailRows.size()==1 && detailRows[0].id==4000003);
+    pending.emplace(6,Pending{{1,1001,0,0,1,1},0});auto current=response(6,4000003);message=Text(L"loading");
+    QuestHelperUI::Receive(current.data(),current.size());assert(detailRows.size()==1 && detailRows[0].id==4000003 && message.empty());
     auto unsolicited=response(7,4000004);QuestHelperUI::Receive(unsolicited.data(),unsolicited.size());assert(detailRows[0].id==4000003);
+    pending.emplace(8,Pending{{1,1001,0,0,1,1},0});message=L"server notice";
+    auto refresh=response(8,4000003);QuestHelperUI::Receive(refresh.data(),refresh.size());assert(message==L"server notice");
+    pending.emplace(9,Pending{{1,1001,0,0,1,1},100});message=Text(L"loading");
+    ExpirePending(10200);assert(pending.empty() && message==Text(L"timeout"));
+    pending.emplace(10,Pending{{1,1001,0,0,1,1},10300});auto retry=response(10,4000003);
+    QuestHelperUI::Receive(retry.data(),retry.size());assert(message.empty());
+    auto priceReply=response(11,4000003);priceReply[1]=4;int64_t token=123,price=100;
+    memcpy(priceReply.data()+26,&token,8);memcpy(priceReply.data()+34,&price,8);
+    pending.emplace(11,Pending{{4,1001,7,0,0,4},10300});
+    QuestHelperUI::Receive(priceReply.data(),priceReply.size());assert(quote.token==123 && quotedRequest.kind==7);
+    Paint(mainWindow);queue.clear();mouse(mainWindow.native+4,WM_LBUTTONUP,0,300,239);
+    assert(!quote.token && queue.size()==1 && queue.front().action==5 && queue.front().kind==7 && queue.front().token==123);
+    puts("PASS complete-all flow: quote response displays confirmation and native button dispatch carries the server token");
+    puts("PASS status updates: detail response clears loading, automatic refresh preserves notices and missing responses time out");
     enabled=false;queue.clear();pending.clear();
     puts("PASS UI dispatch: route pagination/refresh, obsolete page responses and unsolicited packet isolation");
     TestNarrowTiles(*mainWindow.image);
