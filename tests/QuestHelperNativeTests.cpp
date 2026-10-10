@@ -33,7 +33,11 @@ int main(int argc,char** argv) {
     quote.token=123;quote.price=1800;quote.message=L"确认支付金币并补齐选定任务目标？";quoteTime=GetTickCount();meso=200000;
     Paint(mainWindow);Save(*mainWindow.image,directory/"quest-confirm.bmp");quote={};
     trackerWindow.tracker=true;trackTitle=title;trackRows=detailRows;Paint(trackerWindow);Save(*trackerWindow.image,directory/"quest-tracker.bmp");
-    assert(mainWindow.buttons.size()>=7 && trackerWindow.buttons.size()==2);
+    assert(mainWindow.buttons.size()>=7 && trackerWindow.buttons.size()==3);
+    trackerWindow.collapsed=true;Paint(trackerWindow);assert(trackerWindow.image->height==25 && trackerWindow.buttons.size()==2);
+    trackerWindow.collapsed=false;Paint(trackerWindow);assert(trackerWindow.image->height==170);
+    view=3;detailPage=2;queue.clear();SelectQuest(1001,title);
+    assert(view==1 && detailPage==0 && selectedRow==-1 && queue.front().quest==1001);
     // Exercise the actual UI dispatch state without opening a game session.
     enabled=true;view=2;sourceKind=2;sourceTarget=4000002;sourceRows={{100000001,2,8,0,0,500,L"map",L"source"}};
     selectedRow=0;queue.clear();Click(mainWindow,10);
