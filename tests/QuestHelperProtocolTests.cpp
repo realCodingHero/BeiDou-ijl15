@@ -4,9 +4,9 @@
 using namespace QuestProtocol;
 int main() {
     auto request=Request(4,123,1001,2,4000000,0);
-    assert(request.size()==29 && request[0]==3 && request[1]==16 && request[2]==2);
+    assert(request.size()==29 && request[0]==3 && request[1]==16 && request[2]==3);
     std::vector<unsigned char> b;
-    append(b,Version);append(b,uint8_t(1));append(b,123);append(b,1001);append(b,42);append(b,100000000);
+    append(b,uint8_t(2));append(b,uint8_t(1));append(b,123);append(b,1001);append(b,42);append(b,100000000);
     append(b,int64_t(3000));append(b,int64_t(0));append(b,int64_t(0));append(b,1);
     append(b,uint8_t(3));
     auto str=[&](const std::string& s){append(b,uint16_t(s.size()));b.insert(b.end(),s.begin(),s.end());};
@@ -17,7 +17,9 @@ int main() {
     auto legacy=b;legacy[0]=1;legacy.erase(legacy.begin()+46);
     assert(Parse(legacy.data(),legacy.size(),s) && s.features==3);
     auto disabled=b;disabled[46]=0;assert(Parse(disabled.data(),disabled.size(),s) && s.features==0);
-    auto corrupt=b;corrupt[0]=3;assert(!Parse(corrupt.data(),corrupt.size(),s));
+    auto v3=b;v3[0]=3;append(v3,16);append(v3,7);assert(Parse(v3.data(),v3.size(),s) && s.progress==16 && s.ready==7);
+    for(size_t n=b.size();n<v3.size();++n)assert(!Parse(v3.data(),n,s));
+    auto corrupt=b;corrupt[0]=4;assert(!Parse(corrupt.data(),corrupt.size(),s));
     corrupt=b;corrupt[46]=4;assert(!Parse(corrupt.data(),corrupt.size(),s));
     corrupt=b;corrupt.push_back(0);assert(!Parse(corrupt.data(),corrupt.size(),s));
     corrupt=b;corrupt[1]=255;assert(!Parse(corrupt.data(),corrupt.size(),s));

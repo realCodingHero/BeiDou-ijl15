@@ -6,10 +6,10 @@
 #include <windows.h>
 namespace QuestProtocol {
 constexpr uint16_t Opcode=0x1003;
-constexpr uint8_t Version=2;
+constexpr uint8_t Version=3;
 struct Row { int id=0,kind=0,flags=0,current=0,required=0; int64_t cost=0; std::wstring label,info; };
 struct Snapshot {
-    int view=0,sequence=0,quest=0,character=0,map=0,total=0,features=0;
+    int view=0,sequence=0,quest=0,character=0,map=0,total=0,features=0,progress=-1,ready=-1;
     int64_t meso=0,token=0,price=0;
     std::wstring title,message;
     std::vector<Row> rows;
@@ -36,7 +36,7 @@ public:
 inline bool Parse(const unsigned char* p,size_t n,Snapshot& result) {
     if(!p || n>60000)return false;
     try {
-        Reader r(p,n);auto version=r.number<uint8_t>();if(version!=1 && version!=Version)return false;
+        Reader r(p,n);auto version=r.number<uint8_t>();if(version<1 || version>Version)return false;
         Snapshot s;s.view=r.number<uint8_t>();if(s.view>6)return false;
         s.sequence=r.number<int>();s.quest=r.number<int>();s.character=r.number<int>();s.map=r.number<int>();
         s.meso=r.number<int64_t>();s.token=r.number<int64_t>();s.price=r.number<int64_t>();s.total=r.number<int>();
@@ -49,6 +49,7 @@ inline bool Parse(const unsigned char* p,size_t n,Snapshot& result) {
             if(row.kind>7 || row.id<0 || row.current<0 || row.required<0 || row.cost<0)return false;
             s.rows.push_back(std::move(row));
         }
+        if(version>=3){s.progress=r.number<int>();s.ready=r.number<int>();if(s.progress<0 || s.ready<0 || s.progress>100000 || s.ready>100000)return false;}
         if(!r.complete())return false;
         result=std::move(s);return true;
     }catch(const std::exception&){return false;}
