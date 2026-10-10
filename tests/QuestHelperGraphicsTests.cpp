@@ -79,4 +79,11 @@ int main(int argc,char** argv){
     for(POINT p:{POINT{440,40},POINT{530,300},POINT{590,440}}){unsigned color=1;Check(canvas->get_pixel(p.x,p.y,&color),"transparent canvas");assert(color==0);assert((frame[(75+p.y)*800+100+p.x]&0xffffff)==0);}
     assert((frame[95*800+120]&0xffffff)==0x2288cc);
     puts("PASS actual DirectX drawer: transparent area clears across cached GPU tiles and renders the background");
+    // PCOM owns module caches. Terminate them explicitly after releasing GPU objects,
+    // while the renderer and this fixture's detour code are still loaded.
+    WorldViewport::SetObserverForTesting(nullptr);marker->Release();marker=nullptr;
+    dot->Release();canvas->Release();layer->Release();Check(gr->raw_Uninitialize(),"uninitialize");gr->Release();
+    assert(UpscaleLoader::Install(GetModuleHandle(nullptr),false));DestroyWindow(hwnd);UnregisterClassA(cls.lpszClassName,cls.hInstance);
+    auto term=reinterpret_cast<void(__cdecl*)()>(GetProcAddress(pcom,"PcTermModule"));assert(term);term();
+    puts("PASS graphics shutdown: GPU objects released and PCOM module terminated before process exit");
 }

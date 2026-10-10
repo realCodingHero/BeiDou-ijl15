@@ -80,7 +80,8 @@ struct Button {RECT rect;int id;std::wstring text;bool enabled;};
 struct RowHit {RECT rect;int index;};
 struct ListEntry {int index,group;std::wstring name;int count=0;};
 struct ListHit {RECT rect;ListEntry entry;};
-struct Scrollbar {RECT track,thumb;int* value=nullptr;int maximum=0;};
+struct Scrollbar {RECT track,thumb;int* value=nullptr;int maximum=0,step=1,id=0;};
+struct Tab {RECT rect;int id;std::wstring text;bool enabled;};
 struct Window {
     alignas(8) unsigned char native[0x78]{};
     std::array<void*,13> mainMethods{};
@@ -91,6 +92,7 @@ struct Window {
     int hover=-1,pressed=-1;bool mouseDown=false;
     bool animating=false;int drawer=0,drawerFrom=0;DWORD drawerStart=0;
     std::vector<Button> buttons;
+    std::vector<Tab> tabs;
     std::vector<RowHit> rowHits;
     std::vector<ListHit> listHits;
     std::vector<Scrollbar> scrollbars;
@@ -157,32 +159,50 @@ bool AllGroupsCollapsed(){if(quests.empty())return false;for(const auto& q:quest
 void RememberCategory(){auto& memory=categoryMemory[category];for(const auto& q:quests)if(q.id==selectedQuest){memory.quest=selectedQuest;memory.page=listPage;}if(!memory.quest)memory.page=listPage;memory.offset=listOffset;memory.collapsed=collapsedGroups;}
 std::wstring NamedToken(wchar_t kind,const std::wstring& id) {
     if(kind==L'c') {for(const auto& row:detailRows)if(row.kind==2 && row.id==_wtoi(id.c_str()))return std::to_wstring(row.current);return L"0";}
+    if(kind==L'a') {
+        if(id.size()<2)return L"";
+        auto quest=id.substr(0,id.size()-1);if(_wtoi(quest.c_str())!=selectedQuest)return L"";
+        int index=(std::max)(0,int(id.back()-L'0')-1);
+        int mob=_wtoi(ResourceText(L"Quest/Check.img/"+quest+L"/1/mob/"+std::to_wstring(index)+L"/id").c_str());
+        for(const auto& row:detailRows)if(row.kind==1 && row.id==mob)return std::to_wstring(row.current)+(row.required>0?L"/"+std::to_wstring(row.required):L"");
+        return L"";
+    }
     if(kind==L'q')return ResourceText(L"Quest/QuestInfo.img/"+id+L"/name");
-    if(kind==L'p' || kind==L'o')return ResourceText(std::wstring(L"String/")+(kind==L'p'?L"Npc.img/":L"Mob.img/")+id+L"/name");
-    if(kind==L't') {
+    if(kind==L'p' || kind==L'@' || kind==L'o') {
+        auto name=ResourceText(std::wstring(L"String/")+(kind==L'o'?L"Mob.img/":L"Npc.img/")+id+L"/name");
+        if(!name.empty())return name;
+        for(const auto& row:detailRows)if(row.id==_wtoi(id.c_str()) && (kind==L'o'?row.kind==1:row.kind==5 || row.kind==6))return row.label;
+        return L"";
+    }
+    if(kind==L't' || kind==L'z') {
+        auto etc=ResourceText(L"String/Etc.img/Etc/"+id+L"/name");if(!etc.empty())return etc;
         for(auto file:{L"Etc.img/",L"Consume.img/",L"Ins.img/",L"Cash.img/",L"Pet.img/"}) {
             auto name=ResourceText(std::wstring(L"String/")+file+id+L"/name");if(!name.empty())return name;
         }
         for(auto category:{L"Accessory",L"Cap",L"Cape",L"Coat",L"Face",L"Glove",L"Hair",L"Longcoat",L"Pants",L"PetEquip",L"Ring",L"Shield",L"Shoes",L"Weapon"}) {
             auto name=ResourceText(std::wstring(L"String/Eqp.img/Eqp/")+category+L"/"+id+L"/name");if(!name.empty())return name;
         }
+        for(const auto& row:detailRows)if(row.kind==2 && row.id==_wtoi(id.c_str()))return row.label;
     }
     if(kind==L'm')for(auto group:{L"maple",L"victoria",L"ossyria",L"elin",L"weddingGL",L"MasteriaGL",L"HalloweenGL",L"jp",L"etc",L"singapore",L"event",L"Episode1GL",L"thai",L"china",L"grandis",L"3rd",L"CT",L"bd232UnnamedSource"}) {
         auto name=ResourceText(std::wstring(L"String/Map.img/")+group+L"/"+id+L"/mapName");if(!name.empty())return name;
     }
-    return id;
+    return L"";
 }
 std::wstring Description(int quest) {
     auto raw=ResourceText(L"Quest/QuestInfo.img/"+std::to_wstring(quest)+L"/1");
     if(raw.empty())raw=ResourceText(L"Quest/QuestInfo.img/"+std::to_wstring(quest)+L"/summary");
     raw=std::regex_replace(raw,std::wregex(L"\\\\n"),L"\n");
-    raw=std::regex_replace(raw,std::wregex(L"#i[0-9]+:?#[ ]?"),L"");
-    const std::wregex token(L"#([potmcq])([0-9]+):?#");std::wstring result;
+    raw=std::regex_replace(raw,std::wregex(L"#[iv][0-9]+:?#[ ]?|#[fF][^#\r\n]+#"),L"");
+    const std::wregex token(L"#([potmcqa@z])([0-9]+):?#");std::wstring result;
     std::wsmatch match;
     while(std::regex_search(raw,match,token)){result+=match.prefix().str()+NamedToken(match[1].str()[0],match[2]);raw=match.suffix();}
     result+=raw;
     result=std::regex_replace(result,std::wregex(L"#h[ ]?#"),Text(L"player"));
+    result=std::regex_replace(result,std::wregex(L"#[bkrdegwn]"),L"");
+    result=std::regex_replace(result,std::wregex(L"#[a-zA-Z@][0-9]+(?::[^#\r\n]*)?#?"),L"");
     result=std::regex_replace(result,std::wregex(L"#[a-zA-Z]"),L"");
+    result.erase(std::remove(result.begin(),result.end(),L'#'),result.end());
     return result.empty()?Text(L"noDescription"):result;
 }
 void Fill(HDC dc,RECT r,COLORREF c){HBRUSH b=CreateSolidBrush(c);FillRect(dc,&r,b);DeleteObject(b);}
@@ -195,24 +215,33 @@ int WrappedHeight(HDC dc,int width,const std::wstring& text,bool bold=false) {
     DrawTextW(dc,text.c_str(),static_cast<int>(text.size()),&bounds,DT_CALCRECT|DT_WORDBREAK|DT_NOPREFIX);
     SelectObject(dc,old);return bounds.bottom;
 }
-void ScrollbarAt(Window& w,HDC dc,RECT track,int& value,int maximum,int visible) {
+void Blit(HDC dc,RECT r,const wchar_t* resource);
+void ScrollbarAt(Window& w,HDC dc,RECT bounds,int& value,int maximum,int visible,bool always=false,int step=1) {
     maximum=(std::max)(0,maximum);value=(std::max)(0,(std::min)(value,maximum));
-    if(!maximum)return;
-    Fill(dc,track,RGB(223,232,240));
-    int length=track.bottom-track.top,thumb=(std::max)(18,length*visible/(visible+maximum));
-    int y=track.top+(length-thumb)*value/maximum;
-    RECT rect{track.left+2,y,track.right-2,y+thumb};Fill(dc,rect,RGB(100,147,180));
-    w.scrollbars.push_back({track,rect,&value,maximum});
+    if(!maximum && !always)return;
+    bool active=maximum>0 && !Blocked(w);
+    int id=&value==&listOffset?100:&value==&descriptionScroll?102:&value==&detailOffset?104:106;
+    RECT prev{bounds.left,bounds.top,bounds.left+12,bounds.top+12},next{bounds.left,bounds.bottom-12,bounds.left+12,bounds.bottom};
+    RECT track{bounds.left,bounds.top+12,bounds.left+12,bounds.bottom-12};
+    auto path=[&](const wchar_t* part){return std::wstring(L"UI/Basic.img/VScr/")+(active?L"enabled/":L"disabled/")+part;};
+    Blit(dc,track,path(L"base").c_str());
+    Blit(dc,prev,path(!active?L"prev":w.pressed==id && w.hover==id?L"prev1":L"prev0").c_str());
+    Blit(dc,next,path(!active?L"next":w.pressed==id+1 && w.hover==id+1?L"next1":L"next0").c_str());
+    int length=track.bottom-track.top,thumb=(std::max)(12,length*visible/(visible+maximum));
+    int y=track.top+(length-thumb)*value/(std::max)(1,maximum);
+    RECT rect{track.left,y,track.right,y+thumb};if(active)Blit(dc,rect,path(w.dragScroll==int(w.scrollbars.size())?L"thumb1":L"thumb0").c_str());
+    w.scrollbars.push_back({track,rect,&value,maximum,step,id});
+    w.buttons.push_back({prev,id,L"",active && value>0});w.buttons.push_back({next,id+1,L"",active && value<maximum});
 }
 void TextPane(Window& w,HDC dc,RECT bounds,const std::wstring& text,int& scroll,int& maximum) {
-    int height=WrappedHeight(dc,bounds.right-bounds.left-14,text);
+    int height=WrappedHeight(dc,bounds.right-bounds.left-16,text);
     int visibleHeight=int(bounds.bottom-bounds.top);
     maximum=(std::max)(0,height-visibleHeight);
     scroll=(std::min)(scroll,maximum);
-    int saved=SaveDC(dc);IntersectClipRect(dc,bounds.left,bounds.top,bounds.right-12,bounds.bottom);
-    RECT content{bounds.left,bounds.top-scroll,bounds.right-14,bounds.top-scroll+height};
+    int saved=SaveDC(dc);IntersectClipRect(dc,bounds.left,bounds.top,bounds.right-16,bounds.bottom);
+    RECT content{bounds.left,bounds.top-scroll,bounds.right-16,bounds.top-scroll+height};
     Write(dc,content,text,RGB(66,85,102),false,DT_WORDBREAK|DT_NOPREFIX);RestoreDC(dc,saved);
-    ScrollbarAt(w,dc,{bounds.right-11,bounds.top,bounds.right,bounds.bottom},scroll,maximum,visibleHeight);
+    ScrollbarAt(w,dc,{bounds.right-13,bounds.top,bounds.right-1,bounds.bottom},scroll,maximum,visibleHeight,false,24);
 }
 Bitmap* Skin(const std::wstring& path) {
     auto it=skins.find(path);if(it!=skins.end())return it->second.get();
@@ -231,6 +260,12 @@ Bitmap* Skin(const std::wstring& path) {
 }
 void Blit(HDC dc,RECT r,const wchar_t* resource) {
     auto s=Skin(resource);if(s && s->bitmap)StretchBlt(dc,r.left,r.top,r.right-r.left,r.bottom-r.top,s->dc,0,0,s->width,s->height,SRCCOPY);
+}
+void WindowFrame(HDC dc,RECT r) {
+    auto skin=Skin(L"UI/UIWindow.img/Quest/backgrnd");if(!skin)return;
+    int sx[]={0,4,skin->width-4,skin->width},sy[]={0,24,skin->height-4,skin->height};
+    int dx[]={r.left,r.left+4,r.right-4,r.right},dy[]={r.top,r.top+24,r.bottom-4,r.bottom};
+    for(int y=0;y<3;++y)for(int x=0;x<3;++x)StretchBlt(dc,dx[x],dy[y],dx[x+1]-dx[x],dy[y+1]-dy[y],skin->dc,sx[x],sy[y],sx[x+1]-sx[x],sy[y+1]-sy[y],SRCCOPY);
 }
 void NpcPortrait(Bitmap& target,RECT bounds,int npc) {
     if(npc<=0)return;
@@ -300,7 +335,7 @@ void Detail(){if(selectedQuest)Enqueue({1,selectedQuest,0,0,detailPage,1});}
 void Route(){if(selectedQuest && routeMap)Enqueue({3,selectedQuest,sourceKind,sourceTarget,routeMap,3,routePage});}
 void SetExpanded(bool expanded);
 void SelectQuest(int quest,const std::wstring& name){++navigation;restoreSelection=false;selectedQuest=quest;title=name;detailRows.clear();view=desiredView=1;selectedRow=-1;questNpc=0;questLevel=0;for(const auto& q:quests)if(q.id==quest){questLevel=q.current;collapsedGroups.erase(QuestGroup(q));categoryMemory[category].groupQuests[QuestGroup(q)]=quest;}RememberCategory();detailOffset=detailPage=textScroll=descriptionScroll=0;questDescription=Description(quest);message=Text(L"loading");SetExpanded(true);Detail();Dirty();}
-void Hide(Window& w){if(w.shown){w.shown=false;destroy(w.native);}w.buttons.clear();w.pressed=w.hover=-1;w.mouseDown=false;w.dragScroll=-1;}
+void Hide(Window& w){if(w.shown){w.shown=false;destroy(w.native);}w.buttons.clear();w.tabs.clear();w.pressed=w.hover=-1;w.mouseDown=false;w.dragScroll=-1;}
 void Show(Window& w);
 void AdvanceDrawer(DWORD now);
 void RestoreCategory(){const auto& memory=categoryMemory[category];listPage=memory.page;listOffset=memory.offset;collapsedGroups=memory.collapsed;selectedQuest=0;selectedRow=-1;view=desiredView=1;quests.clear();detailRows.clear();questTotal=0;title.clear();message.clear();questDescription.clear();restoreSelection=true;restorePages.clear();}
@@ -324,14 +359,22 @@ void CaptionButton(Window& w,HDC dc,int id,RECT r,const std::wstring& caption,bo
     Blit(dc,r,path.c_str());
     // Extend a caption-free column of the original skin to preserve its native gradient.
     if(auto skin=Skin(path))for(int y=r.top+2;y<r.bottom-2;++y){int sy=(y-r.top)*skin->height/(r.bottom-r.top);auto color=GetPixel(skin->dc,3,sy);if(pressed)color=RGB((std::max)(0,int(GetRValue(color))-12),(std::max)(0,int(GetGValue(color))-12),(std::max)(0,int(GetBValue(color))-12));Fill(dc,{r.left+3,y,r.right-3,y+1},color);}
-    bool selected=(id==2 && category==0) || (id==3 && category==1);
-    if(selected && active)Fill(dc,{r.left+3,r.top+2,r.right-3,r.bottom-2},pressed?RGB(35,94,133):RGB(57,124,168));
     RECT text=r;if(pressed)OffsetRect(&text,1,1);
-    Write(dc,text,caption,active?RGB(255,255,255):RGB(145,145,145),selected,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    Write(dc,text,caption,active?RGB(255,255,255):RGB(145,145,145),false,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
     w.buttons.push_back({r,id,caption,active});
 }
 void ButtonAt(Window& w,HDC dc,int id,RECT r,const wchar_t* label,bool active=true){CaptionButton(w,dc,id,r,Text(label),active);}
 void CloseButton(Window& w,HDC dc,int x){RECT r{x,5,x+12,17};bool active=!Blocked(w);const wchar_t* state=!active?L"disabled":w.pressed==1 && w.hover==1?L"pressed":w.hover==1?L"mouseOver":L"normal";Blit(dc,r,(std::wstring(L"UI/Basic.img/BtClose/")+state+L"/0").c_str());w.buttons.push_back({r,1,Text(L"close"),active});}
+void TabAt(Window& w,HDC dc,int id,RECT r,const std::wstring& text) {
+    bool active=!Blocked(w),selected=(id==2 && category==0) || (id==3 && category==1);
+    auto prefix=std::wstring(L"UI/Basic.img/Tab2/");const wchar_t* state=selected?L"1":L"0";
+    Blit(dc,{r.left,r.top,r.left+4,r.bottom},(prefix+L"left"+state).c_str());
+    Blit(dc,{r.left+4,r.top,r.right-4,r.bottom},(prefix+L"fill"+state).c_str());
+    Blit(dc,{r.right-4,r.top,r.right,r.bottom},(prefix+L"right"+state).c_str());
+    RECT caption=r;if(w.pressed==id && w.hover==id)OffsetRect(&caption,1,1);
+    Write(dc,caption,text,!active?RGB(150,150,150):selected?RGB(255,255,255):RGB(85,85,85),selected,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    w.tabs.push_back({r,id,text,active});
+}
 bool CompletionAllowed(int kind) {
     return kind==1?(completionFeatures&1)!=0:kind==2?(completionFeatures&2)!=0:kind==7?completionFeatures!=0:false;
 }
@@ -339,6 +382,29 @@ std::wstring Amount(int64_t value) {
     auto text=std::to_wstring(value);
     for(int i=int(text.size())-3;i>0;i-=3)text.insert(i,1,L',');
     return text;
+}
+std::wstring ObjectiveCaption(const Row& row) {
+    auto caption=row.label;if(row.kind==1 || row.kind==2)caption+=L" ("+std::to_wstring(row.id)+L")";
+    if(row.required>0)caption+=L"  "+std::to_wstring(row.current)+L"/"+std::to_wstring(row.required);
+    return caption;
+}
+int ObjectiveHeight(HDC dc,const Row& row) {return (std::max)(44,WrappedHeight(dc,300,ObjectiveCaption(row),true)+WrappedHeight(dc,300,row.info)+10);}
+int ObjectiveMaximum(HDC dc,int bottom) {
+    int height=0,maximum=int(detailRows.size());
+    for(int i=int(detailRows.size())-1;i>=0;--i){height+=ObjectiveHeight(dc,detailRows[i])+3;if(height>bottom-225 && maximum<int(detailRows.size()))break;maximum=i;}
+    return maximum;
+}
+void ObjectiveTable(Window& w,HDC dc,int bottom) {
+    int maximum=ObjectiveMaximum(dc,bottom);detailOffset=(std::min)(detailOffset,maximum);int y=225,end=detailOffset;
+    for(int i=detailOffset;i<int(detailRows.size());++i){const auto& row=detailRows[i];int height=ObjectiveHeight(dc,row);
+        if(y+height>bottom && y>225)break;int rowBottom=(std::min)(bottom,y+height);
+        Fill(dc,{265,y,575,rowBottom},i==selectedRow?RGB(224,237,249):RGB(245,247,250));
+        int saved=SaveDC(dc);IntersectClipRect(dc,265,y,575,rowBottom);int captionHeight=WrappedHeight(dc,300,ObjectiveCaption(row),true);
+        Write(dc,{270,y+3,570,y+3+captionHeight},ObjectiveCaption(row),row.flags&1?RGB(30,127,77):RGB(36,62,90),i==selectedRow,DT_WORDBREAK|DT_NOPREFIX);
+        Write(dc,{270,y+5+captionHeight,570,rowBottom-3},row.info,RGB(100,111,120),false,DT_WORDBREAK|DT_NOPREFIX);RestoreDC(dc,saved);
+        w.rowHits.push_back({{265,y,575,rowBottom},i});y=rowBottom+3;end=i+1;
+    }
+    ScrollbarAt(w,dc,{579,225,591,bottom},detailOffset,maximum,(std::max)(1,end-detailOffset));
 }
 void WriteAmount(HDC dc,RECT bounds,const std::wstring& text) {
     LOGFONTW description{};GetObjectW(font,sizeof(description),&description);
@@ -383,17 +449,18 @@ void MapTable(Window& w,HDC dc,const std::vector<Row>& rows) {
         for(int x:{first,second})Fill(dc,{x,y,x+1,bottom},RGB(231,236,242));
         w.rowHits.push_back({{265,y,581,bottom},i});y=bottom;end=i+1;
     }
-    if(detailOffset>0 || end<int(rows.size()))ScrollbarAt(w,dc,{580,87,592,321},detailOffset,(std::max)(0,int(rows.size())-1),(std::max)(1,end-detailOffset));
+    if(detailOffset>0 || end<int(rows.size()))ScrollbarAt(w,dc,{579,87,591,321},detailOffset,(std::max)(0,int(rows.size())-1),(std::max)(1,end-detailOffset));
 }
 void Paint(Window& w) {
     int width=WindowWidth(w),height=WindowHeight(w);
     if(!w.image || w.image->width!=width || w.image->height!=height)w.image=std::make_unique<Bitmap>(width,height);
     if(!w.image->pixels)return;
-    HDC dc=w.image->dc;w.buttons.clear();w.rowHits.clear();w.listHits.clear();w.scrollbars.clear();
+    HDC dc=w.image->dc;w.buttons.clear();w.tabs.clear();w.rowHits.clear();w.listHits.clear();w.scrollbars.clear();
     Fill(dc,{0,0,width,height},RGB(253,253,253));
     if(w.modal) {
-        Fill(dc,{0,0,width,25},RGB(217,231,245));
-        Write(dc,{12,2,330,23},Text(L"confirm"),RGB(25,48,72),true);
+        WindowFrame(dc,{0,0,width,height});Fill(dc,{4,24,width-4,height-4},RGB(253,253,253));
+        Fill(dc,{8,3,width-8,21},RGB(253,253,253));
+        Write(dc,{12,2,330,21},Text(L"confirm"),RGB(25,48,72),true);
         Write(dc,{14,37,335,76},confirming?Text(L"processing"):Text(L"quote"),RGB(85,94,109),false,DT_WORDBREAK);
         Write(dc,{14,82,335,130},quote.message,RGB(35,57,85),true,DT_WORDBREAK);
         Write(dc,{14,139,335,161},Text(L"cost")+L": "+Amount(quote.price),RGB(190,66,44),true);
@@ -406,11 +473,11 @@ void Paint(Window& w) {
         Write(dc,{9,1,178,21},Text(L"title"),RGB(25,48,72),true);
         CaptionButton(w,dc,15,{210,4,225,21},w.collapsed?L">":L"<",selectedQuest!=0);
         CloseButton(w,dc,230);
-        CaptionButton(w,dc,2,{9,28,124,47},Text(L"progress")+(progressCount>=0?L" "+std::to_wstring(progressCount):L""));
-        CaptionButton(w,dc,3,{127,28,240,47},Text(L"ready")+(readyCount>=0?L" "+std::to_wstring(readyCount):L""));
+        TabAt(w,dc,2,{9,28,124,47},Text(L"progress")+(progressCount>=0?L" "+std::to_wstring(progressCount):L""));
+        TabAt(w,dc,3,{126,28,242,47},Text(L"ready")+(readyCount>=0?L" "+std::to_wstring(readyCount):L""));
         RECT banner{9,51,242,70};bool bannerActive=!Blocked(w) && !quests.empty();
         Fill(dc,banner,w.pressed==16 && w.hover==16?RGB(117,155,177):w.hover==16?RGB(181,209,225):RGB(203,223,235));
-        std::wstring bannerText=(AllGroupsCollapsed()?L"+  ":L"-  ")+Text(AllGroupsCollapsed()?L"expandAll":L"collapseAll");
+        std::wstring bannerText=AllGroupsCollapsed()?L"+":L"-";
         RECT bannerCaption=banner;if(w.pressed==16 && w.hover==16)OffsetRect(&bannerCaption,1,1);
         Write(dc,bannerCaption,bannerText,bannerActive?RGB(41,74,98):RGB(130,139,147),false,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
         w.buttons.push_back({banner,16,bannerText,bannerActive});
@@ -437,7 +504,7 @@ void Paint(Window& w) {
             w.listHits.push_back({bounds,entry});y+=rowHeight;
         }
         RestoreDC(dc,savedList);
-        ScrollbarAt(w,dc,{229,ListViewportTop,242,ListViewportBottom},listOffset,maximum,visible);
+        ScrollbarAt(w,dc,{230,ListViewportTop,242,ListViewportBottom},listOffset,maximum,visible,true,20);
         int pages=(std::max)(1,(questTotal+ServerPageSize-1)/ServerPageSize);
         Write(dc,{13,395,237,411},std::to_wstring(listPage+1)+L" / "+std::to_wstring(pages)+L"  "+Text(L"pageCount")+L" "+std::to_wstring(quests.size()),RGB(113,117,123));
         ButtonAt(w,dc,4,{14,420,83,439},L"prev",listPage>0);
@@ -453,32 +520,17 @@ void Paint(Window& w) {
             if(view==2 || view==3)MapTable(w,dc,rows);
             else {
                 Fill(dc,{265,63,587,125},RGB(223,237,250));
-                Write(dc,{271,68,491,99},title,RGB(34,72,106),true,DT_WORDBREAK|DT_NOPREFIX);
-                Write(dc,{271,103,491,121},L"Lv."+std::to_wstring(questLevel),RGB(74,109,138));
+                Write(dc,{271,68,491,95},title,RGB(34,72,106),true,DT_WORDBREAK|DT_NOPREFIX);
+                Write(dc,{271,95,491,108},Text(L"questId")+L": "+std::to_wstring(selectedQuest),RGB(74,109,138));
+                Write(dc,{271,109,491,122},L"Lv."+std::to_wstring(questLevel),RGB(74,109,138));
                 NpcPortrait(*w.image,{493,66,580,123},questNpc);
-                TextPane(w,dc,{268,130,587,201},questDescription,descriptionScroll,descriptionScrollMax);
+                TextPane(w,dc,{268,130,592,201},questDescription,descriptionScroll,descriptionScrollMax);
                 Write(dc,{270,204,581,222},Text(L"objectives"),RGB(42,73,105),true);
-                detailOffset=(std::min)(detailOffset,(std::max)(0,int(rows.size())-2));
-                for(int i=detailOffset;i<int(rows.size()) && i<detailOffset+2;++i) {
-                    auto& r=rows[i];int y=225+(i-detailOffset)*47;
-                    Fill(dc,{265,y,575,y+44},i==selectedRow?RGB(224,237,249):RGB(245,247,250));
-                    std::wstring progress=r.required>0?L"  "+std::to_wstring(r.current)+L"/"+std::to_wstring(r.required):L"";
-                    Write(dc,{270,y,570,y+20},r.label+progress,r.flags&1?RGB(30,127,77):RGB(36,62,90),i==selectedRow);
-                    Write(dc,{270,y+20,570,y+42},r.info,RGB(100,111,120),false,DT_WORDBREAK|DT_NOPREFIX);
-                    w.rowHits.push_back({{265,y,575,y+44},i});
-                }
-                ScrollbarAt(w,dc,{579,225,592,319},detailOffset,(std::max)(0,int(rows.size())-2),2);
+                ObjectiveTable(w,dc,message.empty()?383:321);
             }
-            if(rows.empty())Write(dc,{268,view==1?230:93,579,300},view==2?Text(L"noSource"):message,RGB(100,110,120),false,DT_WORDBREAK);
-            std::wstring description;
-            if(view!=3 && selectedRow>=0 && selectedRow<int(rows.size())) {
-                const auto& r=rows[selectedRow];
-                description=r.label+(view==2?L" ("+std::to_wstring(r.id)+L")":L"")+L"\n"+r.info;
-                if(view==2)description+=L"\n"+Text(L"cost")+L": "+Amount(r.cost);
-            }
-            if(!message.empty())description+=(description.empty()?L"":L"\n\n")+message;
-            Fill(dc,{265,326,587,327},RGB(224,232,240));
-            TextPane(w,dc,{268,333,587,383},description,textScroll,textScrollMax);
+            if(rows.empty() && view==2)Write(dc,{268,93,579,300},Text(L"noSource"),RGB(100,110,120),false,DT_WORDBREAK);
+            if(!message.empty()){Fill(dc,{265,326,587,327},RGB(224,232,240));TextPane(w,dc,{268,333,592,383},message,textScroll,textScrollMax);}
+            else textScroll=textScrollMax=0;
             int total=view==2?sourceTotal:view==3?routeTotal:detailTotal;
             int page=view==2?sourcePage:view==3?routePage:detailPage;
             if(total>50 || page>0) {
@@ -519,6 +571,7 @@ int __fastcall HitTest(void* self,void*,int x,int y,void** control) {
     if(x<0 || y<0 || x>=VisibleWidth(*w) || y>=WindowHeight(*w))return 0;
     if(Blocked(*w))return 2;
     POINT p{x,y};for(const auto& b:w->buttons)if(PtInRect(&b.rect,p))return 2;
+    for(const auto& tab:w->tabs)if(PtInRect(&tab.rect,p))return 2;
     return y<25?1:2;
 }
 void __fastcall Key(void* input,void*,unsigned key,unsigned flags) {
@@ -537,6 +590,7 @@ int __fastcall MouseMove(void* input,void*,int x,int y) {
         *bar.value=(std::max)(0,(std::min)(bar.maximum,w->dragValue+(y-w->dragStart)*bar.maximum/(std::max)(1,distance)));Dirty();return 1;
     }
     int hover=-1;POINT p{x,y};for(const auto& b:w->buttons)if(b.enabled && PtInRect(&b.rect,p))hover=b.id;
+    for(const auto& tab:w->tabs)if(tab.enabled && PtInRect(&tab.rect,p))hover=tab.id;
     if(hover!=w->hover){w->hover=hover;Invalidate(*w);}return 1;
 }
 void __fastcall MouseEnter(void* input,void*,int entered){auto w=Find(input,true);if(!w || entered)return;w->hover=w->pressed=-1;w->mouseDown=false;w->dragScroll=-1;Invalidate(*w);}
@@ -546,12 +600,13 @@ int __fastcall Wheel(void* input,void*,int x,int y,int delta) {
     else if(w->animating)return 1;
     else if(view==1 && y>=130 && y<=201)descriptionScroll=(std::max)(0,(std::min)(descriptionScrollMax,descriptionScroll+(delta>0?24:-24)));
     else if(y>=326 && y<385)textScroll=(std::max)(0,(std::min)(textScrollMax,textScroll+(delta>0?24:-24)));
-    else detailOffset=(std::max)(0,(std::min)(int(Rows().size())-(view==1?2:1),detailOffset+(delta>0?2:-2)));
+    else {int maximum=view==1 && mainWindow.image?ObjectiveMaximum(mainWindow.image->dc,message.empty()?383:321):(std::max)(0,int(Rows().size())-1);detailOffset=(std::max)(0,(std::min)(maximum,detailOffset+(delta>0?2:-2)));}
     Dirty();return 1;
 }
 void Click(Window& w,int id) {
     if(Blocked(w))return;
     if(w.modal){if(id==21 && !confirming)DismissQuote();return;}
+    if(id>=100){for(auto& bar:w.scrollbars)if(id==bar.id || id==bar.id+1){*bar.value=(std::max)(0,(std::min)(bar.maximum,*bar.value+(id==bar.id?-bar.step:bar.step)));Dirty();return;}return;}
     auto& rows=Rows();bool chosen=selectedRow>=0 && selectedRow<int(rows.size());
     if(id==1){RememberCategory();++navigation;Hide(w);return;}
     if(id==15){SetExpanded(w.collapsed);return;}
@@ -584,6 +639,7 @@ void __fastcall MouseButton(void* input,void*,unsigned msg,unsigned,int x,int y)
     POINT p{x,y};
     if(msg==WM_LBUTTONDOWN) {
         w->mouseDown=true;w->pressed=w->hover=-1;
+        for(const auto& tab:w->tabs)if(tab.enabled && PtInRect(&tab.rect,p)){w->pressed=w->hover=tab.id;Invalidate(*w);return;}
         for(const auto& b:w->buttons)if(b.enabled && PtInRect(&b.rect,p)){w->pressed=w->hover=b.id;Invalidate(*w);return;}
         for(int i=0;i<int(w->scrollbars.size());++i){auto& bar=w->scrollbars[i];if(PtInRect(&bar.track,p)){
             if(!PtInRect(&bar.thumb,p)){int range=bar.track.bottom-bar.track.top-(bar.thumb.bottom-bar.thumb.top);*bar.value=(std::max)(0,(std::min)(bar.maximum,int((y-bar.track.top-(bar.thumb.bottom-bar.thumb.top)/2)*bar.maximum/(std::max)(1,range))));}
@@ -594,6 +650,7 @@ void __fastcall MouseButton(void* input,void*,unsigned msg,unsigned,int x,int y)
     bool wasDown=w->mouseDown;int pressed=w->pressed;w->pressed=-1;w->mouseDown=false;Invalidate(*w);
     if(w->dragScroll>=0){w->dragScroll=-1;return;}
     if(!wasDown)return;
+    for(const auto& tab:w->tabs)if(tab.enabled && PtInRect(&tab.rect,p)){if(pressed==tab.id)Click(*w,tab.id);return;}
     for(const auto& b:w->buttons)if(b.enabled && PtInRect(&b.rect,p)){
         if(pressed!=b.id)return;
         if(b.id==20 && w->modal && quote.token && !confirming){Enqueue({5,quotedRequest.quest,quotedRequest.kind,quotedRequest.target,quotedRequest.map,5,quote.token});confirming=true;Dirty();}

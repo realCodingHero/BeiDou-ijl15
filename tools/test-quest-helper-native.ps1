@@ -36,6 +36,8 @@ foreach($a in Get-ChildItem $MapleLibDirectory -Filter *.dll){try{[void][Reflect
 [MapleLib.MapleCryptoLib.MapleCryptoConstants]::UserKey_WzLib=[MapleLib.MapleCryptoLib.MapleCryptoConstants]::MAPLESTORY_USERKEY_DEFAULT.Clone()
 $r=[MapleLib.WzLib.Serializer.WzImgDeserializer]::new($false)
 $paths=@('UIWindow.img/Quest/backgrnd','UIWindow.img/Quest/backgrnd2','UIWindow.img/QuestAlarm/backgrndmax','UIWindow.img/QuestAlarm/backgrndcenter','UIWindow.img/QuestAlarm/backgrndbottom','Basic.img/BtOK/normal/0','Basic.img/BtOK/mouseOver/0','Basic.img/BtOK/disabled/0','UIWindow.img/Quest/BtDetail/normal/0','UIWindow.img/Quest/BtDetail/mouseOver/0','UIWindow.img/Quest/BtDetail/pressed/0','UIWindow.img/Quest/BtDetail/disabled/0','Basic.img/BtClose/normal/0','Basic.img/BtClose/mouseOver/0','Basic.img/BtClose/pressed/0','Basic.img/BtClose/disabled/0')
+$paths+=@('Basic.img/Tab2/left0','Basic.img/Tab2/left1','Basic.img/Tab2/right0','Basic.img/Tab2/right1','Basic.img/Tab2/fill0','Basic.img/Tab2/fill1','Basic.img/VScr/enabled/prev0','Basic.img/VScr/enabled/prev1','Basic.img/VScr/enabled/next0','Basic.img/VScr/enabled/next1','Basic.img/VScr/enabled/base','Basic.img/VScr/enabled/thumb0','Basic.img/VScr/enabled/thumb1','Basic.img/VScr/disabled/prev','Basic.img/VScr/disabled/next','Basic.img/VScr/disabled/base')
+[IO.File]::WriteAllLines((Join-Path $out 'skin-paths.txt'),$paths,[Text.UTF8Encoding]::new($false))
 $images=@{}
 for($i=0;$i -lt $paths.Count;$i++){
  $parts=$paths[$i].Split('/');$imgName=$parts[0]
@@ -47,6 +49,18 @@ $ok=$false
 $quest=$r.WzImageFromIMGFile((Join-Path $Client 'Data\Quest\QuestInfo.img'),[MapleLib.WzLib.WzAESConstant]::WZ_GMSIV,'QuestInfo.img',[ref]$ok)
 if(!$ok){throw 'Cannot parse original quest description'}
 [IO.File]::WriteAllText((Join-Path $out 'quest-description.txt'),$quest['2000']['1'].Value,[Text.UTF8Encoding]::new($false))
+foreach($questId in @('8048','2089','28269')){[IO.File]::WriteAllText((Join-Path $out "quest-$questId.txt"),$quest[$questId]['1'].Value,[Text.UTF8Encoding]::new($false))}
+$resourceLines=[Collections.Generic.List[string]]::new()
+foreach($file in @('Etc.img','Npc.img','Mob.img')){
+ $strings=$r.WzImageFromIMGFile((Join-Path $Client "Data\String\$file"),[MapleLib.WzLib.WzAESConstant]::WZ_GMSIV,$file,[ref]$ok)
+ if(!$ok){throw 'Cannot parse original quest token names'}
+ $ids=if($file -eq 'Etc.img'){@('4000003','4000004','4000010')}elseif($file -eq 'Npc.img'){@('1012109','1032100','1032106')}else{@('1110100')}
+ foreach($id in $ids){$node=if($file -eq 'Etc.img'){$strings['Etc'][$id]}else{$strings[$id]};$path=if($file -eq 'Etc.img'){"String/$file/Etc/$id/name"}else{"String/$file/$id/name"};$resourceLines.Add($path+"`t"+$node['name'].Value)}
+}
+$checks=$r.WzImageFromIMGFile((Join-Path $Client 'Data\Quest\Check.img'),[MapleLib.WzLib.WzAESConstant]::WZ_GMSIV,'Check.img',[ref]$ok)
+if(!$ok){throw 'Cannot parse original quest counter reference'}
+$resourceLines.Add("Quest/Check.img/8048/1/mob/0/id`t"+$checks['8048']['1']['mob']['0']['id'].Value)
+[IO.File]::WriteAllLines((Join-Path $out 'token-resources.tsv'),$resourceLines,[Text.UTF8Encoding]::new($false))
 $npc=$r.WzImageFromIMGFile((Join-Path $Client 'Data\Npc\1032001.img'),[MapleLib.WzLib.WzAESConstant]::WZ_GMSIV,'1032001.img',[ref]$ok)
 if(!$ok){throw 'Cannot parse original NPC portrait'}
 $portrait=$npc['stand']['0'].PngProperty.GetImage($false)
