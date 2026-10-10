@@ -72,4 +72,11 @@ int main(int argc,char** argv){
     for(POINT p:{POINT{20,20},POINT{280,280},POINT{530,300},POINT{590,440}})
         assert((frame[(75+p.y)*800+100+p.x]&0xffffff)==0x2288cc);
     puts("PASS actual DirectX repaint: a previously rendered texture displays new UI content");
+    // A closing drawer clears cached pixels rather than leaving an invisible, opaque tail.
+    for(int y=0;y<450;++y)for(int x=0;x<600;++x)image.pixels[y*600+x]=x<425?0xff2288cc:0;
+    assert(Upload(canvas,image));
+    for(int n=0;n<3;++n){Check(gr->raw_UpdateCurrentTime(300+n*20),"drawer clock");Check(gr->raw_RenderFrame(),"drawer frame");}
+    for(POINT p:{POINT{440,40},POINT{530,300},POINT{590,440}}){unsigned color=1;Check(canvas->get_pixel(p.x,p.y,&color),"transparent canvas");assert(color==0);assert((frame[(75+p.y)*800+100+p.x]&0xffffff)==0);}
+    assert((frame[95*800+120]&0xffffff)==0x2288cc);
+    puts("PASS actual DirectX drawer: transparent area clears across cached GPU tiles and renders the background");
 }

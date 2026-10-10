@@ -35,7 +35,7 @@ Add-Type -AssemblyName System.Drawing
 foreach($a in Get-ChildItem $MapleLibDirectory -Filter *.dll){try{[void][Reflection.Assembly]::LoadFrom($a.FullName)}catch{}}
 [MapleLib.MapleCryptoLib.MapleCryptoConstants]::UserKey_WzLib=[MapleLib.MapleCryptoLib.MapleCryptoConstants]::MAPLESTORY_USERKEY_DEFAULT.Clone()
 $r=[MapleLib.WzLib.Serializer.WzImgDeserializer]::new($false)
-$paths=@('UIWindow.img/Quest/backgrnd','UIWindow.img/Quest/backgrnd2','UIWindow.img/QuestAlarm/backgrndmax','UIWindow.img/QuestAlarm/backgrndcenter','UIWindow.img/QuestAlarm/backgrndbottom','Basic.img/BtOK/normal/0','Basic.img/BtOK/mouseOver/0','Basic.img/BtOK/disabled/0')
+$paths=@('UIWindow.img/Quest/backgrnd','UIWindow.img/Quest/backgrnd2','UIWindow.img/QuestAlarm/backgrndmax','UIWindow.img/QuestAlarm/backgrndcenter','UIWindow.img/QuestAlarm/backgrndbottom','Basic.img/BtOK/normal/0','Basic.img/BtOK/mouseOver/0','Basic.img/BtOK/disabled/0','UIWindow.img/Quest/BtDetail/normal/0','UIWindow.img/Quest/BtDetail/mouseOver/0','UIWindow.img/Quest/BtDetail/pressed/0','UIWindow.img/Quest/BtDetail/disabled/0','Basic.img/BtClose/normal/0','Basic.img/BtClose/mouseOver/0','Basic.img/BtClose/pressed/0','Basic.img/BtClose/disabled/0')
 $images=@{}
 for($i=0;$i -lt $paths.Count;$i++){
  $parts=$paths[$i].Split('/');$imgName=$parts[0]
