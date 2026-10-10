@@ -233,7 +233,7 @@ void MapTable(Window& w,HDC dc,const std::vector<Row>& rows) {
         int bottom=(std::min)(321,y+height);
         Fill(dc,{265,y,587,bottom},i==selectedRow?RGB(225,239,252):(i%2?RGB(246,249,253):RGB(255,255,255)));
         int saved=SaveDC(dc);IntersectClipRect(dc,265,y,581,bottom);
-        Write(dc,{mapLeft+6,y+5,mapRight-6,y+5+nameHeight},r.label,RGB(33,66,99),i==selectedRow,DT_WORDBREAK|DT_NOPREFIX);
+        Write(dc,{mapLeft+6,y+5,mapRight-6,y+5+nameHeight},r.label,route && (r.flags&8)?RGB(36,125,86):RGB(33,66,99),i==selectedRow,DT_WORDBREAK|DT_NOPREFIX);
         Write(dc,{mapLeft+6,y+5+nameHeight,mapRight-6,y+21+nameHeight},std::to_wstring(r.id),RGB(126,138,150));
         if(route)Write(dc,{269,y+7,first-4,bottom-5},std::to_wstring(routePage*ServerPageSize+i+1),RGB(59,98,140),true,DT_CENTER|DT_TOP|DT_WORDBREAK);
         else WriteAmount(dc,{first+5,y+7,second-5,bottom-5},middle);
@@ -335,9 +335,10 @@ void Paint(Window& w) {
                 ButtonAt(w,dc,14,{476,387,587,408},L"next",(page+1)*50<total);
             }
             bool chosen=selectedRow>=0 && selectedRow<int(rows.size());
+            bool mapView=view==2 || view==3;
             ButtonAt(w,dc,10,{265,412,366,439},view==2?L"route":L"source",chosen && view!=3);
-            if(view==2 || (view==1 && chosen && CompletionAllowed(rows[selectedRow].kind)))
-                ButtonAt(w,dc,11,{371,412,472,439},view==2?L"warp":L"purchase",chosen && (view==2?(rows[selectedRow].flags&8)!=0:(rows[selectedRow].flags&2)!=0));
+            if(mapView || (view==1 && chosen && CompletionAllowed(rows[selectedRow].kind)))
+                ButtonAt(w,dc,11,{371,412,472,439},mapView?L"warp":L"purchase",chosen && (mapView?(rows[selectedRow].flags&8)!=0:(rows[selectedRow].flags&2)!=0));
             ButtonAt(w,dc,12,{477,412,588,439},L"refresh");
         }
     }
@@ -407,7 +408,7 @@ void Click(Window& w,int id) {
     const auto& r=rows[selectedRow];
     if(id==10 && view==1){sourceKind=r.kind;sourceTarget=r.id;sourcePage=0;Enqueue({2,selectedQuest,r.kind,r.id,0,2});}
     else if(id==10 && view==2){routeMap=r.id;routePage=0;Route();}
-    else if(id==11 && view==2)Enqueue({4,selectedQuest,sourceKind,sourceTarget,r.id,4});
+    else if(id==11 && (view==2 || view==3) && (r.flags&8))Enqueue({4,selectedQuest,sourceKind,sourceTarget,r.id,4,view==3?routeMap:0});
     else if(id==11 && view==1 && CompletionAllowed(r.kind))Enqueue({4,selectedQuest,r.kind,r.id,0,4});
 }
 Request quotedRequest{};
