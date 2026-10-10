@@ -4,6 +4,25 @@ param(
  [string]$MapleLibDirectory='C:\Game\BeiDou-Server\tools\WzBridge\bin\Release\net10.0-windows'
 )
 $ErrorActionPreference='Stop'
+# Verify the actual executable before compiling the native ABI fixture.
+$executable=[IO.File]::ReadAllBytes((Join-Path $Client 'BeiDou.exe'))
+$nt=[BitConverter]::ToInt32($executable,0x3c)
+$sectionCount=[BitConverter]::ToUInt16($executable,$nt+6)
+$sections=$nt+24+[BitConverter]::ToUInt16($executable,$nt+20)
+function Read-ExecutableBytes([uint32]$address,[int]$count){
+ $rva=$address-0x400000
+ for($i=0;$i -lt $sectionCount;$i++){
+  $s=$sections+40*$i;$start=[BitConverter]::ToUInt32($executable,$s+12);$size=[BitConverter]::ToUInt32($executable,$s+16)
+  if($rva -ge $start -and $rva+$count -le $start+$size){$offset=[BitConverter]::ToUInt32($executable,$s+20)+$rva-$start;return ,$executable[$offset..($offset+$count-1)]}
+ }
+ throw ('Unmapped executable address '+$address.ToString('X'))
+}
+foreach($entry in @(@(0x9de383,'B84A68AE00'),@(0x9de4d2,'B8D868AE00'),@(0x9e00af,'B8486CAE00'),@(0x9e0502,'B8946CAE00'))){
+ if([Convert]::ToHexString([byte[]](Read-ExecutableBytes $entry[0] 5)) -ne $entry[1]){throw 'Unsupported native quest window ABI'}
+}
+if([BitConverter]::ToUInt32([byte[]](Read-ExecutableBytes (0xb3f078+11*4) 4),0) -ne 0x9e0502){throw 'Incorrect native Draw virtual slot'}
+if([Convert]::ToHexString([byte[]](Read-ExecutableBytes 0x9e067b 3)) -ne 'C20400'){throw 'Incorrect native Draw parameter count'}
+Write-Output 'PASS actual v83 executable: constructor/create/destroy/draw signatures, Draw slot 11 and one-argument ABI'
 $repo=Split-Path -Parent $PSScriptRoot
 $out=Join-Path $repo 'out\quest-helper-native'
 [IO.Directory]::CreateDirectory($out) | Out-Null

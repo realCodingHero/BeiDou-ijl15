@@ -29,9 +29,9 @@ using NativeVoid=void(__thiscall*)(void*);
 using NativeDraw=void(__thiscall*)(void*,RECT*);
 NativeCtor ctor=reinterpret_cast<NativeCtor>(0x009DE383);
 NativeCreate create=reinterpret_cast<NativeCreate>(0x009DE4D2);
-NativeVoid destroy=reinterpret_cast<NativeVoid>(0x009E00AD);
+NativeVoid destroy=reinterpret_cast<NativeVoid>(0x009E00AF);
 NativeVoid invalidate=reinterpret_cast<NativeVoid>(0x009E00A6);
-NativeDraw baseDraw=reinterpret_cast<NativeDraw>(0x009DEB57);
+NativeDraw baseDraw=reinterpret_cast<NativeDraw>(0x009E0502);
 
 struct Bitmap {
     HDC dc=nullptr;HBITMAP bitmap=nullptr;HGDIOBJ old=nullptr;DWORD* pixels=nullptr;int width,height;
@@ -333,7 +333,7 @@ void Show(Window& w) {
     if(!w.initialized) {
         ctor(w.native);memcpy(w.mainMethods.data(),reinterpret_cast<void*>(0x00B3F078),w.mainMethods.size()*4);
         memcpy(w.inputMethods.data(),reinterpret_cast<void*>(0x00B3F02C),w.inputMethods.size()*4);
-        w.mainMethods[0]=reinterpret_cast<void*>(Update);w.mainMethods[5]=reinterpret_cast<void*>(Draw);
+        w.mainMethods[0]=reinterpret_cast<void*>(Update);w.mainMethods[11]=reinterpret_cast<void*>(Draw);
         w.inputMethods[0]=reinterpret_cast<void*>(Key);w.inputMethods[2]=reinterpret_cast<void*>(MouseButton);
         w.inputMethods[3]=reinterpret_cast<void*>(MouseMove);w.inputMethods[4]=reinterpret_cast<void*>(Wheel);
         *reinterpret_cast<void***>(w.native)=w.mainMethods.data();*reinterpret_cast<void***>(w.native+4)=w.inputMethods.data();w.initialized=true;
@@ -350,7 +350,9 @@ bool QuestHelperUI::Install(bool value,const char* config) {
     // The ABI is specific to the locally verified v83 executable.
     if(GetModuleHandleW(nullptr)!=reinterpret_cast<HMODULE>(0x400000) ||
         memcmp(reinterpret_cast<void*>(0x9DE383),"\xB8\x4A\x68\xAE\x00",5) ||
-        memcmp(reinterpret_cast<void*>(0x9E00AD),"\xB8\x48\x6C\xAE\x00",5) ||
+        memcmp(reinterpret_cast<void*>(0x9E00AF),"\xB8\x48\x6C\xAE\x00",5) ||
+        memcmp(reinterpret_cast<void*>(0x9E0502),"\xB8\x94\x6C\xAE\x00",5) ||
+        *reinterpret_cast<unsigned*>(0x00B3F078+11*4)!=0x009E0502 ||
         memcmp(reinterpret_cast<void*>(0x9DE4D2),"\xB8\xD8\x68\xAE\x00",5))return false;
     wchar_t path[MAX_PATH];GetModuleFileNameW(nullptr,path,MAX_PATH);labelFile=path;
     labelFile=labelFile.substr(0,labelFile.find_last_of(L"\\/"))+L"\\QuestHelperUI.ini";
