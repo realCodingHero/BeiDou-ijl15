@@ -147,10 +147,14 @@ int main(int argc,char** argv) {
     Click(mainWindow,2);Click(mainWindow,7);Wheel(mainWindow.native+4,nullptr,40,100,1);Key(mainWindow.native+4,nullptr,VK_ESCAPE,0);
     assert(selectedQuest==originalQuest && view==3 && listOffset==originalOffset && mainWindow.shown && queue.empty());
     assert(HitTest(mainWindow.native,nullptr,20,10,&control)==2);
+    using EnabledInput=int(__thiscall*)(void*);inputMethods[8]=reinterpret_cast<void*>(InputEnabled);
+    assert(Method<EnabledInput>(mainWindow.native+4,32)(mainWindow.native+4)==0);
+    assert(Method<EnabledInput>(confirmWindow.native+4,32)(confirmWindow.native+4)==1);
     modalMouse(confirmWindow.native+4,WM_LBUTTONUP,0,40,220);assert(confirming && confirmWindow.shown && queue.size()==1 && queue.front().token==123);
     Paint(confirmWindow);modalMouse(confirmWindow.native+4,WM_LBUTTONUP,0,40,220);Key(confirmWindow.native+4,nullptr,VK_ESCAPE,0);assert(queue.size()==1 && confirmWindow.shown);
     Snapshot result;result.sequence=11;result.quest=selectedQuest;result.view=5;result.features=3;result.message=L"传送成功";
     receive(result,queue.front());assert(!confirmWindow.shown && !quote.token && view==3);
+    assert(Method<EnabledInput>(mainWindow.native+4,32)(mainWindow.native+4)==1);
     Click(mainWindow,7);assert(view==2 && selectedRow==0);Click(mainWindow,7);assert(view==1 && selectedRow==0);Click(mainWindow,7);assert(mainWindow.collapsed);
     SetExpanded(true);queue.clear();view=desiredView=1;
     Snapshot stale;stale.sequence=12;stale.quest=selectedQuest;stale.view=3;stale.features=3;
