@@ -45,6 +45,20 @@ for($i=0;$i -lt $paths.Count;$i++){
  $property=$images[$imgName];foreach($part in $parts[1..($parts.Length-1)]){$property=$property[$part]}
  $property.PngProperty.GetImage($false).Save((Join-Path $out "$i.bmp"),[Drawing.Imaging.ImageFormat]::Bmp)
 }
+# Extra native skins for the preview fixture: gauges, quest icons, 12x12 buttons and sample item/mob art.
+Remove-Item (Join-Path $out 'extra-*.bmp') -ErrorAction SilentlyContinue
+$extra=@(Get-Content (Join-Path $repo 'resources\skin-paths-extra.txt') | Where-Object {$_.Trim() -ne ''})
+[IO.File]::WriteAllLines((Join-Path $out 'skin-paths-extra.txt'),[string[]]$extra,[Text.UTF8Encoding]::new($false))
+for($i=0;$i -lt $extra.Count;$i++){
+ try {
+  $parts=$extra[$i].Trim().Split('/');$k=0;while(-not $parts[$k].EndsWith('.img')){$k++}
+  $file=Join-Path $Client ('Data\'+(($parts[0..$k]) -join '\'))
+  if(!$images.ContainsKey($file)){$ok=$false;$images[$file]=$r.WzImageFromIMGFile($file,[MapleLib.WzLib.WzAESConstant]::WZ_GMSIV,$parts[$k],[ref]$ok);if(!$ok){throw "Cannot parse $file"}}
+  $property=$images[$file];foreach($part in $parts[($k+1)..($parts.Length-1)]){$property=$property[$part]}
+  if($property -is [MapleLib.WzLib.WzProperties.WzUOLProperty]){$property=$property.LinkValue}
+  $property.PngProperty.GetImage($false).Save((Join-Path $out "extra-$i.bmp"),[Drawing.Imaging.ImageFormat]::Bmp)
+ } catch {Write-Warning ('Optional preview skin skipped: '+$extra[$i]+' '+$_.Exception.Message)}
+}
 $ok=$false
 $quest=$r.WzImageFromIMGFile((Join-Path $Client 'Data\Quest\QuestInfo.img'),[MapleLib.WzLib.WzAESConstant]::WZ_GMSIV,'QuestInfo.img',[ref]$ok)
 if(!$ok){throw 'Cannot parse original quest description'}
