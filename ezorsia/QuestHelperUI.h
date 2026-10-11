@@ -7,4 +7,12 @@ bool Enabled();
 void Open();
 bool Receive(const unsigned char* data, size_t size);
 void FieldChange();
+// Native Maple Helper (NPC 9900001); requires the quest helper and server opcode 0x1004.
+bool InstallHelper(bool enabled);
+bool HelperEnabled();
+// True once the server acknowledged the Maple Helper protocol on this field.
+bool HelperReady();
+// 0 hub, 1 super teleport, 2 pet loot settings.
+void OpenHelper(int page);
+bool ReceiveHelper(const unsigned char* data, size_t size);
 }

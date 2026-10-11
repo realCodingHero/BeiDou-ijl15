@@ -65,8 +65,13 @@ int main(int argc,char** argv) {
     std::ifstream pathFile(directory/"skin-paths.txt");std::vector<std::wstring> paths;std::string pathLine;
     while(std::getline(pathFile,pathLine)){if(!pathLine.empty() && pathLine.back()=='\r')pathLine.pop_back();std::wstring path(pathLine.begin(),pathLine.end());paths.push_back(L"UI/"+path);}
     assert(paths.size()==32);
+    // Additional native skins (gauges, quest icons, 12x12 buttons, sample item/mob art).
+    std::vector<std::filesystem::path> files;for(int i=0;i<32;++i)files.push_back(directory/(std::to_string(i)+".bmp"));
+    std::ifstream extraFile(directory/"skin-paths-extra.txt");
+    for(int i=0;std::getline(extraFile,pathLine);++i){if(!pathLine.empty() && pathLine.back()=='\r')pathLine.pop_back();if(pathLine.empty())continue;
+        auto file=directory/("extra-"+std::to_string(i)+".bmp");if(!std::filesystem::exists(file))continue;paths.push_back(std::wstring(pathLine.begin(),pathLine.end()));files.push_back(file);}
     for(int i=0;i<int(paths.size());++i) {
-        auto file=directory/(std::to_string(i)+".bmp");HBITMAP bitmap=static_cast<HBITMAP>(LoadImageW(nullptr,file.c_str(),IMAGE_BITMAP,0,0,LR_LOADFROMFILE|LR_CREATEDIBSECTION));assert(bitmap);
+        auto file=files[i];HBITMAP bitmap=static_cast<HBITMAP>(LoadImageW(nullptr,file.c_str(),IMAGE_BITMAP,0,0,LR_LOADFROMFILE|LR_CREATEDIBSECTION));assert(bitmap);
         BITMAP info{};GetObject(bitmap,sizeof(info),&info);auto b=std::make_unique<Bitmap>(info.bmWidth,info.bmHeight);
         HDC src=CreateCompatibleDC(nullptr);auto old=SelectObject(src,bitmap);BitBlt(b->dc,0,0,b->width,b->height,src,0,0,SRCCOPY);SelectObject(src,old);DeleteDC(src);DeleteObject(bitmap);GdiFlush();
         skins.emplace(paths[i],std::move(b));
@@ -111,30 +116,58 @@ int main(int argc,char** argv) {
     assert(mainWindow.image->width==250 && caption(mainWindow,2)==L"进行中 2" && caption(mainWindow,3)==L"可交付 1");
     assert(mainWindow.tabs.size()==2 && !hasButton(mainWindow,2) && !hasButton(mainWindow,3));
     assert(mainWindow.scrollbars.size()==1 && mainWindow.scrollbars.front().maximum==0);
-    assert(caption(mainWindow,16)==L"-");
+    assert(caption(mainWindow,16)==Trimmed(Text(L"expandAll")) && caption(mainWindow,17)==Trimmed(Text(L"collapseAll")));
+    assert(buttonEnabled(mainWindow,16) && buttonEnabled(mainWindow,17)); // the medal group starts collapsed
     auto entries=ListEntries();assert(entries.size()==5 && entries.back().group==100000 && entries.back().index==-1);
-    assert(hasButton(mainWindow,16) && !hasButton(mainWindow,17));
-    Click(mainWindow,16);assert(ListEntries().size()==3);Paint(mainWindow);assert(caption(mainWindow,16)==L"+");Click(mainWindow,16);assert(ListEntries().size()==6);
-    Click(mainWindow,16);SelectQuest(2000,L"酋长的家修理");assert(!mainWindow.collapsed && mainWindow.x==110 && mainWindow.y==90);
+    assert(hasButton(mainWindow,16) && hasButton(mainWindow,17));
+    Click(mainWindow,17);assert(ListEntries().size()==3);Paint(mainWindow);assert(buttonEnabled(mainWindow,16) && !buttonEnabled(mainWindow,17));Click(mainWindow,16);assert(ListEntries().size()==6);
+    Click(mainWindow,17);SelectQuest(2000,L"酋长的家修理");assert(!mainWindow.collapsed && mainWindow.x==110 && mainWindow.y==90);
     assert(mainWindow.animating && mainWindow.drawer==0);AdvanceDrawer(mainWindow.drawerStart+100);Paint(mainWindow);
     assert(mainWindow.drawer==175 && mainWindow.image->width==600);
     for(int y=0;y<450;++y)for(int x=425;x<600;++x)assert(mainWindow.image->pixels[y*600+x]==0);
     void* drawerControl=nullptr;assert(HitTest(mainWindow.native,nullptr,450,10,&drawerControl)==0);
     Save(*mainWindow.image,directory/"quest-drawer.bmp");AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);
     detailRows={{4000018,2,2,12,50,1800,L"木块",L"缺少 38 个"},{4000003,2,2,26,30,200,L"树枝",L"缺少 4 个"},{1032001,6,0,0,0,0,L"汉斯",L"交付 NPC"}};
-    questNpc=1032001;questDescription=Description(2000);selectedRow=0;detailTotal=3;Paint(mainWindow);
-    assert(questDescription.find(L"木块")!=std::wstring::npos && questDescription.find(L"12/50")!=std::wstring::npos && questDescription.find(L"#")==std::wstring::npos);
+    questNpc=1032001;questDescription=Description(2000,true);selectedRow=0;detailTotal=3;Paint(mainWindow);
+    assert(PlainText(questDescription).find(L"木块")!=std::wstring::npos && PlainText(questDescription).find(L"12/50")!=std::wstring::npos && questDescription.find(L"#")==std::wstring::npos);
+    // Colour markup survives as renderer markers and disappears from plain text.
+    assert(questDescription.find(std::wstring(1,L'\x01')+L"b")!=std::wstring::npos && PlainText(questDescription)==Description(2000));
     assert(ObjectiveCaption(detailRows.front()).find(L"(4000018)")!=std::wstring::npos);
-    assert(!hasButton(mainWindow,8) && hasButton(mainWindow,9) && mainWindow.rowHits.size()==2);
+    printf("objective rows visible: %d\n",int(mainWindow.rowHits.size()));
+    assert(!hasButton(mainWindow,8) && hasButton(mainWindow,9) && mainWindow.rowHits.size()==3); // compact 36-pixel rows: all three fit above the message pane
     assert(descriptionScrollMax>0);Wheel(mainWindow.native+4,nullptr,300,150,1);assert(descriptionScroll>0);
     Save(*mainWindow.image,directory/"quest-main.bmp");
+    {   // Frames are copied 1:1 (tiled, never stretched) with their alpha.
+        auto frame=skins[L"UI/UIWindow.img/Quest/backgrnd"].get();auto drawer=skins[L"UI/UIWindow.img/Quest/backgrnd2"].get();
+        for(int y:{0,1,2,30,43,100}){assert(mainWindow.image->pixels[y*600+0]==frame->pixels[y*frame->width+0]);assert(mainWindow.image->pixels[y*600+2]==frame->pixels[y*frame->width+2]);}
+        for(int y=0;y<450;++y){int sy=y<200?y:y>=314?y-54:200+(y-200)%60;assert(mainWindow.image->pixels[y*600+0]==frame->pixels[sy*frame->width+0]);assert(mainWindow.image->pixels[y*600+599]==drawer->pixels[sy*drawer->width+drawer->width-1]);}
+        assert((mainWindow.image->pixels[0]>>24)==(frame->pixels[0]>>24));
+        for(const auto& b:mainWindow.buttons)if(b.id>=4 && b.id<100 && b.id!=15 && b.id!=16 && b.id!=17)assert(b.rect.bottom-b.rect.top==17);
+        puts("PASS native frame: 9-slice tiling keeps border pixels, shadow alpha and 17-pixel buttons");
+    }
     message.clear();selectedRow=2;Paint(mainWindow);assert(mainWindow.rowHits.size()==3);
     assert(textScrollMax==0);Save(*mainWindow.image,directory/"quest-details-expanded.bmp");
-    detailRows.push_back({1110100,1,0,53,100,0,L"绿蘑菇",L"等级 15，账号累计击杀 23"});Paint(mainWindow);
+    // Enough objectives to overflow the compact rows and show the condition scrollbar.
+    for(int i=0;i<4;++i)detailRows.push_back({1110100,1,0,53+i,100,0,L"绿蘑菇",L"等级 15，账号累计击杀 23"});Paint(mainWindow);
     bool descriptionBar=false,conditionBar=false;for(const auto& bar:mainWindow.scrollbars){assert(bar.track.right-bar.track.left==12);if(bar.value==&descriptionScroll){descriptionBar=true;assert(bar.track.left==579);}if(bar.value==&detailOffset){conditionBar=true;assert(bar.track.left==579);}}
     assert(descriptionBar && conditionBar && ObjectiveCaption(detailRows.back()).find(L"(1110100)")!=std::wstring::npos);
-    assert(GetPixel(mainWindow.image->dc,320,370)==RGB(253,253,253)); // No duplicate NPC text below the conditions.
-    Save(*mainWindow.image,directory/"quest-scrollbar-alignment.bmp");detailRows.pop_back();message=Text(L"loading");
+    {int npcHits=0;for(const auto& hit:mainWindow.rowHits)if(hit.index==2)++npcHits;assert(npcHits<=1);} // No duplicate NPC row below the conditions.
+    Save(*mainWindow.image,directory/"quest-scrollbar-alignment.bmp");
+    {   // Mob rows: "Lv. N" plus the account kill badge only while kill completion is enabled.
+        Row mob{1110100,1,0,53,100,0,L"绿蘑菇",L"等级 15，账号累计击杀 1,234"};int saved=completionFeatures;
+        completionFeatures=3;auto shown=Describe(mob);assert(shown.meta==L"Lv. 15" && shown.badge==Text(L"accountKills")+L" 1,234" && shown.detail.empty());
+        completionFeatures=2;assert(Describe(mob).badge.empty());
+        // Items: the ambiguous level-gate text is explained; completed items show no lock at all.
+        Row single{4032086,2,0,0,1,0,L"疑问小球",Text(L"lockLevelLiteral")};
+        assert(Describe(single).detail==Text(L"lockSingle") && Describe(single).badge==Text(L"purchaseLocked"));
+        single.flags=1;single.current=1;assert(Describe(single).badge.empty() && Describe(single).detail.empty());
+        Row missing{4000003,2,0,26,30,0,L"树枝",Format(Text(L"itemMissing"),L"4")};assert(Describe(missing).badge.empty());
+        missing.flags=2;assert(Describe(missing).badge==Text(L"purchasable"));
+        completionFeatures=saved;
+        selectedRow=3;Paint(mainWindow);for(const auto& hit:mainWindow.rowHits)if(hit.index==3)assert(hit.rect.bottom-hit.rect.top==ObjectiveRow); // nothing to unfold
+        puts("PASS objective rows: Lv. N, kill badge follows the kill-completion switch, clearer item locks, no empty unfolding");
+    }
+    detailRows.resize(3);message=Text(L"loading");
     SetExpanded(false);AdvanceDrawer(mainWindow.drawerStart+100);assert(mainWindow.drawer==175);
     SetExpanded(true);assert(mainWindow.animating);AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);assert(mainWindow.drawer==350);
     SetExpanded(false);AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Paint(mainWindow);assert(mainWindow.image->width==250 && selectedQuest==2000);
@@ -151,35 +184,36 @@ int main(int argc,char** argv) {
     auto modalMouse=mouse;
     quests.resize(50);for(int i=0;i<50;++i){quests[i]={2000+i,0,0,10,0,0,L"任务 "+std::to_wstring(i),L""};resourceText[L"Quest/QuestInfo.img/"+std::to_wstring(2000+i)+L"/area"]=L"30";}
     questTotal=61;listOffset=listPage=0;Paint(mainWindow);assert(!mainWindow.scrollbars.empty());
-    auto bar=mainWindow.scrollbars.front();assert(bar.value==&listOffset && bar.maximum==1302);
+    auto bar=mainWindow.scrollbars.front();assert(bar.value==&listOffset && bar.maximum==ListMaximum() && bar.maximum==ListHeight()-(ListViewportBottom-ListViewportTop));
+    assert(bar.thumb.bottom-bar.thumb.top==12); // v83 thumbs keep their native size.
     queue.clear();Click(mainWindow,101);assert(listOffset==20);Click(mainWindow,100);assert(listOffset==0 && queue.empty());
     MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONDOWN,0,235,bar.thumb.top+3);
     MouseMove(mainWindow.native+4,nullptr,235,350);assert(listOffset>0);
     Paint(mainWindow);MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONUP,0,235,350);assert(mainWindow.dragScroll==-1);
     listOffset=0;Wheel(mainWindow.native+4,nullptr,40,100,1);assert(listOffset==60);
     listOffset=0;Paint(mainWindow);assert(mainWindow.listHits.front().rect.bottom-mainWindow.listHits.front().rect.top==18);
-    assert(!hasButton(mainWindow,17));
     for(const auto& b:mainWindow.buttons){if(b.id==1)assert(b.rect.right-b.rect.left==12 && b.rect.bottom-b.rect.top==12);else assert(b.rect.bottom-b.rect.top<=19);}
-    queue.clear();MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONUP,0,190,425);assert(queue.empty());
-    MouseMove(mainWindow.native+4,nullptr,190,425);Paint(mainWindow);DWORD unpressed=mainWindow.image->pixels[424*600+170];
-    MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONDOWN,0,190,425);Paint(mainWindow);
-    assert(mainWindow.pressed==6 && mainWindow.image->pixels[424*600+170]!=unpressed);Save(*mainWindow.image,directory/"quest-pressed.bmp");
+    queue.clear();MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONUP,0,190,430);assert(queue.empty());
+    MouseMove(mainWindow.native+4,nullptr,190,430);Paint(mainWindow);std::vector<DWORD> unpressed(mainWindow.image->pixels,mainWindow.image->pixels+600*450);
+    MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONDOWN,0,190,430);Paint(mainWindow);
+    {int changed=0;for(int y=426;y<443;++y)for(int x=172;x<236;++x)if(mainWindow.image->pixels[y*600+x]!=unpressed[y*600+x])++changed;assert(mainWindow.pressed==6 && changed>0);}Save(*mainWindow.image,directory/"quest-pressed.bmp");
     MouseMove(mainWindow.native+4,nullptr,40,100);MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONUP,0,40,100);assert(mainWindow.pressed==-1 && queue.empty());
-    mouse(mainWindow.native+4,WM_LBUTTONUP,0,190,425);assert(!queue.empty());
-    MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONDOWN,0,190,425);MouseEnter(mainWindow.native+4,nullptr,0);assert(mainWindow.pressed==-1 && !mainWindow.mouseDown);
-    Paint(mainWindow);queue.clear();mouse(mainWindow.native+4,WM_LBUTTONUP,0,100,425);
+    mouse(mainWindow.native+4,WM_LBUTTONUP,0,190,430);assert(!queue.empty());
+    MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONDOWN,0,190,430);MouseEnter(mainWindow.native+4,nullptr,0);assert(mainWindow.pressed==-1 && !mainWindow.mouseDown);
+    Paint(mainWindow);queue.clear();mouse(mainWindow.native+4,WM_LBUTTONUP,0,100,430);
     assert(listPage==1 && listOffset==0 && queue.back().map==1);quests.resize(11);Paint(mainWindow);
     assert(!buttonEnabled(mainWindow,5) && buttonEnabled(mainWindow,4));
-    mouse(mainWindow.native+4,WM_LBUTTONUP,0,40,425);assert(listPage==0 && queue.back().map==0);
+    mouse(mainWindow.native+4,WM_LBUTTONUP,0,40,430);assert(listPage==0 && queue.back().map==0);
     puts("PASS categories: medal isolation, expand/collapse all, tab totals, 50-row pages, drag/wheel scrollbar and detail resizing");
     category=1;Paint(mainWindow);for(const auto& hit:mainWindow.listHits)if(hit.entry.index>=0)assert(hit.rect.bottom-hit.rect.top<=20);
     category=0;view=desiredView=3;routePage=0;routeMap=103020100;routeTotal=4;detailOffset=0;selectedRow=-1;
     sourceKind=2;sourceTarget=4000018;sourceRows={{103020100,2,8,0,0,1200,L"金银岛 - 逆恩森林 II",L"木块"}};
     routeRows={{103000000,0,8,0,0,800,L"金银岛 - 废弃都市",L"主城出发"},{103010000,0,0,0,0,1200,L"金银岛 - 废都南方工地",L"通过地图传送门"},{103020000,0,8,0,0,1200,L"金银岛 - 逆恩森林 I",L"通过地图传送门"},{103020100,0,0,0,0,1200,L"金银岛 - 逆恩森林 II",L"通过地图传送门"}};
-    message=L"按表格顺序前往，绿色地图可传送。";textScroll=0;Paint(mainWindow);
+    resourceText[L"Map/Map/Map1/103020100.img/info/mapMark"]=L"KerningCity";
+    message.clear();textScroll=0;Paint(mainWindow);assert(mainWindow.rowHits.size()==4); // every step of the route map is visible
     assert(hasButton(mainWindow,11) && !buttonEnabled(mainWindow,11));
     int green=0;const auto firstHit=mainWindow.rowHits.front();
-    for(int y=firstHit.rect.top+30;y<firstHit.rect.bottom;++y)for(int x=307;x<471;++x)if(GetPixel(mainWindow.image->dc,x,y)==RGB(36,125,86))++green;
+    for(int y=firstHit.rect.top;y<firstHit.rect.bottom;++y)for(int x=295;x<571;++x)if(GetPixel(mainWindow.image->dc,x,y)==Palette::Green)++green;
     assert(green>0);Save(*mainWindow.image,directory/"quest-route-table.bmp");
     queue.clear();selectedRow=1;Click(mainWindow,11);assert(queue.empty());selectedRow=0;Click(mainWindow,11);
     assert(queue.size()==1 && queue.front().action==4 && queue.front().map==103000000 && queue.front().token==routeMap);
@@ -205,8 +239,8 @@ int main(int argc,char** argv) {
     using EnabledInput=int(__thiscall*)(void*);inputMethods[8]=reinterpret_cast<void*>(InputEnabled);
     assert(Method<EnabledInput>(mainWindow.native+4,32)(mainWindow.native+4)==0);
     assert(Method<EnabledInput>(confirmWindow.native+4,32)(confirmWindow.native+4)==1);
-    modalMouse(confirmWindow.native+4,WM_LBUTTONUP,0,80,220);assert(confirming && confirmWindow.shown && queue.size()==1 && queue.front().token==123);
-    Paint(confirmWindow);modalMouse(confirmWindow.native+4,WM_LBUTTONUP,0,80,220);Key(confirmWindow.native+4,nullptr,VK_ESCAPE,0);assert(queue.size()==1 && confirmWindow.shown);
+    modalMouse(confirmWindow.native+4,WM_LBUTTONUP,0,120,229);assert(confirming && confirmWindow.shown && queue.size()==1 && queue.front().token==123);
+    Paint(confirmWindow);modalMouse(confirmWindow.native+4,WM_LBUTTONUP,0,120,229);Key(confirmWindow.native+4,nullptr,VK_ESCAPE,0);assert(queue.size()==1 && confirmWindow.shown);
     Snapshot result;result.sequence=11;result.quest=selectedQuest;result.view=5;result.features=3;result.message=L"传送成功";
     receive(result,queue.front());assert(!confirmWindow.shown && !quote.token && view==3);
     assert(Method<EnabledInput>(mainWindow.native+4,32)(mainWindow.native+4)==1);
@@ -261,6 +295,77 @@ int main(int argc,char** argv) {
     view=desiredView=2;sourceRows={{103000000,2,8,0,0,800,L"金银岛 - 废弃都市",L"掉落来源"},{103020000,2,8,0,0,2147483647,L"金银岛 - 逆恩森林 I",L"完整费用"}};
     selectedRow=0;detailOffset=textScroll=0;Paint(mainWindow);Save(*mainWindow.image,directory/"quest-map-table.bmp");
         TestNarrowTiles(*mainWindow.image);
+    {   // ---- Native Maple Helper (NPC 9900001) ----
+        assert(QuestHelperUI::InstallHelper(true) && QuestHelperUI::HelperEnabled() && helperWindow.kind==2);
+        helperWindow.initialized=true;Show(helperWindow);assert(helperWindow.shown && WindowWidth(helperWindow)==HelperWidth && WindowHeight(helperWindow)==HelperHeight);
+        auto utf8=[](std::vector<unsigned char>& b,const std::wstring& value){int n=WideCharToMultiByte(CP_UTF8,0,value.data(),int(value.size()),nullptr,0,nullptr,nullptr);std::string bytes(n,'\0');WideCharToMultiByte(CP_UTF8,0,value.data(),int(value.size()),bytes.data(),n,nullptr,nullptr);QuestProtocol::append(b,uint16_t(n));b.insert(b.end(),bytes.begin(),bytes.end());};
+        auto mwire=[&](const MapleProtocol::Snapshot& s){
+            std::vector<unsigned char> b;using QuestProtocol::append;
+            append(b,MapleProtocol::Version);append(b,uint8_t(s.view));append(b,s.sequence);append(b,s.character);append(b,s.meso);
+            append(b,s.cash);append(b,s.maplePoint);append(b,s.credit);append(b,uint8_t(s.flags));append(b,s.value);append(b,s.extra);
+            utf8(b,s.title);utf8(b,s.message);append(b,uint16_t(s.rows.size()));
+            for(const auto& r:s.rows){append(b,r.id);append(b,uint8_t(r.kind));append(b,uint8_t(r.flags));append(b,r.cost);append(b,int16_t(r.min));append(b,int16_t(r.max));append(b,r.icon);utf8(b,r.label);utf8(b,r.info);}
+            return b;
+        };
+        auto sent=[&](int action){assert(!helper.queue.empty());auto& b=helper.queue.back();assert(b.size()==24 && b[0]==0x04 && b[1]==0x10 && b[2]==MapleProtocol::Version && b[3]==action);int arg=0;memcpy(&arg,b.data()+8,4);return arg;};
+        auto respond=[&](MapleProtocol::Snapshot s){s.sequence=helper.sequence;s.character=42;s.meso=445100938;s.cash=11099068;auto b=mwire(s);assert(QuestHelperUI::ReceiveHelper(b.data(),b.size()));};
+        // Requests match the server's 22-byte payload behind the 0x1004 opcode.
+        auto warpBytes=MapleProtocol::Request(MapleProtocol::Warp,9,100000000,2,800);int64_t cost=0;memcpy(&cost,warpBytes.data()+16,8);assert(warpBytes.size()==24 && cost==800);
+        MapleProtocol::Snapshot open;open.view=MapleProtocol::Open;open.character=42;auto openBytes=mwire(open);MapleProtocol::Snapshot parsed;
+        assert(MapleProtocol::Parse(openBytes.data(),openBytes.size(),parsed) && parsed.view==MapleProtocol::Open);
+        open.view=MapleProtocol::HubView;openBytes=mwire(open);assert(!MapleProtocol::Parse(openBytes.data(),openBytes.size(),parsed)); // only Open may be unsolicited
+        helper.page=HubPage;HelperRequest(MapleProtocol::Hub);sent(MapleProtocol::Hub);
+        MapleProtocol::Snapshot hub;hub.view=MapleProtocol::HubView;hub.flags=1;hub.title=L"月兒枫叶助手";hub.message=L"欢迎来到月兒枫叶助手";
+        hub.rows={{71,0,1,0,0,5040000,0,L"超级传送",L"前往已探索的城镇与练级地图"},{81,0,0,0,0,1302000,0,L"装备商店",L"购买基础装备"},{82,0,1,0,0,2120000,0,L"宠物杂物设置",L"宠物拾取杂物的处理方式"},
+            {3,1,0,0,0,5030000,0,L"传送自由",L"前往自由市场"},{69,1,0,0,0,4031012,0,L"快速转职",L"完成职业转职"},{70,1,0,0,0,2290000,0,L"学习技能",L"学习职业技能"},
+            {72,1,0,0,0,4031344,0,L"转世重生",L"转世重生"},{4,1,0,0,0,5360000,0,L"爆率一览",L"查看当前地图掉落"},{2,1,0,0,0,4280000,0,L"在线奖励",L"领取在线时长奖励"},
+            {0,1,0,0,0,2022336,0,L"新人福利",L"领取新人礼包"},{1,1,0,0,0,4001126,0,L"每日签到",L"每日签到奖励"},{83,1,0,0,0,2370000,0,L"技能书 / 能手册",L"查看技能书与能手册"},
+            {62,2,0,0,0,5450000,0,L"超级商店",L"GM 商店"}};
+        respond(hub);assert(helper.hub.size()==13 && helper.cash==11099068 && helper.pending.empty() && helper.title==L"月兒枫叶助手");
+        helper.queue.clear();PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-hub.bmp");
+        auto tile=[&](int feature){for(int i=0;i<int(helper.hub.size());++i)if(helper.hub[i].id==feature)return HelperTile+i;return -1;};
+        assert(hasButton(helperWindow,tile(81)) && helperWindow.tabs.size()==2 && !hasButton(helperWindow,tile(62))); // GM tiles live on their own tab
+        Click(helperWindow,HelperHubTab+1);PaintHelper(helperWindow);assert(hasButton(helperWindow,tile(62)) && !hasButton(helperWindow,tile(81)));Click(helperWindow,HelperHubTab);PaintHelper(helperWindow);
+        // Server features: one request each; the window steps aside when the server answers.
+        Click(helperWindow,tile(81));assert(sent(MapleProtocol::Feature)==81);
+        MapleProtocol::Snapshot done;done.view=MapleProtocol::Done;done.value=81;respond(done);assert(!helperWindow.shown && helper.queue.empty());
+        // Super teleport page.
+        Show(helperWindow);helper.page=HubPage;PaintHelper(helperWindow);Click(helperWindow,tile(71));
+        assert(helper.page==TeleportPage && sent(MapleProtocol::Teleports)==2);
+        MapleProtocol::Snapshot towns;towns.view=MapleProtocol::TeleportView;towns.value=2;towns.extra=40;
+        towns.rows={{104000000,2,1,0,0,0,800,L"维多利亚岛 - 明珠港",L"维多利亚岛 - 明珠港"},{100000000,2,1,0,0,0,1200,L"维多利亚岛 - 射手村",L"维多利亚岛 - 射手村"},
+            {101050000,2,1,0,0,0,600000000,L"妖精森林 - 埃欧雷",L"妖精森林 - 埃欧雷"}};
+        respond(towns);assert(helper.teleports.size()==3 && helper.locked==40);
+        HelperRow(1);PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-teleport.bmp");
+        assert(buttonEnabled(helperWindow,HelperWarp));
+        Click(helperWindow,HelperWarp);assert(sent(MapleProtocol::Warp)==100000000);
+        {auto& b=helper.queue.back();int category=0;int64_t price=0;memcpy(&category,b.data()+12,4);memcpy(&price,b.data()+16,8);assert(category==2 && price==1200);}
+        HelperRow(2);PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,HelperWarp)); // 600,000,000 mesos is not affordable
+        MapleProtocol::Snapshot failed;failed.view=MapleProtocol::Error;failed.value=MapleProtocol::Warp;failed.message=L"该地图当前无法直接传送。";
+        respond(failed);assert(helper.status==failed.message && sent(MapleProtocol::Teleports)==2); // a failed warp refreshes prices
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        // Level maps carry their level range; switching tabs drops the old list.
+        Click(helperWindow,HelperTab+1);assert(helper.category==1 && helper.teleports.empty() && sent(MapleProtocol::Teleports)==1);
+        MapleProtocol::Snapshot levels;levels.view=MapleProtocol::TeleportView;levels.value=1;levels.extra=17;
+        levels.rows={{104040000,1,1,1,15,0,500,L"维多利亚岛 - 射手训练场",L"维多利亚岛 - 射手训练场"},{103000101,1,1,20,25,0,680,L"废弃都市 - 地铁<第1地区>",L"废弃都市 - 地铁<第1地区>"}};
+        respond(levels);PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-levels.bmp");
+        // Pet loot page: choosing another mode sends it; the current one cannot be chosen again.
+        helper.queue.clear();Click(helperWindow,HelperBack);assert(helper.page==HubPage);PaintHelper(helperWindow);Click(helperWindow,tile(82));
+        assert(helper.page==PetPage);sent(MapleProtocol::Pet);
+        MapleProtocol::Snapshot pet;pet.view=MapleProtocol::PetView;pet.value=0;
+        pet.message=L"任务专属道具始终正常拾取。进行中任务所需的普通怪物杂物会保留拾取入包，直到满足任务数量。矿石、母矿、宝石、魔法石、召唤石等珍贵材料始终正常拾取。本设置仅针对满足任务后多余的普通怪物杂物生效。";
+        pet.rows={{0,0,1,0,0,4000000,0,L"正常拾取",L"默认行为，所有杂物正常放入背包。"},{1,0,0,0,0,4000000,0,L"忽略杂物",L"宠物跳过普通怪物杂物不捡，不再占用背包。"},
+            {2,0,0,0,0,4031138,0,L"自动出售",L"宠物拾取普通怪物杂物时按店价折算为金币，无需背包空间。"}};
+        respond(pet);helper.queue.clear();PaintHelper(helperWindow);
+        assert(!buttonEnabled(helperWindow,HelperTile+500) && buttonEnabled(helperWindow,HelperTile+502));
+        Click(helperWindow,HelperTile+502);assert(sent(MapleProtocol::PetSet)==2);
+        pet.value=2;pet.title=L"设置成功！当前宠物策略：自动出售";for(auto& r:pet.rows)r.flags=r.id==2;respond(pet);
+        assert(helper.petMode==2 && helper.status==pet.title);PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-pet.bmp");
+        // Late or unknown sequences never change the view.
+        auto stale=mwire(pet);assert(QuestHelperUI::ReceiveHelper(stale.data(),stale.size()) && helper.petMode==2);
+        HideHelper();assert(!helperWindow.shown && helper.queue.empty() && helper.pending.empty());
+        puts("PASS maple helper: hub tiles and GM tab, server features, teleport tabs/prices/affordability/refresh, pet modes and stale replies");
+    }
     // Verify writes into the ACTUAL v83 Canvas DLL, including tile boundaries.
     assert(SetCurrentDirectoryA(argv[1]));assert(SetDllDirectoryA(argv[1]));HMODULE pcom=LoadLibraryA("PCOM.dll");assert(pcom);
     auto init=reinterpret_cast<HRESULT(__cdecl*)()>(GetProcAddress(pcom,"PcInitModule"));assert(init && SUCCEEDED(init()));
@@ -275,7 +380,8 @@ int main(int argc,char** argv) {
     void* raw=nullptr;HRESULT hr=Method<GetRaw>(canvas,0x34)(canvas,0,0,&raw);printf("raw canvas %08lx %p\n",hr,raw);
     if(raw){int pitch=0;VARIANT ptr{};hr=Method<Lock>(raw,0x1C)(raw,&pitch,&ptr);printf("lock %08lx pitch %d type %d ptr %08lx\n",hr,pitch,ptr.vt,ptr.lVal);if(SUCCEEDED(hr))Method<Unlock>(raw,0x20)(raw,nullptr);Method<Release>(raw,8)(raw);}
     assert(Upload(canvas,*mainWindow.image));
-    for(POINT p:{POINT{1,1},POINT{245,30},POINT{511,255},POINT{512,256},POINT{599,449}}){unsigned color=0;
+    // Opaque points across tile boundaries (the frame corners are intentionally translucent).
+    for(POINT p:{POINT{5,30},POINT{245,30},POINT{511,255},POINT{512,256},POINT{590,440}}){unsigned color=0;
         assert(SUCCEEDED(Method<Pixel>(canvas,0x88)(canvas,p.x,p.y,&color)));
         assert(color==mainWindow.image->pixels[p.y*Width+p.x]);
     }

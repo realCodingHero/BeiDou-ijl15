@@ -238,6 +238,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		AutoLogin::Hook(true);
 		HelpMenu::Install(reader.GetBoolean("optional", "native_help_menu", false));
 		QuestHelperUI::Install(reader.GetBoolean("optional", "native_quest_helper", false), iniPath);
+		QuestHelperUI::InstallHelper(reader.GetBoolean("optional", "native_maple_helper", false));
 		//Hook_get_unknown(true);
 		//Hook_get_resource_object(true); //helper function hooks  //ty teto for helping me get started
 		//Hook_com_ptr_t_IWzProperty__ctor(true);

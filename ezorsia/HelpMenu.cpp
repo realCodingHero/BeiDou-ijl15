@@ -56,6 +56,8 @@ int& WindowInt(void* window, size_t offset) {
 void SendAction(unsigned char action) {
     if (action < 1 || action > kEntryCount) return;
     if (action == 3) { if (QuestHelperUI::Enabled()) QuestHelperUI::Open(); return; }
+    // Maple Helper and Universal Warp open natively once the server acknowledged the UI.
+    if ((action == 1 || action == 4) && QuestHelperUI::HelperReady()) { QuestHelperUI::OpenHelper(action == 4 ? 1 : 0); return; }
     void* socket = *s_socket;
     if (!socket) return;
     unsigned char bytes[] = {0x02, 0x10, 0x01, action};
