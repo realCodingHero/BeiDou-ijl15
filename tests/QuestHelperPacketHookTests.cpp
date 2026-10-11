@@ -3,7 +3,8 @@
 #include <cassert>
 #include <cstdio>
 namespace {
-int forwarded=0,received=0,fieldChanges=0;
+int forwarded=0,received=0,fieldChanges=0,helperReceived=0;
+size_t helperLength=0;
 size_t payloadLength=0;
 bool accepted=false;
 void __fastcall Forward(void*,void*,CInPacket*){++forwarded;}
@@ -18,6 +19,7 @@ bool IsReady(){return false;}
 namespace QuestHelperUI {
 bool Receive(const unsigned char* data,size_t length){++received;payloadLength=length;QuestProtocol::Snapshot snapshot;accepted=QuestProtocol::Parse(data,length,snapshot);return true;}
 void FieldChange(){++fieldChanges;}
+bool ReceiveHelper(const unsigned char*,size_t length){++helperReceived;helperLength=length;return true;}
 }
 int main(){
     s_ProcessPacket=Forward;
@@ -39,5 +41,8 @@ int main(){
     packet.Size=static_cast<unsigned short>(bytes.size());bytes[4]=0x7D;bytes[5]=0;
     ProcessPacket_Hook(nullptr,nullptr,&packet);assert(forwarded==2 && fieldChanges==1);
     ProcessPacket_Hook(nullptr,nullptr,nullptr);assert(forwarded==3);
-    puts("PASS native receive hook: 16-bit length independent of raw sequence, UTF-8 snapshot dispatch, truncation, SetField and native forwarding");
+    // Maple Helper replies (0x1004) go to the helper window, never to the quest helper or the client.
+    bytes[4]=0x04;bytes[5]=0x10;ProcessPacket_Hook(nullptr,nullptr,&packet);
+    assert(helperReceived==1 && helperLength==bytes.size()-6 && received==5 && forwarded==3);
+    puts("PASS native receive hook: 16-bit length independent of raw sequence, UTF-8 snapshot dispatch, truncation, SetField, Maple Helper routing and native forwarding");
 }
