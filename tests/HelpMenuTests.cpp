@@ -3,8 +3,10 @@
 #include "../ezorsia/HelpMenu.cpp"
 #include <stdexcept>
 namespace QuestHelperUI {
-bool active = false;
-int opened = 0;
+bool active = false, helperReady = false;
+int opened = 0, helperPage = -1, helperOpened = 0;
+bool HelperReady() { return helperReady; }
+void OpenHelper(int page) { helperPage = page; ++helperOpened; }
 bool Enabled() { return active; }
 void Open() {
     if (g_helpMode || g_helpWindow || g_action) throw std::runtime_error("quest window opened before modal cleanup");
@@ -148,9 +150,13 @@ int main() {
         try { StatusClick(nullptr, nullptr, 1001); } catch (const std::runtime_error&) { }
         Require(!g_helpMode && !g_helpWindow && !g_action && sent == 0, "exception left help mode active");
         Require(HelpMenu::Install(false), "disabled configuration failed");
+        QuestHelperUI::helperReady = true; sent = 0;
+        SendAction(1); Require(QuestHelperUI::helperOpened == 1 && QuestHelperUI::helperPage == 0 && sent == 0, "Maple Helper did not open natively");
+        SendAction(4); Require(QuestHelperUI::helperOpened == 2 && QuestHelperUI::helperPage == 1 && sent == 0, "Universal Warp did not open natively");
+        QuestHelperUI::helperReady = false;
         socket = nullptr; SendAction(1);
         Require(sent == 0, "request sent without a connected socket");
-        std::cout << "PASS help menu: four actions/resources, native ABI, cleanup before send, cancel, four-entry keyboard wrapping, native menu isolation, failure cleanup\n";
+        std::cout << "PASS help menu: four actions/resources, native ABI, cleanup before send, cancel, four-entry keyboard wrapping, native menu isolation, native Maple Helper pages, failure cleanup\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL help menu: " << error.what() << "\n"; return 1;

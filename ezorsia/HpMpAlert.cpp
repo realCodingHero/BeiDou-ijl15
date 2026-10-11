@@ -171,6 +171,7 @@ static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* pac
         const auto* data = static_cast<const unsigned char*>(packet->Data);
         const WORD opcode = *reinterpret_cast<const WORD*>(data + 4);
         if (opcode == 0x1003) { QuestHelperUI::Receive(data + 6, packet->Size - 6); return; }
+        if (opcode == 0x1004) { QuestHelperUI::ReceiveHelper(data + 6, packet->Size - 6); return; }
         if (opcode == kOpcodeSetField) QuestHelperUI::FieldChange();
     }
     if (packet != nullptr) {

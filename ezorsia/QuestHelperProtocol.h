@@ -62,3 +62,42 @@ inline std::vector<unsigned char> Request(int action,int seq,int quest,int kind,
     append(b,seq);append(b,quest);append(b,uint8_t(kind));append(b,target);append(b,map);append(b,token);return b;
 }
 }
+
+// Native Maple Helper (NPC 9900001) views; see MapleHelperUiHandler on the server.
+namespace MapleProtocol {
+constexpr uint16_t Opcode=0x1004;
+constexpr uint8_t Version=1;
+enum Action:uint8_t {Hello=0,Hub=1,Feature=2,Teleports=3,Warp=4,Pet=5,PetSet=6};
+enum View:uint8_t {Open=0,HubView=1,TeleportView=2,PetView=3,Done=4,Error=5};
+struct Row { int id=0,kind=0,flags=0,min=0,max=0,icon=0; int64_t cost=0; std::wstring label,info; };
+struct Snapshot {
+    int view=0,sequence=0,character=0,cash=0,maplePoint=0,credit=0,flags=0,value=0,extra=0;
+    int64_t meso=0;
+    std::wstring title,message;
+    std::vector<Row> rows;
+};
+inline bool Parse(const unsigned char* p,size_t n,Snapshot& result) {
+    if(!p || n>60000)return false;
+    try {
+        QuestProtocol::Reader r(p,n);if(r.number<uint8_t>()!=Version)return false;
+        Snapshot s;s.view=r.number<uint8_t>();if(s.view>Error)return false;
+        s.sequence=r.number<int>();s.character=r.number<int>();s.meso=r.number<int64_t>();
+        s.cash=r.number<int>();s.maplePoint=r.number<int>();s.credit=r.number<int>();s.flags=r.number<uint8_t>();
+        s.value=r.number<int>();s.extra=r.number<int>();s.title=r.string();s.message=r.string();
+        unsigned count=r.number<uint16_t>();
+        if(count>200 || s.sequence<0 || s.character<=0 || (s.sequence==0 && s.view!=Open && s.view!=Done))return false;
+        for(unsigned i=0;i<count;++i) {
+            Row row;row.id=r.number<int>();row.kind=r.number<uint8_t>();row.flags=r.number<uint8_t>();row.cost=r.number<int64_t>();
+            row.min=r.number<int16_t>();row.max=r.number<int16_t>();row.icon=r.number<int>();row.label=r.string();row.info=r.string();
+            if(row.cost<0)return false;
+            s.rows.push_back(std::move(row));
+        }
+        if(!r.complete())return false;
+        result=std::move(s);return true;
+    }catch(const std::exception&){return false;}
+}
+inline std::vector<unsigned char> Request(int action,int seq,int arg=0,int arg2=0,int64_t arg3=0) {
+    std::vector<unsigned char> b;QuestProtocol::append(b,Opcode);QuestProtocol::append(b,Version);QuestProtocol::append(b,uint8_t(action));
+    QuestProtocol::append(b,seq);QuestProtocol::append(b,arg);QuestProtocol::append(b,arg2);QuestProtocol::append(b,arg3);return b;
+}
+}
