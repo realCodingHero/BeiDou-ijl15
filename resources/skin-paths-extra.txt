@@ -69,3 +69,10 @@ Skill/212.img/skill/2121004/icon
 Skill/310.img/skill/3101004/icon
 Skill/131.img/skill/1311008/icon
 Skill/112.img/skill/1121010/icon
+UI/Basic.img/Slider/left
+UI/Basic.img/Slider/mid
+UI/Basic.img/Slider/right
+UI/Basic.img/Slider/thumbNormal
+UI/Basic.img/Slider/thumbPressed
+UI/Basic.img/Slider/thumbDisabled
+Npc/2030010.img/stand/0

@@ -901,7 +901,7 @@ int __fastcall HitTest(void* self,void*,int x,int y,void** control) {
 }
 void __fastcall Key(void* input,void*,unsigned key,unsigned flags) {
     auto w=Find(input,true);if(!w || flags&0x80000000 || Blocked(*w))return;
-    if(w->kind==2){if(key==VK_ESCAPE)HideHelper();return;}
+    if(w->kind==2){if(!HelperKey(key) && key==VK_ESCAPE)HideHelper();return;}
     if(key==VK_ESCAPE){if(w->modal){if(!confirming)DismissQuote();}else {RememberCategory();++navigation;Hide(*w);}return;}
     if(w->modal){if(key==VK_RETURN && !confirming && quote.token && meso>=quote.price && GetTickCount()-quoteTime<30000){Enqueue({5,quotedRequest.quest,quotedRequest.kind,quotedRequest.target,quotedRequest.map,5,quote.token});confirming=true;Dirty();}return;}
     if(key==VK_UP || key==VK_DOWN){listOffset=(std::max)(0,(std::min)(ListMaximum(),listOffset+(key==VK_UP?-20:20)));Dirty();}
@@ -911,6 +911,7 @@ int __fastcall InputEnabled(void* input,void*) {
 }
 int __fastcall MouseMove(void* input,void*,int x,int y) {
     auto w=Find(input,true);if(!w || Blocked(*w))return 1;
+    if(w->kind==2 && HelperDragging()){HelperDrag(x);return 1;}
     if(w->dragScroll>=0 && w->dragScroll<int(w->scrollbars.size())) {
         auto& bar=w->scrollbars[w->dragScroll];int distance=bar.track.bottom-bar.track.top-(bar.thumb.bottom-bar.thumb.top);
         *bar.value=(std::max)(0,(std::min)(bar.maximum,w->dragValue+(y-w->dragStart)*bar.maximum/(std::max)(1,distance)));Invalidate(*w);Dirty();return 1;
@@ -972,12 +973,14 @@ void __fastcall MouseButton(void* input,void*,unsigned msg,unsigned,int x,int y)
         w->mouseDown=true;w->pressed=w->hover=-1;
         for(const auto& tab:w->tabs)if(tab.enabled && PtInRect(&tab.rect,p)){w->pressed=w->hover=tab.id;Invalidate(*w);return;}
         for(const auto& b:w->buttons)if(b.enabled && PtInRect(&b.rect,p)){w->pressed=w->hover=b.id;Invalidate(*w);return;}
+        if(w->kind==2 && HelperPress(p)){Invalidate(*w);return;}
         for(int i=0;i<int(w->scrollbars.size());++i){auto& bar=w->scrollbars[i];if(PtInRect(&bar.track,p)){
             if(!PtInRect(&bar.thumb,p)){int range=bar.track.bottom-bar.track.top-(bar.thumb.bottom-bar.thumb.top);*bar.value=(std::max)(0,(std::min)(bar.maximum,int((y-bar.track.top-(bar.thumb.bottom-bar.thumb.top)/2)*bar.maximum/(std::max)(1,range))));}
             w->dragScroll=i;w->dragStart=y;w->dragValue=*bar.value;Invalidate(*w);Dirty();return;
         }}return;
     }
     if(msg!=WM_LBUTTONUP)return;
+    if(w->kind==2 && HelperDragging()){HelperRelease();w->mouseDown=false;w->pressed=-1;return;}
     bool wasDown=w->mouseDown;int pressed=w->pressed;w->pressed=-1;w->mouseDown=false;Invalidate(*w);
     if(w->dragScroll>=0){w->dragScroll=-1;return;}
     if(!wasDown)return;
@@ -1149,7 +1152,7 @@ void QuestHelperUI::FieldChange(){
         auto hello=MapleProtocol::Request(MapleProtocol::Hello,0);SendBytes(hello);
         if(helperWindow.shown && helper.page==TeleportPage)HelperRequest(MapleProtocol::Teleports,helper.category);
         // Talisman Buffs belong to one boss room; the item reopens the window when needed.
-        if(helperWindow.shown && helper.page==TalismanPage)HideHelper();
+        if(helperWindow.shown && (helper.page==TalismanPage || helper.page==BoostPage))HideHelper();
     }
 }
 bool QuestHelperUI::InstallHelper(bool value){if(!value || !enabled)return false;helperWindow.kind=2;helper.enabled=true;return true;}

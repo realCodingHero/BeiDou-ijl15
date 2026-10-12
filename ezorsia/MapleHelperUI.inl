@@ -7,9 +7,12 @@
 // Quest/backgrnd3 (296x289): title, blue summary box, white body and button bar.
 constexpr Axis HelperX{150,150,175,175},HelperY{150,150,200,200};
 constexpr int HelperBodyBottom=366,HelperBar=376,HelperNpc=9900001,TalismanItem=2430034;
-enum HelperPage {HubPage=0,TeleportPage=1,PetPage=2,TalismanPage=3};
+enum HelperPage {HubPage=0,TeleportPage=1,PetPage=2,TalismanPage=3,BoostPage=4};
 enum HelperButton {HelperBack=3001,HelperWarp=3002,HelperRefresh=3003,HelperBorrow=3004,HelperClose=3005,
+    HelperRemove=3006,HelperAddHere=3007,HelperAddId=3008,HelperInput=3009,BoostConfirm=3010,BoostExit=3011,
+    BoostStep=3100,BoostPreset=3110, // steps: 3100+2*slider (down) / +1 (up); presets 3110..3113
     HelperTile=1000,TalismanTile=1600,HelperTab=2000,HelperHubTab=2100,TalismanTab=2200};
+constexpr int BoostTrackLeft=100,BoostTrackRight=282,BoostThumb=22;
 struct HelperState {
     bool enabled=false,loading=false,serverReady=false;
     int page=HubPage,hubTab=0,category=2,selected=-1,offset=0,locked=0,petMode=0,sequence=0;
@@ -17,6 +20,14 @@ struct HelperState {
     std::vector<MapleProtocol::Row> hub,teleports,pets,talisman;
     // Talisman page: tab, selected skill, talismans left and Buffs already borrowed.
     int talismanTab=0,talismanSkill=0,talismanCount=0,talismanActive=0;
+    // Custom teleport tab: the typed map id and whether its box has keyboard focus.
+    // The limit comes from the server (game_config custom_warp_limit) with every custom list.
+    std::wstring customInput;bool inputFocus=false;int customLimit=0;
+    // Boost page: applied and drafted allocations (physical, magic), the price of each total,
+    // what this run has paid, the exit NPC, slider drag and press-and-hold repeat.
+    int boostApplied[2]={0,0},boostDraft[2]={0,0},boostPaidTotal=0,boostNpc=0,dragSlider=-1;int64_t boostPaid=0;
+    std::vector<int64_t> boostPrices;RECT sliderTracks[2]{};
+    DWORD repeatStart=0,lastRepeat=0;bool repeated=false;
     std::wstring title,welcome,notice,notes,status,room;COLORREF statusColor=Palette::Muted;
     std::deque<std::vector<unsigned char>> queue;
     std::map<int,std::pair<int,DWORD>> pending; // sequence -> (action, sent tick; 0 while queued)
@@ -46,7 +57,7 @@ void HelperFlush(DWORD now) {
     SendBytes(bytes);helper.lastSend=now;
 }
 // The shared "loading"/"timeout" labels talk about quests and a Refresh button the talisman lacks.
-const std::wstring& HelperLoadingText(){return Text(helper.page==TalismanPage?L"tmLoading":L"loading");}
+const std::wstring& HelperLoadingText(){return Text(helper.page==TalismanPage || helper.page==BoostPage?L"tmLoading":L"loading");}
 void HelperExpire(DWORD now) {
     bool expired=false;
     for(auto it=helper.pending.begin();it!=helper.pending.end();)if(it->second.second && now-it->second.second>10000){it=helper.pending.erase(it);expired=true;}else ++it;
@@ -55,6 +66,7 @@ void HelperExpire(DWORD now) {
 void RefreshHelperPage() {
     // The talisman page is opened by the item, not the helper: it needs no hub snapshot.
     if(helper.page==TalismanPage){HelperRequest(MapleProtocol::TalismanList);return;}
+    if(helper.page==BoostPage){HelperRequest(MapleProtocol::Boost);return;}
     HelperRequest(MapleProtocol::Hub);
     if(helper.page==TeleportPage)HelperRequest(MapleProtocol::Teleports,helper.category);
     else if(helper.page==PetPage)HelperRequest(MapleProtocol::Pet);
@@ -63,6 +75,8 @@ void OpenHelperPage(int page) {
     if(!helper.enabled || !InField())return;
     helper.page=page;helper.selected=-1;helper.offset=0;helper.status.clear();
     if(page==TalismanPage){helper.talisman.clear();helper.talismanTab=0;helper.talismanSkill=0;helper.room.clear();}
+    if(page==BoostPage){helper.boostPrices.clear();helper.room.clear();helper.dragSlider=-1;}
+    helper.inputFocus=false;
     Show(helperWindow);RefreshHelperPage();HelperDirty();
 }
 void HideHelper(){Hide(helperWindow);helper.queue.clear();helper.pending.clear();helper.loading=false;}
@@ -72,6 +86,7 @@ std::wstring HelperTitle() {
     if(helper.page==TeleportPage)return Text(L"mhTeleport");
     if(helper.page==PetPage)return Text(L"mhPet");
     if(helper.page==TalismanPage)return Text(L"tmTitle");
+    if(helper.page==BoostPage)return Text(L"bsTitle");
     return helper.title.empty()?Text(L"mhTitle"):helper.title;
 }
 // A label/value pair inside the blue box: muted label, white figure.
@@ -125,10 +140,29 @@ void PaintHub(Window& w,HDC dc) {
 }
 void PaintTeleports(Window& w,HDC dc,int bottom) {
     auto& img=*w.image;
-    const wchar_t* names[]={L"mhCat0",L"mhCat1",L"mhCat2",L"mhCat3"};
-    for(int c=0;c<4;++c)DrawTab(w,dc,HelperTab+c,{7+c*92,108,7+c*92+91,127},Text(names[c]),helper.category==c);
+    // Version 3: boss and event shortcuts are gone; the third tab lists the character's own maps.
+    const int categories[]={MapleProtocol::LevelMaps,MapleProtocol::TownMaps,MapleProtocol::CustomMaps};
+    const wchar_t* names[]={L"mhCat1",L"mhCat2",L"mhCatCustom"};
+    for(int c=0;c<3;++c)DrawTab(w,dc,HelperTab+categories[c],{7+c*121,108,7+c*121+120,127},Text(names[c]),helper.category==categories[c]);
     RedRule(dc,127);
     int top=133;
+    if(helper.category==MapleProtocol::CustomMaps) {
+        // Toolbar: add the current map, or type a map id and add it.
+        int saved=int(helper.teleports.size());bool room=saved<helper.customLimit && !helper.loading;
+        ButtonAt(w,dc,HelperAddHere,{10,top,104,top+17},L"mhAddHere",room);
+        RECT box{110,top,196,top+17};
+        Fill(dc,box,RGB(255,255,255));{HBRUSH edge=CreateSolidBrush(helper.inputFocus?Palette::SelectEdge:Palette::StripEdge);FrameRect(dc,&box,edge);DeleteObject(edge);}
+        if(helper.customInput.empty() && !helper.inputFocus)Write(dc,{box.left+4,box.top,box.right-3,box.bottom},Text(L"mhMapId"),Palette::Faint);
+        else {
+            std::wstring shown=helper.customInput;if(helper.inputFocus && (GetTickCount()/500)%2==0)shown+=L"|";
+            Write(dc,{box.left+4,box.top,box.right-3,box.bottom},shown,Palette::Ink);
+        }
+        w.buttons.push_back({box,HelperInput,Text(L"mhMapId"),true});
+        ButtonAt(w,dc,HelperAddId,{200,top,246,top+17},L"mhAdd",room && !helper.customInput.empty());
+        Write(dc,{250,top,HelperWidth-12,top+17},Text(L"mhSaved")+L" "+std::to_wstring(saved)+L"/"+std::to_wstring(helper.customLimit),
+            Palette::Muted,false,DT_RIGHT|DT_SINGLELINE|DT_VCENTER|DT_NOPREFIX);
+        top+=23;
+    }
     if(!helper.notice.empty()) {
         top+=TextBlock(dc,{12,top,HelperWidth-14,top+42},helper.notice,helper.teleports.empty()?Palette::Muted:Palette::Amber)+4;
         if(helper.teleports.empty())return;
@@ -137,15 +171,16 @@ void PaintTeleports(Window& w,HDC dc,int bottom) {
     int maximum=(std::max)(0,int(helper.teleports.size())-visible);helper.offset=(std::min)(helper.offset,maximum);
     int y=top;
     for(int i=helper.offset;i<int(helper.teleports.size()) && y+CardHeight<=bottom;++i,y+=CardHeight) {
-        const auto& r=helper.teleports[i];bool selected=i==helper.selected,affordable=helper.meso>=r.cost;
+        const auto& r=helper.teleports[i];bool selected=i==helper.selected,unlocked=(r.flags&1)!=0,affordable=unlocked && helper.meso>=r.cost;
         RECT card{8,y,HelperWidth-22,y+CardHeight-1};
         int saved=SaveDC(dc);IntersectClipRect(dc,card.left,card.top,card.right,card.bottom);
         if(selected)SelectionBox(dc,card);
         {PixelClip clip(card);SpotAt(img,20,y+10,3);}
-        auto cost=Amount(r.cost)+L" "+Text(L"costColumn");int costWidth=TextWidth(dc,cost);
+        // Saved custom maps that were never visited are listed without a price and cannot be used.
+        auto cost=unlocked?Amount(r.cost)+L" "+Text(L"costColumn"):Text(L"mhNotVisited");int costWidth=TextWidth(dc,cost);
         // Name and region only: the price has its own column and the server sends no map id.
-        MapNameText(dc,{32,y+3,HelperWidth-26-costWidth-8,y+17},r.label,r.id,Palette::Ink,false);
-        Write(dc,{HelperWidth-26-costWidth,y+3,HelperWidth-26,y+17},cost,affordable?Palette::Green:Palette::Red,false,DT_RIGHT|DT_SINGLELINE|DT_VCENTER|DT_NOPREFIX);
+        MapNameText(dc,{32,y+3,HelperWidth-26-costWidth-8,y+17},r.label,r.id,unlocked?Palette::Ink:Palette::Faint,false);
+        Write(dc,{HelperWidth-26-costWidth,y+3,HelperWidth-26,y+17},cost,!unlocked?Palette::Faint:affordable?Palette::Green:Palette::Red,false,DT_RIGHT|DT_SINGLELINE|DT_VCENTER|DT_NOPREFIX);
         std::wstring second;
         if(r.min>0)second=L"Lv. "+std::to_wstring(r.min)+L" ~ "+std::to_wstring(r.max);
         if(!r.info.empty() && r.info!=r.label)second+=(second.empty()?L"":L"   ")+r.info;
@@ -260,6 +295,69 @@ void PaintTalisman(Window& w,HDC dc) {
     else hint=Text((selected->flags&MapleProtocol::TalismanActive)?L"tmRefreshHint":L"tmCost");
     Write(dc,{16,327,HelperWidth-16,341},hint,color);
 }
+// ---- Boss-room boost ------------------------------------------------------------------
+int64_t BoostPrice(int total){return total>=0 && total<int(helper.boostPrices.size())?helper.boostPrices[total]:0;}
+int BoostTotal(){return helper.boostDraft[0]+helper.boostDraft[1];}
+// The server charges only the difference to the highest price this run has paid.
+int64_t BoostCharge(){return (std::max)(int64_t(0),BoostPrice(BoostTotal())-helper.boostPaid);}
+bool BoostChanged(){return helper.boostDraft[0]!=helper.boostApplied[0] || helper.boostDraft[1]!=helper.boostApplied[1];}
+bool BoostConfirmable(){return !helper.boostPrices.empty() && BoostChanged() && !helper.loading && helper.meso>=BoostCharge();}
+// Keeps physical + magic within the budget: raising one never pushes the other down.
+void SetBoost(int slider,int value) {
+    if(slider<0 || slider>1 || helper.boostPrices.empty())return;
+    value=(std::max)(0,(std::min)(value,MapleProtocol::BoostBudget-helper.boostDraft[1-slider]));
+    if(value!=helper.boostDraft[slider]){helper.boostDraft[slider]=value;HelperDirty();}
+}
+void BoostStepBy(int step){SetBoost(step/2,helper.boostDraft[step/2]+(step%2?1:-1));}
+int SliderValue(int x) {
+    int span=BoostTrackRight-BoostTrackLeft-BoostThumb;
+    return (x-BoostTrackLeft-BoostThumb/2)*MapleProtocol::BoostBudget*2/span+1>>1; // rounded
+}
+std::wstring Times(int value){return L"\x00D7"+std::to_wstring((std::max)(1,value));}
+void BoostSlider(Window& w,HDC dc,int slider,int y,const wchar_t* label) {
+    auto& img=*w.image;int value=helper.boostDraft[slider];bool live=!helper.boostPrices.empty();
+    Write(dc,{14,y,84,y+14},Text(label),live?Palette::Ink:Palette::Faint);
+    IconButton(w,BoostStep+2*slider,84,y+1,L"BtMin2",Text(L"bsLess"),live && value>0);
+    // Basic.img/Slider: 3-pixel caps, a tiled middle and a 22x14 thumb.
+    RECT track{BoostTrackLeft,y+3,BoostTrackRight,y+11};
+    if(auto mid=Skin(L"UI/Basic.img/Slider/mid"))Nine(img,{track.left+3,track.top,track.right-3,track.bottom},mid,{0,0,1,1},Whole(mid->height));
+    Sprite(img,track.left,track.top,Skin(L"UI/Basic.img/Slider/left"));Sprite(img,track.right-3,track.top,Skin(L"UI/Basic.img/Slider/right"));
+    int span=BoostTrackRight-BoostTrackLeft-BoostThumb,thumbX=BoostTrackLeft+value*span/MapleProtocol::BoostBudget;
+    bool hot=helper.dragSlider==slider;
+    Sprite(img,thumbX,y,Skin(std::wstring(L"UI/Basic.img/Slider/")+(!live?L"thumbDisabled":hot?L"thumbPressed":L"thumbNormal")));
+    helper.sliderTracks[slider]={BoostTrackLeft,y-1,BoostTrackRight,y+15};
+    IconButton(w,BoostStep+2*slider+1,BoostTrackRight+4,y+1,L"BtMax2",Text(L"bsMore"),live && BoostTotal()<MapleProtocol::BoostBudget);
+    Write(dc,{BoostTrackRight+20,y,HelperWidth-16,y+14},value?Times(value):Text(L"bsNormal"),value?Palette::Blue:Palette::Muted,value>0,DT_RIGHT|DT_SINGLELINE|DT_VCENTER|DT_NOPREFIX);
+}
+void PaintBoost(Window& w,HDC dc) {
+    auto& img=*w.image;
+    auto current=Text(L"bsCurrent")+L"  "+Text(L"bsPhysicalShort")+L" "+Times(helper.boostApplied[0])+L" \x00B7 "+Text(L"bsMagicShort")+L" "+Times(helper.boostApplied[1]);
+    int currentWidth=TextWidth(dc,current),headingWidth=TextWidth(dc,Text(L"bsAllocation"),true);
+    Write(dc,{12,112,14+headingWidth,126},Text(L"bsAllocation"),Palette::Heading,true);
+    Dotted(dc,20+headingWidth,HelperWidth-24-currentWidth,119,Palette::StripEdge);
+    Write(dc,{HelperWidth-16-currentWidth,112,HelperWidth-16,126},current,Palette::Muted);
+    BoostSlider(w,dc,0,134,L"bsPhysical");
+    BoostSlider(w,dc,1,156,L"bsMagic");
+    Write(dc,{14,178,84,192},Text(L"bsTotal"),Palette::Muted);
+    Gauge(img,BoostTrackLeft,181,BoostTrackRight,double(BoostTotal())/MapleProtocol::BoostBudget);
+    Write(dc,{BoostTrackRight+8,178,HelperWidth-16,192},std::to_wstring(BoostTotal())+L" / "+std::to_wstring(MapleProtocol::BoostBudget),
+        Palette::Muted,false,DT_RIGHT|DT_SINGLELINE|DT_VCENTER|DT_NOPREFIX);
+    const wchar_t* presets[]={L"bsAllPhysical",L"bsAllMagic",L"bsSplit",L"bsClear"};
+    for(int i=0;i<4;++i)ButtonAt(w,dc,BoostPreset+i,{14+i*88,202,14+i*88+82,219},presets[i],!helper.boostPrices.empty());
+    RECT panel{8,228,HelperWidth-8,346};
+    if(auto beige=Skin(L"UI/UIWindow.img/Quest/backgrnd5"))Nine(img,panel,beige,{8,8,250,258},{8,8,100,109});
+    if(helper.boostPrices.empty())return;
+    auto right=[&](int y,const std::wstring& text,COLORREF color,bool bold){Write(dc,{150,y,HelperWidth-18,y+14},text,color,bold,DT_RIGHT|DT_SINGLELINE|DT_VCENTER|DT_NOPREFIX);};
+    auto tier=[&](const wchar_t* key,int total){return Text(key)+L"\xFF08"+Text(L"bsTier")+L" "+std::to_wstring(total)+L"\xFF09";};
+    auto mesos=[&](int64_t value){return Amount(value)+L" "+Text(L"costColumn");};
+    Write(dc,{18,238,200,252},tier(L"bsNewPrice",BoostTotal()),Palette::Muted);right(238,mesos(BoostPrice(BoostTotal())),Palette::Ink,false);
+    Write(dc,{18,256,200,270},tier(L"bsPaid",helper.boostPaidTotal),Palette::Muted);right(256,mesos(helper.boostPaid),Palette::Ink,false);
+    Dotted(dc,18,HelperWidth-18,274,RGB(200,190,160));
+    int64_t charge=BoostCharge();
+    Write(dc,{18,280,200,294},Text(L"bsNeed"),Palette::Ink,true);
+    right(280,mesos(charge),helper.meso<charge?Palette::Red:charge?Palette::Amber:Palette::Green,true);
+    TextBlock(dc,{18,298,HelperWidth-18,344},Text(L"bsNote"),Palette::Muted);
+}
 void PaintHelper(Window& w) {
     int width=HelperWidth,height=HelperHeight;
     if(!w.image || w.image->width!=width || w.image->height!=height)w.image=std::make_unique<Bitmap>(width,height);
@@ -281,11 +379,16 @@ void PaintHelper(Window& w) {
     } else if(helper.page==TeleportPage) {
         Write(dc,{22,39,262,53},Text(L"mhTeleport"),Palette::OnBlue,true);
         Figure(dc,14,262,60,Text(L"mhMeso"),Amount(helper.meso));
-        Figure(dc,14,262,78,Text(L"unlocked"),std::to_wstring(helper.teleports.size())+L"   "+Text(L"locked")+L" "+std::to_wstring(helper.locked));
+        int unlocked=0;for(const auto& r:helper.teleports)if(r.flags&1)++unlocked;
+        Figure(dc,14,262,78,Text(L"unlocked"),std::to_wstring(unlocked)+L"   "+Text(L"locked")+L" "+std::to_wstring(helper.locked));
     } else if(helper.page==PetPage) {
         Write(dc,{22,39,262,53},Text(L"mhPet"),Palette::OnBlue,true);
         std::wstring mode;for(const auto& r:helper.pets)if(r.id==helper.petMode)mode=r.label;
         Figure(dc,14,262,60,Text(L"mhCurrentMode"),mode);
+    } else if(helper.page==BoostPage) {
+        Write(dc,{22,39,262,53},Text(L"bsHeadline"),Palette::OnBlue,true);
+        Figure(dc,14,262,60,Text(L"tmRoom"),helper.room.empty()?std::wstring():helper.room+L" \x00B7 "+Text(L"tmSolo"));
+        Figure(dc,14,262,78,Text(L"mhMeso"),Amount(helper.meso));
     } else {
         Write(dc,{22,39,262,53},Text(L"tmHeadline"),Palette::OnBlue,true);
         Figure(dc,14,262,60,Text(L"tmRoom"),helper.room.empty()?std::wstring():helper.room+L" \x00B7 "+Text(L"tmSolo"));
@@ -295,16 +398,27 @@ void PaintHelper(Window& w) {
     {   PixelClip clip({HelperWidth-113,27,HelperWidth-7,102});Bitmap* mark=nullptr;
         if(helper.page==TeleportPage && helper.selected>=0 && helper.selected<int(helper.teleports.size()))mark=MapMark(helper.teleports[helper.selected].id);
         if(helper.page==TalismanPage)Enlarged(img,HelperWidth-60,64,ItemIcon(TalismanItem),2);
+        else if(helper.page==BoostPage)NpcPortrait(img,{HelperWidth-111,29,HelperWidth-9,101},helper.boostNpc);
         else if(mark)Sprite(img,HelperWidth-60-mark->width/2,64-mark->height/2,mark);else NpcPortrait(img,{HelperWidth-111,29,HelperWidth-9,101},HelperNpc);
     }
     int bottom=helper.status.empty()?HelperBodyBottom:HelperBodyBottom-18;
     if(helper.page==HubPage)PaintHub(w,dc);
     else if(helper.page==TeleportPage)PaintTeleports(w,dc,bottom);
     else if(helper.page==PetPage)PaintPet(w,dc);
+    else if(helper.page==BoostPage)PaintBoost(w,dc);
     else PaintTalisman(w,dc);
     // One clipped line inside the white body (it ends at y=367, the button bar starts at 372).
     if(!helper.status.empty())Write(dc,{12,HelperBodyBottom-16,HelperWidth-14,HelperBodyBottom-2},helper.status,helper.statusColor);
     else if(helper.loading)Write(dc,{12,HelperBodyBottom-16,HelperWidth-14,HelperBodyBottom-2},HelperLoadingText(),Palette::Faint);
+    else if(helper.page==BoostPage)Write(dc,{12,HelperBodyBottom-16,HelperWidth-14,HelperBodyBottom-2},Text(L"bsHint"),Palette::Faint);
+    if(helper.page==BoostPage) {
+        // Opened by the exit NPC: its own dialogue is one click away, there is no hub to go back to.
+        ButtonAt(w,dc,BoostExit,{10,HelperBar,80,HelperBar+17},L"bsExit",!helper.loading);
+        ButtonAt(w,dc,BoostConfirm,{HelperWidth-144,HelperBar,HelperWidth-78,HelperBar+17},L"bsConfirm",BoostConfirmable());
+        ButtonAt(w,dc,HelperClose,{HelperWidth-72,HelperBar,HelperWidth-10,HelperBar+17},L"close");
+        GdiFlush();for(int i=0;i<width*height;++i)img.pixels[i]=(img.pixels[i]&0xFFFFFF)|(DWORD(shape[i])<<24);
+        return;
+    }
     if(helper.page==TalismanPage) {
         // Opened by the item, so there is no hub to go back to.
         ButtonAt(w,dc,HelperBorrow,{HelperWidth-144,HelperBar,HelperWidth-78,HelperBar+17},L"borrow",TalismanBorrowable());
@@ -315,7 +429,8 @@ void PaintHelper(Window& w) {
     if(helper.page!=HubPage)ButtonAt(w,dc,HelperBack,{10,HelperBar,70,HelperBar+17},L"back");
     if(helper.page==TeleportPage) {
         bool chosen=helper.selected>=0 && helper.selected<int(helper.teleports.size());
-        bool affordable=chosen && helper.meso>=helper.teleports[helper.selected].cost;
+        bool affordable=chosen && (helper.teleports[helper.selected].flags&1) && helper.meso>=helper.teleports[helper.selected].cost;
+        if(helper.category==MapleProtocol::CustomMaps)ButtonAt(w,dc,HelperRemove,{76,HelperBar,136,HelperBar+17},L"mhRemove",chosen && !helper.loading);
         ButtonAt(w,dc,HelperWarp,{HelperWidth-144,HelperBar,HelperWidth-78,HelperBar+17},L"warp",affordable && !helper.loading);
     }
     ButtonAt(w,dc,HelperRefresh,{HelperWidth-72,HelperBar,HelperWidth-10,HelperBar+17},L"refresh",!helper.loading);
@@ -327,8 +442,54 @@ void HelperScroll(Window& w,int id) {
     for(auto& bar:w.scrollbars)if(id==bar.id || id==bar.id+1){*bar.value=(std::max)(0,(std::min)(bar.maximum,*bar.value+(id==bar.id?-bar.step:bar.step)));HelperDirty();return;}
 }
 void HelperRow(int index);
+void AddCustomFromInput() {
+    if(helper.customInput.empty()){HelperStatus(Text(L"mhInputEmpty"),Palette::Red);HelperDirty();return;}
+    helper.status.clear();HelperRequest(MapleProtocol::CustomAdd,_wtoi(helper.customInput.c_str()));HelperDirty();
+}
+// Digits, Backspace and Enter go to the map id box while it has focus; Escape releases it.
+bool HelperKey(unsigned key) {
+    if(helper.page!=TeleportPage || helper.category!=MapleProtocol::CustomMaps || !helper.inputFocus)return false;
+    int digit=key>='0' && key<='9'?int(key-'0'):key>=VK_NUMPAD0 && key<=VK_NUMPAD9?int(key-VK_NUMPAD0):-1;
+    if(digit>=0){if(helper.customInput.size()<9 && !(helper.customInput.empty() && digit==0))helper.customInput+=wchar_t(L'0'+digit);}
+    else if(key==VK_BACK){if(!helper.customInput.empty())helper.customInput.pop_back();}
+    else if(key==VK_RETURN)AddCustomFromInput();
+    else if(key==VK_ESCAPE)helper.inputFocus=false;
+    else return false;
+    HelperDirty();return true;
+}
+// Slider presses that are not on a button: jump to the clicked value and start dragging.
+bool HelperPress(POINT p) {
+    if(helper.page!=BoostPage || helper.boostPrices.empty())return false;
+    for(int i=0;i<2;++i)if(PtInRect(&helper.sliderTracks[i],p)){helper.dragSlider=i;SetBoost(i,SliderValue(p.x));HelperDirty();return true;}
+    return false;
+}
+bool HelperDragging(){return helper.dragSlider>=0;}
+void HelperDrag(int x){if(helper.dragSlider>=0)SetBoost(helper.dragSlider,SliderValue(x));}
+void HelperRelease(){if(helper.dragSlider>=0){helper.dragSlider=-1;HelperDirty();}}
 void HelperClick(Window& w,int id) {
+    if(id!=HelperInput && id!=HelperAddId)helper.inputFocus=false;
     if(id==1 || id==HelperClose){HideHelper();return;}
+    if(id==HelperInput){helper.inputFocus=true;HelperDirty();return;}
+    if(id==HelperAddHere){helper.status.clear();HelperRequest(MapleProtocol::CustomAdd,0);HelperDirty();return;}
+    if(id==HelperAddId){AddCustomFromInput();return;}
+    if(id==HelperRemove) {
+        if(helper.selected<0 || helper.selected>=int(helper.teleports.size()) || helper.loading)return;
+        helper.status.clear();HelperRequest(MapleProtocol::CustomRemove,helper.teleports[helper.selected].id);HelperDirty();return;
+    }
+    if(id>=BoostStep && id<BoostStep+4) {
+        // A held button already stepped while held; its release must not add one more.
+        if(helper.repeated){helper.repeated=false;return;}
+        BoostStepBy(id-BoostStep);return;
+    }
+    if(id>=BoostPreset && id<BoostPreset+4) {
+        const int presets[4][2]={{MapleProtocol::BoostBudget,0},{0,MapleProtocol::BoostBudget},{MapleProtocol::BoostBudget/2,MapleProtocol::BoostBudget/2},{0,0}};
+        helper.boostDraft[0]=presets[id-BoostPreset][0];helper.boostDraft[1]=presets[id-BoostPreset][1];HelperDirty();return;
+    }
+    if(id==BoostConfirm) {
+        if(!BoostConfirmable())return;
+        helper.status.clear();HelperRequest(MapleProtocol::BoostSet,helper.boostDraft[0],helper.boostDraft[1],BoostCharge());HelperDirty();return;
+    }
+    if(id==BoostExit){if(!helper.loading){helper.status.clear();HelperRequest(MapleProtocol::BoostExit);HelperDirty();}return;}
     if(id>=100 && id<200){HelperScroll(w,id);return;}
     if(id>=TalismanTab && id<TalismanTab+3){helper.talismanTab=id-TalismanTab;HelperDirty();return;}
     if(id>=TalismanTile && id<TalismanTile+100) {
@@ -347,9 +508,9 @@ void HelperClick(Window& w,int id) {
         HelperRequest(MapleProtocol::Warp,r.id,helper.category,r.cost);HelperDirty();return;
     }
     if(id>=HelperHubTab && id<HelperHubTab+2){helper.hubTab=id-HelperHubTab;HelperDirty();return;}
-    if(id>=HelperTab && id<HelperTab+4) {
+    if(id>=HelperTab && id<HelperTab+5) {
         int category=id-HelperTab;if(category==helper.category)return;
-        helper.category=category;helper.selected=-1;helper.offset=0;helper.teleports.clear();helper.notice.clear();helper.status.clear();
+        helper.category=category;helper.selected=-1;helper.offset=0;helper.teleports.clear();helper.notice.clear();helper.status.clear();helper.customInput.clear();
         HelperRequest(MapleProtocol::Teleports,category);HelperDirty();return;
     }
     if(id>=HelperTile+500 && id<HelperTile+500+3){HelperRow(id-HelperTile-500);return;}
@@ -366,6 +527,7 @@ void HelperClick(Window& w,int id) {
     }
 }
 void HelperRow(int index) {
+    helper.inputFocus=false;
     if(helper.page==TeleportPage){helper.selected=index;HelperDirty();}
     else if(helper.page==PetPage && index<int(helper.pets.size()) && helper.pets[index].id!=helper.petMode && !helper.loading)
         {helper.status.clear();HelperRequest(MapleProtocol::PetSet,helper.pets[index].id);HelperDirty();}
@@ -374,13 +536,27 @@ void HelperWheel(int delta) {
     if(helper.page!=TeleportPage)return;
     helper.offset=(std::max)(0,helper.offset+(delta>0?-1:1));HelperDirty();
 }
+// Holding a step button repeats after 400 ms, then every 60 ms.
+void HelperRepeat(DWORD now) {
+    auto& w=helperWindow;
+    if(helper.page==BoostPage && w.mouseDown && w.pressed>=BoostStep && w.pressed<BoostStep+4 && w.hover==w.pressed) {
+        if(!helper.repeatStart){helper.repeatStart=now;helper.repeated=false;}
+        else if(now-helper.repeatStart>=400 && now-helper.lastRepeat>=60){BoostStepBy(w.pressed-BoostStep);helper.lastRepeat=now;helper.repeated=true;}
+    } else helper.repeatStart=0;
+}
 void HelperUpdate() {
     if(!InField()){HideHelper();return;}
-    DWORD now=GetTickCount();HelperFlush(now);HelperExpire(now);
+    DWORD now=GetTickCount();HelperFlush(now);HelperExpire(now);HelperRepeat(now);
+    if(helper.inputFocus && helper.page==TeleportPage)HelperDirty(); // blinking caret
 }
 bool HelperReceive(const unsigned char* data,size_t size) {
     MapleProtocol::Snapshot s;if(!MapleProtocol::Parse(data,size,s))return true;
-    if(s.view==MapleProtocol::Open){helper.serverReady=true;OpenHelperPage(s.value==MapleProtocol::OpenTalisman?TalismanPage:HubPage);return true;}
+    if(s.view==MapleProtocol::Open) {
+        helper.serverReady=true;
+        if(s.value==MapleProtocol::OpenBoost)helper.boostNpc=s.extra;
+        OpenHelperPage(s.value==MapleProtocol::OpenTalisman?TalismanPage:s.value==MapleProtocol::OpenBoost?BoostPage:HubPage);
+        return true;
+    }
     // The server acknowledges each field's hello; until then the help menu keeps its old route.
     if(s.sequence==0){if(s.view==MapleProtocol::Done)helper.serverReady=true;return true;}
     auto found=helper.pending.find(s.sequence);if(found==helper.pending.end())return true;
@@ -391,6 +567,10 @@ bool HelperReceive(const unsigned char* data,size_t size) {
         case MapleProtocol::TeleportView:
             if(s.value!=helper.category)break;
             helper.teleports=std::move(s.rows);helper.locked=s.extra;helper.notice=s.message;
+            if(s.value==MapleProtocol::CustomMaps) {
+                // Custom lists include unvisited maps; extra is the server's limit instead of a count.
+                helper.customLimit=s.extra;helper.locked=0;for(const auto& r:helper.teleports)if(!(r.flags&1))++helper.locked;
+            }
             if(helper.selected>=int(helper.teleports.size()))helper.selected=-1;
             if(!s.title.empty())HelperStatus(s.title,Palette::Red);
             break;
@@ -400,9 +580,27 @@ bool HelperReceive(const unsigned char* data,size_t size) {
             break;
         case MapleProtocol::Done:
             // Scripts, shops and warps take over the screen; the helper steps aside.
-            if(action==MapleProtocol::Feature || action==MapleProtocol::Warp){HideHelper();return true;}
+            if(action==MapleProtocol::Feature || action==MapleProtocol::Warp || action==MapleProtocol::BoostExit){HideHelper();return true;}
+            if(!s.message.empty())HelperStatus(s.message,Palette::Green);
+            if(action==MapleProtocol::CustomAdd || action==MapleProtocol::CustomRemove) {
+                if(action==MapleProtocol::CustomAdd)helper.customInput.clear();else helper.selected=-1;
+                if(helper.page==TeleportPage && helper.category==MapleProtocol::CustomMaps)HelperRequest(MapleProtocol::Teleports,MapleProtocol::CustomMaps);
+            }
+            break;
+        case MapleProtocol::BoostView: {
+            if(helper.page!=BoostPage)break;
+            bool first=helper.boostPrices.empty();
+            helper.boostPrices.assign(MapleProtocol::BoostBudget+1,0);
+            for(const auto& r:s.rows) {
+                if(r.kind==MapleProtocol::BoostPrice && r.id>=0 && r.id<=MapleProtocol::BoostBudget)helper.boostPrices[r.id]=r.cost;
+                else if(r.kind==MapleProtocol::BoostPaid){helper.boostPaid=r.cost;helper.boostPaidTotal=r.id;}
+            }
+            helper.boostApplied[0]=s.value;helper.boostApplied[1]=s.extra;helper.room=s.title;
+            // A fresh page or a confirmed purchase starts from what is applied; a refresh keeps the draft.
+            if(first || !s.message.empty()){helper.boostDraft[0]=s.value;helper.boostDraft[1]=s.extra;}
             if(!s.message.empty())HelperStatus(s.message,Palette::Green);
             break;
+        }
         case MapleProtocol::TalismanView: {
             if(helper.page!=TalismanPage)break;
             helper.talisman=std::move(s.rows);helper.room=s.title;helper.talismanCount=s.value;helper.talismanActive=s.extra;
@@ -416,6 +614,9 @@ bool HelperReceive(const unsigned char* data,size_t size) {
             // A refused borrow may mean the counts changed: show the server's current state.
             if(action==MapleProtocol::TalismanBorrow && helper.page==TalismanPage)HelperRequest(MapleProtocol::TalismanList);
             if(action==MapleProtocol::TalismanList){helper.talisman.clear();helper.talismanSkill=0;}
+            // A refused purchase (e.g. the price changed) reloads prices and what was paid.
+            if(action==MapleProtocol::BoostSet && helper.page==BoostPage)HelperRequest(MapleProtocol::Boost);
+            if(action==MapleProtocol::Boost)helper.boostPrices.clear();
             break;
     }
     HelperDirty();return true;
