@@ -435,6 +435,104 @@ int main(int argc,char** argv) {
         respond(outside);assert(helper.talisman.empty() && helper.talismanSkill==0);PaintHelper(helperWindow);assert(cards()==0);
         Click(helperWindow,HelperClose);assert(!helperWindow.shown && helper.queue.empty() && helper.pending.empty());
         puts("PASS talisman: item-opened page, 6/7/6 tabs, card states, borrow request, green/red status inside the body, own-job/locked/empty guards");
+
+        // ---- Universal Warp, version 3: Level / Town / Custom tabs ----
+        Show(helperWindow);helper.page=TeleportPage;helper.category=MapleProtocol::TownMaps;helper.status.clear();helper.queue.clear();helper.pending.clear();helper.loading=false;
+        PaintHelper(helperWindow);
+        assert(helperWindow.tabs.size()==3);
+        for(const auto& tab:helperWindow.tabs)assert(tab.id==HelperTab+MapleProtocol::LevelMaps || tab.id==HelperTab+MapleProtocol::TownMaps || tab.id==HelperTab+MapleProtocol::CustomMaps); // no Boss or Event tab
+        Click(helperWindow,HelperTab+MapleProtocol::CustomMaps);assert(helper.category==MapleProtocol::CustomMaps && sent(MapleProtocol::Teleports)==MapleProtocol::CustomMaps);
+        MapleProtocol::Snapshot custom;custom.view=MapleProtocol::TeleportView;custom.value=MapleProtocol::CustomMaps;custom.extra=30; // extra = the server's limit
+        custom.rows={{100000000,4,1,0,0,0,1200,L"维多利亚岛 - 射手村",L""},{104040000,4,1,0,0,0,500,L"维多利亚岛 - 射手训练场",L""},
+            {101030000,4,0,0,0,0,0,L"维多利亚岛 - 林中之城",L"尚未到访，到访后才能传送"}};
+        respond(custom);helper.queue.clear();
+        assert(helper.customLimit==30 && helper.locked==1 && helper.teleports.size()==3);
+        PaintHelper(helperWindow);
+        assert(buttonEnabled(helperWindow,HelperAddHere) && !buttonEnabled(helperWindow,HelperAddId) && hasButton(helperWindow,HelperInput));
+        // Typing a map id: focus the box, digits (no leading zero) and Backspace, then Enter adds it.
+        Click(helperWindow,HelperInput);assert(helper.inputFocus);
+        for(unsigned key:{unsigned('0'),unsigned('1'),unsigned('0'),unsigned('1'),unsigned('0'),unsigned('3'),unsigned('9'),unsigned(VK_BACK),unsigned(VK_NUMPAD0),unsigned('0'),unsigned('0'),unsigned('0')})assert(HelperKey(key));
+        assert(helper.customInput==L"101030000");
+        PaintHelper(helperWindow);assert(buttonEnabled(helperWindow,HelperAddId));
+        Save(*helperWindow.image,directory/"maple-custom.bmp");
+        assert(HelperKey(VK_RETURN) && sent(MapleProtocol::CustomAdd)==101030000);
+        MapleProtocol::Snapshot added;added.view=MapleProtocol::Done;added.value=MapleProtocol::CustomAdd;added.message=L"已将「林中之城」加入自定义地区。";
+        respond(added);assert(helper.status==added.message && helper.statusColor==Palette::Green && helper.customInput.empty() && sent(MapleProtocol::Teleports)==MapleProtocol::CustomMaps);
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        // Keys only reach the box while it has focus; clicking a row releases it.
+        HelperRow(2);assert(!helper.inputFocus && !HelperKey('5'));
+        // An unvisited map can be removed but not warped to.
+        PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,HelperWarp) && buttonEnabled(helperWindow,HelperRemove));
+        Click(helperWindow,HelperRemove);assert(sent(MapleProtocol::CustomRemove)==101030000);
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        HelperRow(0);PaintHelper(helperWindow);assert(buttonEnabled(helperWindow,HelperWarp));
+        Click(helperWindow,HelperWarp);{auto& b=helper.queue.back();int category=0;memcpy(&category,b.data()+12,4);assert(category==MapleProtocol::CustomMaps);}
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        Click(helperWindow,HelperAddHere);assert(sent(MapleProtocol::CustomAdd)==0); // 0 = the current map
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        // At the limit both add buttons are disabled.
+        custom.extra=3;HelperRequest(MapleProtocol::Teleports,MapleProtocol::CustomMaps);respond(custom);helper.queue.clear();
+        helper.customInput=L"100000000";PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,HelperAddHere) && !buttonEnabled(helperWindow,HelperAddId));
+        helper.customInput.clear();
+        puts("PASS universal warp v3: Level/Town/Custom tabs, server limit, map id box (focus, digits, Backspace, Enter), add/remove, unvisited rows cannot warp");
+
+        // ---- Boss-room boost page (exit NPC) ----
+        helper.page=BoostPage;helper.boostPrices.clear();helper.boostNpc=2030010;helper.status.clear();helper.queue.clear();helper.pending.clear();helper.loading=false;
+        RefreshHelperPage();assert(sent(MapleProtocol::Boost)==0 && helper.queue.size()==1);
+        auto price=[](int t)->int64_t{return t<=1?0:1000000+250000LL*(t-2)+10000LL*(t-2)*(t-2);};
+        MapleProtocol::Snapshot boost;boost.view=MapleProtocol::BoostView;boost.value=10;boost.extra=0;boost.title=L"扎昆的祭台";
+        for(int t=0;t<=30;++t)boost.rows.push_back({t,MapleProtocol::BoostPrice,0,0,0,0,price(t),L"",L""});
+        boost.rows.push_back({10,MapleProtocol::BoostPaid,0,0,0,0,price(10),L"",L""});
+        respond(boost);helper.queue.clear();
+        assert(helper.boostApplied[0]==10 && helper.boostDraft[0]==10 && helper.boostDraft[1]==0 && helper.boostPaid==3640000 && helper.boostPaidTotal==10 && helper.room==L"扎昆的祭台");
+        PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,BoostConfirm) && hasButton(helperWindow,BoostExit) && !hasButton(helperWindow,HelperBack));
+        // A click steps once; holding repeats after 400 ms and every 60 ms, and the release adds nothing.
+        Click(helperWindow,BoostStep+1);assert(helper.boostDraft[0]==11);
+        helperWindow.mouseDown=true;helperWindow.pressed=helperWindow.hover=BoostStep+1;helper.repeatStart=0;helper.lastRepeat=0;
+        HelperRepeat(1000);assert(helper.boostDraft[0]==11);HelperRepeat(1300);assert(helper.boostDraft[0]==11);
+        HelperRepeat(1400);assert(helper.boostDraft[0]==12);HelperRepeat(1430);assert(helper.boostDraft[0]==12);HelperRepeat(1460);assert(helper.boostDraft[0]==13);
+        helperWindow.mouseDown=false;HelperRepeat(1500);Click(helperWindow,BoostStep+1);assert(helper.boostDraft[0]==13 && !helper.repeated);
+        helperWindow.pressed=helperWindow.hover=-1;
+        // The slider jumps to the clicked value, drags, and never lets the total pass 30.
+        PaintHelper(helperWindow);
+        int span=BoostTrackRight-BoostTrackLeft-BoostThumb;auto thumbCentre=[&](int v){return BoostTrackLeft+v*span/30+BoostThumb/2;};
+        RECT physical=helper.sliderTracks[0];
+        assert(HelperPress({thumbCentre(20),physical.top+8}) && HelperDragging() && helper.boostDraft[0]==20);
+        HelperDrag(thumbCentre(5));assert(helper.boostDraft[0]==5);HelperDrag(BoostTrackRight+50);assert(helper.boostDraft[0]==30);HelperDrag(-40);assert(helper.boostDraft[0]==0);
+        HelperDrag(thumbCentre(25));HelperRelease();assert(!HelperDragging() && helper.boostDraft[0]==25);
+        Click(helperWindow,BoostStep+3);Click(helperWindow,BoostStep+3);Click(helperWindow,BoostStep+3);Click(helperWindow,BoostStep+3);Click(helperWindow,BoostStep+3);Click(helperWindow,BoostStep+3);
+        assert(helper.boostDraft[1]==5); // 25 + 5 = 30: the sixth step is refused
+        // Presets.
+        Click(helperWindow,BoostPreset+0);assert(helper.boostDraft[0]==30 && helper.boostDraft[1]==0);
+        Click(helperWindow,BoostPreset+1);assert(helper.boostDraft[0]==0 && helper.boostDraft[1]==30);
+        Click(helperWindow,BoostPreset+2);assert(helper.boostDraft[0]==15 && helper.boostDraft[1]==15);
+        Click(helperWindow,BoostPreset+3);assert(helper.boostDraft[0]==0 && helper.boostDraft[1]==0);
+        // Physical 12 + magic 3 after paying for 10: only the difference is due.
+        helper.boostDraft[0]=12;helper.boostDraft[1]=3;assert(BoostCharge()==2300000);
+        PaintHelper(helperWindow);assert(buttonEnabled(helperWindow,BoostConfirm));
+        Save(*helperWindow.image,directory/"maple-boost.bmp");
+        // Re-splitting inside the paid tier is free.
+        helper.boostDraft[0]=4;helper.boostDraft[1]=6;assert(BoostCharge()==0);
+        int64_t savedMeso=helper.meso;helper.meso=1000;helper.boostDraft[0]=12;helper.boostDraft[1]=3;PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,BoostConfirm));helper.meso=savedMeso;
+        Click(helperWindow,BoostConfirm);
+        {auto& b=helper.queue.back();int p=0,m=0;int64_t charge=0;memcpy(&p,b.data()+8,4);memcpy(&m,b.data()+12,4);memcpy(&charge,b.data()+16,8);assert(b[3]==MapleProtocol::BoostSet && p==12 && m==3 && charge==2300000);}
+        PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,BoostConfirm)); // nothing twice while waiting
+        MapleProtocol::Snapshot boostRefused;boostRefused.view=MapleProtocol::Error;boostRefused.value=MapleProtocol::BoostSet;boostRefused.message=L"价格已变化，请确认新的补交金额后再试。";
+        respond(boostRefused);assert(helper.statusColor==Palette::Red && sent(MapleProtocol::Boost)==0 && helper.boostDraft[0]==12); // the draft survives the reload
+        boost.rows.back().cost=price(10);respond(boost);assert(helper.boostDraft[0]==12 && helper.boostDraft[1]==3);
+        helper.queue.clear();Click(helperWindow,BoostConfirm);
+        boost.value=12;boost.extra=3;boost.message=L"强化完成：物理 ×12，魔法 ×3，补交 2,300,000 金币。";boost.rows.back()={15,MapleProtocol::BoostPaid,0,0,0,0,price(15),L"",L""};
+        respond(boost);helper.queue.clear();
+        assert(helper.statusColor==Palette::Green && helper.boostApplied[0]==12 && helper.boostApplied[1]==3 && helper.boostPaidTotal==15 && BoostCharge()==0);
+        // The status line stays inside the white body here too.
+        std::vector<DWORD> boostShot(helperWindow.image->pixels,helperWindow.image->pixels+HelperWidth*HelperHeight);PaintHelper(helperWindow);boostShot.assign(helperWindow.image->pixels,helperWindow.image->pixels+HelperWidth*HelperHeight);
+        helper.status=std::wstring(80,L'长');PaintHelper(helperWindow);
+        for(int y=365;y<HelperBar;++y)for(int x=0;x<HelperWidth;++x)assert(helperWindow.image->pixels[y*HelperWidth+x]==boostShot[y*HelperWidth+x]);
+        helper.status=boost.message;
+        // The exit dialogue belongs to the NPC script: the window steps aside.
+        Click(helperWindow,BoostExit);assert(sent(MapleProtocol::BoostExit)==0);
+        MapleProtocol::Snapshot exited;exited.view=MapleProtocol::Done;exited.value=MapleProtocol::BoostExit;respond(exited);assert(!helperWindow.shown);
+        puts("PASS boost page: server price table, steps and press-and-hold, slider jump/drag/clamp, presets, difference-only charge, quoted confirm, refused reload, exit dialogue");
     }
     // Verify writes into the ACTUAL v83 Canvas DLL, including tile boundaries.
     assert(SetCurrentDirectoryA(argv[1]));assert(SetDllDirectoryA(argv[1]));HMODULE pcom=LoadLibraryA("PCOM.dll");assert(pcom);
