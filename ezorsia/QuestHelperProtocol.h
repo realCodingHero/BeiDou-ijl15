@@ -66,9 +66,13 @@ inline std::vector<unsigned char> Request(int action,int seq,int quest,int kind,
 // Native Maple Helper (NPC 9900001) views; see MapleHelperUiHandler on the server.
 namespace MapleProtocol {
 constexpr uint16_t Opcode=0x1004;
-constexpr uint8_t Version=1;
-enum Action:uint8_t {Hello=0,Hub=1,Feature=2,Teleports=3,Warp=4,Pet=5,PetSet=6};
-enum View:uint8_t {Open=0,HubView=1,TeleportView=2,PetView=3,Done=4,Error=5};
+// Version 2 adds the Lone Adventurer's Talisman page; the server answers with the client's version.
+constexpr uint8_t Version=2;
+enum Action:uint8_t {Hello=0,Hub=1,Feature=2,Teleports=3,Warp=4,Pet=5,PetSet=6,TalismanList=7,TalismanBorrow=8};
+enum View:uint8_t {Open=0,HubView=1,TeleportView=2,PetView=3,Done=4,Error=5,TalismanView=6};
+// Open.value selects the page; talisman rows carry these flags.
+enum OpenPage:int {OpenHub=0,OpenTalisman=1};
+enum TalismanFlag:int {TalismanAvailable=1,TalismanActive=2,TalismanOwnJob=4,TalismanLocked=8};
 struct Row { int id=0,kind=0,flags=0,min=0,max=0,icon=0; int64_t cost=0; std::wstring label,info; };
 struct Snapshot {
     int view=0,sequence=0,character=0,cash=0,maplePoint=0,credit=0,flags=0,value=0,extra=0;
@@ -80,7 +84,7 @@ inline bool Parse(const unsigned char* p,size_t n,Snapshot& result) {
     if(!p || n>60000)return false;
     try {
         QuestProtocol::Reader r(p,n);if(r.number<uint8_t>()!=Version)return false;
-        Snapshot s;s.view=r.number<uint8_t>();if(s.view>Error)return false;
+        Snapshot s;s.view=r.number<uint8_t>();if(s.view>TalismanView)return false;
         s.sequence=r.number<int>();s.character=r.number<int>();s.meso=r.number<int64_t>();
         s.cash=r.number<int>();s.maplePoint=r.number<int>();s.credit=r.number<int>();s.flags=r.number<uint8_t>();
         s.value=r.number<int>();s.extra=r.number<int>();s.title=r.string();s.message=r.string();
