@@ -316,13 +316,15 @@ int main(int argc,char** argv) {
         open.view=MapleProtocol::HubView;openBytes=mwire(open);assert(!MapleProtocol::Parse(openBytes.data(),openBytes.size(),parsed)); // only Open may be unsolicited
         helper.page=HubPage;HelperRequest(MapleProtocol::Hub);sent(MapleProtocol::Hub);
         MapleProtocol::Snapshot hub;hub.view=MapleProtocol::HubView;hub.flags=1;hub.title=L"月兒枫叶助手";hub.message=L"欢迎来到月兒枫叶助手";
-        hub.rows={{71,0,1,0,0,5040000,0,L"超级传送",L"前往已探索的城镇与练级地图"},{81,0,0,0,0,1302000,0,L"装备商店",L"购买基础装备"},{82,0,1,0,0,2120000,0,L"宠物杂物设置",L"宠物拾取杂物的处理方式"},
+        hub.rows={{71,0,1,0,0,5040000,0,L"超级传送",L"前往已探索的城镇与练级地图"},{81,0,0,0,0,1302000,0,L"装备商店",L"购买基础装备"},{82,0,1,0,0,2120000,0,L"宠物杂物设置",L"宠物拾取杂物的处理方式"},{84,0,1,0,0,5150040,0,L"造型屋",L"预览并更换发型、脸型与肤色"},
             {3,1,0,0,0,5030000,0,L"传送自由",L"前往自由市场"},{69,1,0,0,0,4031012,0,L"快速转职",L"完成职业转职"},{70,1,0,0,0,2290000,0,L"学习技能",L"学习职业技能"},
             {72,1,0,0,0,4031344,0,L"转世重生",L"转世重生"},{4,1,0,0,0,5360000,0,L"爆率一览",L"查看当前地图掉落"},{2,1,0,0,0,4280000,0,L"在线奖励",L"领取在线时长奖励"},
             {0,1,0,0,0,2022336,0,L"新人福利",L"领取新人礼包"},{1,1,0,0,0,4001126,0,L"每日签到",L"每日签到奖励"},{83,1,0,0,0,2370000,0,L"技能书 / 能手册",L"查看技能书与能手册"},
             {62,2,0,0,0,5450000,0,L"超级商店",L"GM 商店"}};
-        respond(hub);assert(helper.hub.size()==13 && helper.cash==11099068 && helper.pending.empty() && helper.title==L"月兒枫叶助手");
+        respond(hub);assert(helper.hub.size()==14 && helper.cash==11099068 && helper.pending.empty() && helper.title==L"月兒枫叶助手");
         helper.queue.clear();PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-hub.bmp");
+        // Every tile, GM tab included, ends above the status line (y=350); names only, vertically centred.
+        {int tiles=0;for(const auto& b:helperWindow.buttons)if(b.id>=HelperTile && b.id<HelperTile+500){++tiles;assert(b.rect.bottom<=HelperBodyBottom-16 && b.rect.bottom-b.rect.top==HubTileHeight);}assert(tiles==13);}
         auto tile=[&](int feature){for(int i=0;i<int(helper.hub.size());++i)if(helper.hub[i].id==feature)return HelperTile+i;return -1;};
         assert(hasButton(helperWindow,tile(81)) && helperWindow.tabs.size()==2 && !hasButton(helperWindow,tile(62))); // GM tiles live on their own tab
         Click(helperWindow,HelperHubTab+1);PaintHelper(helperWindow);assert(hasButton(helperWindow,tile(62)) && !hasButton(helperWindow,tile(81)));Click(helperWindow,HelperHubTab);PaintHelper(helperWindow);
