@@ -101,3 +101,4 @@ Character/Hair/00030050.img/default/hair
 Character/Hair/00030060.img/default/hair
 Character/Hair/00030010.img/default/hairOverHead
 Character/Hair/00030020.img/default/hairOverHead
+Item/Cash/0515.img/05150040/info/icon
