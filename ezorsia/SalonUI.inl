@@ -559,8 +559,8 @@ bool SalonKey(unsigned key) {
     SalonSelect((std::max)(0,(std::min)(last,next)));return true;
 }
 void SalonWheel(int delta) {
-    if(salon.seriesOpen){salon.seriesOffset=(std::max)(0,salon.seriesOffset+(delta>0?-1:1));SalonDirty();return;}
-    salon.offset=(std::max)(0,(std::min)(SalonMaxOffset(),salon.offset+(delta>0?-1:1)));SalonDirty();
+    if(salon.seriesOpen){salon.seriesOffset=(std::max)(0,salon.seriesOffset+(delta>0?1:-1));SalonDirty();return;}
+    salon.offset=(std::max)(0,(std::min)(SalonMaxOffset(),salon.offset+(delta>0?1:-1))); // delta>0 scrolls down, like the quest listSalonDirty();
 }
 void SalonUpdate() {
     if(!InField()){HideSalon();return;}
