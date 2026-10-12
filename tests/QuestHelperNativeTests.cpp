@@ -351,6 +351,8 @@ int main(int argc,char** argv) {
         MapleProtocol::Snapshot levels;levels.view=MapleProtocol::TeleportView;levels.value=1;levels.extra=17;
         levels.rows={{104040000,1,1,1,15,0,500,L"维多利亚岛 - 射手训练场",L"维多利亚岛 - 射手训练场"},{103000101,1,1,20,25,0,680,L"废弃都市 - 地铁<第1地区>",L"废弃都市 - 地铁<第1地区>"}};
         respond(levels);PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-levels.bmp");
+        // The wheel scrolls the teleport list in the quest list's direction (delta>0 = down).
+        helper.offset=0;Wheel(helperWindow.native+4,nullptr,200,200,1);assert(helper.offset==1);Wheel(helperWindow.native+4,nullptr,200,200,-1);assert(helper.offset==0);
         // Pet loot page: choosing another mode sends it; the current one cannot be chosen again.
         helper.queue.clear();Click(helperWindow,HelperBack);assert(helper.page==HubPage);PaintHelper(helperWindow);Click(helperWindow,tile(82));
         assert(helper.page==PetPage);sent(MapleProtocol::Pet);
@@ -597,7 +599,8 @@ int main(int argc,char** argv) {
         Click(salonWindow,SalonBigButton);PaintSalon(salonWindow);assert(SalonColumns()==4);Save(*salonWindow.image,directory/"salon-big.bmp");
         Click(salonWindow,SalonBigButton);PaintSalon(salonWindow);
         // Scrolling never passes the last row.
-        for(int k=0;k<10;++k)SalonWheel(-120);assert(salon.offset==SalonMaxOffset());for(int k=0;k<10;++k)SalonWheel(120);assert(salon.offset==0);
+        for(int k=0;k<10;++k)Wheel(salonWindow.native+4,nullptr,300,250,1);assert(salon.offset==SalonMaxOffset()); // same direction as the quest list
+        for(int k=0;k<10;++k)Wheel(salonWindow.native+4,nullptr,300,250,-1);assert(salon.offset==0);
         // Try-on sends the previewed id; stopping restores the real look.
         helper.queue.clear();Click(salonWindow,SalonTryButton);assert(salon.tryOn && sent(MapleProtocol::SalonTry)==0 && arg2()==30034);
         helper.queue.clear();Click(salonWindow,SalonTryButton);assert(!salon.tryOn && sent(MapleProtocol::SalonTry)==0 && arg2()==0);
