@@ -1146,6 +1146,8 @@ void QuestHelperUI::FieldChange(){
         // Announce the native Maple Helper so NPC 9900001 opens it instead of its dialog.
         auto hello=MapleProtocol::Request(MapleProtocol::Hello,0);SendBytes(hello);
         if(helperWindow.shown && helper.page==TeleportPage)HelperRequest(MapleProtocol::Teleports,helper.category);
+        // Talisman Buffs belong to one boss room; the item reopens the window when needed.
+        if(helperWindow.shown && helper.page==TalismanPage)HideHelper();
     }
 }
 bool QuestHelperUI::InstallHelper(bool value){if(!value || !enabled)return false;helperWindow.kind=2;helper.enabled=true;return true;}
