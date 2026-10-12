@@ -365,6 +365,77 @@ int main(int argc,char** argv) {
         auto stale=mwire(pet);assert(QuestHelperUI::ReceiveHelper(stale.data(),stale.size()) && helper.petMode==2);
         HideHelper();assert(!helperWindow.shown && helper.queue.empty() && helper.pending.empty());
         puts("PASS maple helper: hub tiles and GM tab, server features, teleport tabs/prices/affordability/refresh, pet modes and stale replies");
+
+        // ---- Lone Adventurer's Talisman (item 2430034), opened by the server inside a solo boss room ----
+        open.view=MapleProtocol::Open;open.value=MapleProtocol::OpenTalisman;openBytes=mwire(open);
+        assert(MapleProtocol::Parse(openBytes.data(),openBytes.size(),parsed) && parsed.value==MapleProtocol::OpenTalisman);
+        open.view=MapleProtocol::TalismanView;openBytes=mwire(open);assert(!MapleProtocol::Parse(openBytes.data(),openBytes.size(),parsed)); // never unsolicited
+        open.view=MapleProtocol::TalismanView+1;openBytes=mwire(open);assert(!MapleProtocol::Parse(openBytes.data(),openBytes.size(),parsed));
+        helper.page=TalismanPage;helper.talisman.clear();helper.talismanSkill=0;helper.talismanTab=0;helper.status.clear();
+        Show(helperWindow);RefreshHelperPage();assert(sent(MapleProtocol::TalismanList)==0 && helper.queue.size()==1); // no hub request
+        // A third-job Ranger: own bow skills are refused, fourth-job Buffs are locked, Meditation is already borrowed.
+        constexpr int A=MapleProtocol::TalismanAvailable,On=MapleProtocol::TalismanActive,Own=MapleProtocol::TalismanOwnJob,Lock=MapleProtocol::TalismanLocked;
+        MapleProtocol::Snapshot list;list.view=MapleProtocol::TalismanView;list.title=L"扎昆的祭台";list.value=3;list.extra=1;
+        list.rows={
+            {1121000,0,Lock,4,0,1121000,0,L"冒险岛勇士",L"全属性 +15%\n战士 · 四转（英雄）\n所有能力值提高 15%，攻击与魔法力随之提升。"},
+            {3121008,0,Own|Lock,4,0,3121008,0,L"集中精力",L"物攻 +26\n弓箭手 · 四转（神射手）\n物理攻击 +26，并降低技能的 MP 消耗。"},
+            {1101006,0,A,2,0,1101006,0,L"怒气",L"物攻 +12\n战士 · 二转（剑客）\n物理攻击 +12，物理防御 -12。"},
+            {2101001,0,A|On,2,0,2101001,0,L"精神力",L"魔攻 +20\n法师 · 二转（火毒法师）\n魔法攻击 +20。"},
+            {3121002,0,Own|Lock,4,0,3121002,0,L"火眼晶晶",L"暴击率 +15%\n弓箭手 · 四转（神射手）\n暴击率提高 15%，暴击伤害随之提高。"},
+            {2301004,1,A,2,0,2301004,0,L"祝福",L"防御回避 +20\n法师 · 二转（牧师）\n物理防御、魔法防御、命中、回避各 +20。"},
+            {1301007,1,A,2,0,1301007,0,L"神圣之火",L"HP/MP +60%\n战士 · 二转（枪战士）\n最大 HP 与最大 MP 各提高 60%。"},
+            {1121002,1,Lock,4,0,1121002,0,L"稳如泰山",L"防击退 90%\n战士 · 四转（英雄）\n受到攻击时有 90% 的概率不被击退。"},
+            {1101007,1,A,2,0,1101007,0,L"伤害反击",L"反弹伤害\n战士 · 二转（剑客）\n将受到的部分伤害反弹给敌人，对首领同样有效。"},
+            {2001002,1,A,1,0,2001002,0,L"魔法盾",L"MP 抵伤 80%\n法师 · 一转\n受到伤害的 80% 改由 MP 承担。"},
+            {2001003,1,A,1,0,2001003,0,L"魔法铠甲",L"物防 +40\n法师 · 一转\n物理防御 +40。"},
+            {2311003,2,A,3,0,2311003,0,L"神圣之光",L"经验提升\n法师 · 三转（祭司）\n提高获得的经验值。"},
+            {4101004,2,A,2,0,4101004,0,L"极速",L"移速 +40\n飞侠 · 二转（刺客）\n移动速度 +40，跳跃力 +20。"},
+            {5121009,2,Lock,4,0,5121009,0,L"速度激发",L"攻速提升\n海盗 · 四转（冲锋队长）\n提高攻击速度。"},
+            {1101004,2,A,2,0,1101004,0,L"快速武器",L"攻速提升\n战士 · 二转（剑客）\n提高攻击速度。"},
+            {2321005,1,Lock,4,0,2321005,0,L"圣灵之盾",L"免疫异常\n法师 · 四转（主教）\n效果期间不会陷入异常状态。"},
+            {2121004,2,Lock,4,0,2121004,0,L"无限",L"不耗 MP\n法师 · 四转（火毒魔导师）\n效果期间使用技能不消耗 MP。"},
+            {3101004,2,Own,2,0,3101004,0,L"无形箭",L"不耗箭矢\n弓箭手 · 二转（猎人）\n使用弓、弩攻击时不消耗箭矢。"},
+            {1311008,0,A,3,0,1311008,0,L"龙之魂",L"物攻 +12\n战士 · 三转（龙骑士）\n物理攻击 +12，但效果期间会持续消耗 HP。"},
+            {1121010,0,Lock,4,0,1121010,0,L"激怒",L"物攻提升\n战士 · 四转（英雄）\n提高物理攻击力，效果规则与原技能相同。"}};
+        respond(list);helper.queue.clear();
+        assert(helper.talisman.size()==20 && helper.room==L"扎昆的祭台" && helper.talismanCount==3 && helper.talismanActive==1 && !helper.loading);
+        assert(TalismanTabCount(0)==7 && TalismanTabCount(1)==7 && TalismanTabCount(2)==6);
+        assert(TalismanPart(helper.talisman[2],0)==L"物攻 +12" && TalismanPart(helper.talisman[2],1)==L"战士 · 二转（剑客）" && TalismanPart(helper.talisman[2],2)==L"物理攻击 +12，物理防御 -12。");
+        PaintHelper(helperWindow);
+        auto cards=[&]{int n=0;for(const auto& b:helperWindow.buttons)if(b.id>=TalismanTile && b.id<TalismanTile+100)++n;return n;};
+        assert(cards()==7 && helperWindow.tabs.size()==3 && !buttonEnabled(helperWindow,HelperBorrow) && buttonEnabled(helperWindow,HelperClose));
+        assert(!hasButton(helperWindow,HelperBack) && !hasButton(helperWindow,HelperRefresh)); // opened by the item, not the hub
+        // Selecting an available Buff enables borrowing; the request carries the skill id.
+        Click(helperWindow,TalismanTile+2);assert(helper.talismanSkill==1101006);PaintHelper(helperWindow);assert(buttonEnabled(helperWindow,HelperBorrow));
+        Click(helperWindow,HelperBorrow);assert(sent(MapleProtocol::TalismanBorrow)==1101006 && helper.loading);
+        PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,HelperBorrow)); // no double borrow while waiting
+        list.message=L"已借用「精神力」，离开首领房前持续有效。";list.value=2;
+        respond(list);helper.queue.clear();
+        assert(helper.status==list.message && helper.statusColor==Palette::Green && helper.talismanCount==2 && helper.talismanSkill==1101006);
+        PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-talisman.bmp");
+        // The status line stays inside the white body: nothing is drawn between y=365 and the bar.
+        std::vector<DWORD> withStatus(helperWindow.image->pixels,helperWindow.image->pixels+HelperWidth*HelperHeight);
+        helper.status=std::wstring(80,L'长');PaintHelper(helperWindow);
+        for(int y=365;y<HelperBar;++y)for(int x=0;x<HelperWidth;++x)assert(helperWindow.image->pixels[y*HelperWidth+x]==withStatus[y*HelperWidth+x]);
+        helper.status=list.message;
+        // Own-job and locked Buffs can be inspected but not borrowed.
+        Click(helperWindow,TalismanTile+1);PaintHelper(helperWindow);assert(helper.talismanSkill==3121008 && !buttonEnabled(helperWindow,HelperBorrow));
+        Click(helperWindow,TalismanTab+2);PaintHelper(helperWindow);assert(helper.talismanTab==2 && cards()==6);
+        Click(helperWindow,TalismanTile+17);PaintHelper(helperWindow);assert(helper.talismanSkill==3101004 && !buttonEnabled(helperWindow,HelperBorrow));
+        Save(*helperWindow.image,directory/"maple-talisman-own.bmp");
+        // A refused borrow shows the reason in red and reloads the list.
+        Click(helperWindow,TalismanTile+12);Click(helperWindow,HelperBorrow);assert(sent(MapleProtocol::TalismanBorrow)==4101004);
+        MapleProtocol::Snapshot refused;refused.view=MapleProtocol::Error;refused.value=MapleProtocol::TalismanBorrow;refused.message=L"背包中没有孤胆冒险家的护符。";
+        respond(refused);assert(helper.status==refused.message && helper.statusColor==Palette::Red && sent(MapleProtocol::TalismanList)==0);
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        // Without talismans nothing can be borrowed.
+        helper.talismanCount=0;PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,HelperBorrow));
+        // Leaving the room: the list request is refused and the cards disappear.
+        HelperRequest(MapleProtocol::TalismanList);
+        MapleProtocol::Snapshot outside;outside.view=MapleProtocol::Error;outside.value=MapleProtocol::TalismanList;outside.message=L"只有单人挑战专属首领房时，才能使用孤胆冒险家的护符。";
+        respond(outside);assert(helper.talisman.empty() && helper.talismanSkill==0);PaintHelper(helperWindow);assert(cards()==0);
+        Click(helperWindow,HelperClose);assert(!helperWindow.shown && helper.queue.empty() && helper.pending.empty());
+        puts("PASS talisman: item-opened page, 7/7/6 tabs, card states, borrow request, green/red status inside the body, own-job/locked/empty guards");
     }
     // Verify writes into the ACTUAL v83 Canvas DLL, including tile boundaries.
     assert(SetCurrentDirectoryA(argv[1]));assert(SetDllDirectoryA(argv[1]));HMODULE pcom=LoadLibraryA("PCOM.dll");assert(pcom);
