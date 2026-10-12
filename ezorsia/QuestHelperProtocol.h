@@ -67,11 +67,18 @@ inline std::vector<unsigned char> Request(int action,int seq,int quest,int kind,
 namespace MapleProtocol {
 constexpr uint16_t Opcode=0x1004;
 // Version 2 adds the Lone Adventurer's Talisman page, version 3 the custom teleport tab and the
-// boss-room boost page; the server answers with the client's version.
-constexpr uint8_t Version=3;
+// boss-room boost page, version 4 the salon; the server answers with the client's version.
+constexpr uint8_t Version=4;
 enum Action:uint8_t {Hello=0,Hub=1,Feature=2,Teleports=3,Warp=4,Pet=5,PetSet=6,TalismanList=7,TalismanBorrow=8,
-    CustomAdd=9,CustomRemove=10,Boost=11,BoostSet=12,BoostExit=13};
-enum View:uint8_t {Open=0,HubView=1,TeleportView=2,PetView=3,Done=4,Error=5,TalismanView=6,BoostView=7};
+    CustomAdd=9,CustomRemove=10,Boost=11,BoostSet=12,BoostExit=13,
+    SalonCatalog=14,SalonState=15,SalonFavorite=16,SalonApply=17,SalonUndo=18,SalonTry=19};
+enum View:uint8_t {Open=0,HubView=1,TeleportView=2,PetView=3,Done=4,Error=5,TalismanView=6,BoostView=7,
+    SalonCatalogView=8,SalonStateView=9};
+// Salon: kinds, catalogue rows (kind = gender, min = colour bits, max = page, icon = first id) and
+// state rows (kind 0-2 = favourites, then these).
+enum SalonKind:int {SalonHair=0,SalonFace=1,SalonSkin=2};
+enum SalonStateRow:int {SalonCurrentSkin=10,SalonPrice=11,SalonUndoable=12,SalonLimit=13};
+constexpr int SalonHubFeature=84;
 // Open.value selects the page (Open.extra is the exit NPC for the boost page); talisman rows carry these flags.
 enum OpenPage:int {OpenHub=0,OpenTalisman=1,OpenBoost=2};
 // Teleport categories shown by version 3 (Boss=0 and Event=3 remain for older clients only).
@@ -92,7 +99,7 @@ inline bool Parse(const unsigned char* p,size_t n,Snapshot& result) {
     if(!p || n>60000)return false;
     try {
         QuestProtocol::Reader r(p,n);if(r.number<uint8_t>()!=Version)return false;
-        Snapshot s;s.view=r.number<uint8_t>();if(s.view>BoostView)return false;
+        Snapshot s;s.view=r.number<uint8_t>();if(s.view>SalonStateView)return false;
         s.sequence=r.number<int>();s.character=r.number<int>();s.meso=r.number<int64_t>();
         s.cash=r.number<int>();s.maplePoint=r.number<int>();s.credit=r.number<int>();s.flags=r.number<uint8_t>();
         s.value=r.number<int>();s.extra=r.number<int>();s.title=r.string();s.message=r.string();

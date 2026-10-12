@@ -533,6 +533,105 @@ int main(int argc,char** argv) {
         Click(helperWindow,BoostExit);assert(sent(MapleProtocol::BoostExit)==0);
         MapleProtocol::Snapshot exited;exited.view=MapleProtocol::Done;exited.value=MapleProtocol::BoostExit;respond(exited);assert(!helperWindow.shown);
         puts("PASS boost page: server price table, steps and press-and-hold, slider jump/drag/clamp, presets, difference-only charge, quoted confirm, refused reload, exit dialogue");
+
+        // ---- Salon (hub tile 84), protocol version 4 ----
+        assert(salonWindow.kind==3 && WindowWidth(salonWindow)==Width && WindowHeight(salonWindow)==Height);
+        salonWindow.initialized=true;Show(salonWindow);helper.queue.clear();helper.pending.clear();helper.loading=false;
+        auto arg2=[&]{auto& b=helper.queue.back();int v=0;memcpy(&v,b.data()+12,4);return v;};
+        auto arg3=[&]{auto& b=helper.queue.back();int64_t v=0;memcpy(&v,b.data()+16,8);return v;};
+        assert(LoadSalonLayout() && salon.bodies.count(0) && salon.styles[0].count(30030) && salon.styles[1].count(20000));
+        HelperRequest(MapleProtocol::SalonState);assert(sent(MapleProtocol::SalonState)==0);
+        MapleProtocol::Snapshot state;state.view=MapleProtocol::SalonStateView;state.value=30000;state.extra=20000;
+        state.rows={{30030,0,0,0,0,0,0,L"",L""},{0,MapleProtocol::SalonCurrentSkin,0,0,0,0,0,L"",L""},
+            {0,MapleProtocol::SalonPrice,0,0,0,0,1000000,L"",L""},{1,MapleProtocol::SalonPrice,0,0,0,0,0,L"",L""},{2,MapleProtocol::SalonPrice,0,0,0,0,0,L"",L""},
+            {0,MapleProtocol::SalonUndoable,0,0,0,0,0,L"",L""},{100,MapleProtocol::SalonLimit,0,0,0,0,0,L"",L""}};
+        respond(state);helper.queue.clear();
+        assert(salon.stateLoaded && salon.current[0]==30000 && salon.current[1]==20000 && salon.current[2]==0 && salon.favorites[0].count(30030)
+            && salon.price[0]==1000000 && salon.undo[0] && !salon.undo[1] && salon.favoriteLimit==100);
+        // Catalogue page 0: real styles plus styles without client images (they still list, as "?").
+        salon.tab=0;salon.catalog[0].clear();SalonRequestNext(0);assert(sent(MapleProtocol::SalonCatalog)==0 && arg2()==0);
+        MapleProtocol::Snapshot hairs;hairs.view=MapleProtocol::SalonCatalogView;hairs.value=0;hairs.extra=40;
+        const wchar_t* names[]={L"短中分",L"贝吉塔发型",L"酷型侧分",L"短光头",L"长中分",L"休闲发型",L"长甩发型"};
+        for(int k=0;k<7;++k)hairs.rows.push_back({30000+k*10,k==3?2:k%2,0,0xFF,0,30000+k*10,0,names[k],L""}); // min = colours, max = page, icon = first id
+        for(int k=0;k<33;++k)hairs.rows.push_back({(k<20?33000:61000)+k*10,1,0,0xFF,0,(k<20?33000:61000)+k*10,0,L"Style "+std::to_wstring(k),L""});
+        respond(hairs);helper.queue.clear();
+        assert(salon.catalog[0].size()==40 && salon.total[0]==40);
+        PaintSalon(salonWindow);
+        assert(salon.view.size()==40 && SalonColumns()==6 && SalonVisibleRows()==4 && SalonMaxOffset()==3); // 7 rows, 4 visible
+        assert(salonWindow.tabs.size()==3);
+        // Hovering previews without selecting; clicking selects.
+        salonWindow.hover=SalonCell+3;PaintSalon(salonWindow);assert(salon.selected[0]==0 && salon.preview[0]==0);
+        Save(*salonWindow.image,directory/"salon-hover.bmp");
+        Click(salonWindow,SalonCell+3);assert(salon.selected[0]==30030 && salon.preview[0]==30030 && salon.recent[0].front()==30030);
+        // Digits pick a colour of the selected style.
+        assert(SalonKey('5') && salon.preview[0]==30034 && salon.colour[0]==4);
+        salonWindow.hover=-1;PaintSalon(salonWindow);
+        Save(*salonWindow.image,directory/"salon-hair.bmp");
+        // Arrow keys move the selection and keep the colour.
+        assert(SalonKey(VK_RIGHT) && salon.selected[0]==30040 && salon.preview[0]==30044);
+        assert(SalonKey(VK_LEFT) && salon.selected[0]==30030);
+        // Filters, series, sort and search.
+        Click(salonWindow,SalonFilter+FilterMale);PaintSalon(salonWindow);
+        for(int index:salon.view)assert(salon.catalog[0][index].gender==0);
+        Click(salonWindow,SalonFilter+FilterFavorite);PaintSalon(salonWindow);assert(salon.view.size()==1 && salon.catalog[0][salon.view[0]].id==30030);
+        Click(salonWindow,SalonFilter+FilterRecent);PaintSalon(salonWindow);assert(salon.view.size()==2); // 30030 then 30040
+        Click(salonWindow,SalonFilter+FilterAll);
+        auto series=SalonSeries();assert(series.size()==3 && series[0].first==30 && series[0].second==7 && series[1].first==33);
+        Click(salonWindow,SalonSeriesBox);PaintSalon(salonWindow);assert(salon.seriesOpen);
+        Click(salonWindow,SalonSeriesItem+2);PaintSalon(salonWindow);assert(!salon.seriesOpen && salon.series==33);
+        for(int index:salon.view)assert(salon.catalog[0][index].id/1000==33);
+        Click(salonWindow,SalonSeriesBox);Click(salonWindow,SalonSeriesItem+0);assert(salon.series==-1);
+        Click(salonWindow,SalonSortButton);PaintSalon(salonWindow);assert(salon.catalog[0][salon.view[0]].id==61000+32*10); // newest first
+        Click(salonWindow,SalonSortButton);
+        Click(salonWindow,SalonSearchBox);assert(salon.searchFocus);
+        for(unsigned key:{unsigned('3'),unsigned('0'),unsigned('0'),unsigned('3')})assert(SalonKey(key));
+        PaintSalon(salonWindow);assert(salon.view.size()==1 && salon.catalog[0][salon.view[0]].id==30030);
+        assert(SalonKey(VK_BACK) && SalonKey(VK_BACK) && SalonKey(VK_BACK) && SalonKey(VK_BACK) && salon.search.empty());
+        // A full colour id finds its style.
+        for(unsigned key:{unsigned('3'),unsigned('0'),unsigned('0'),unsigned('3'),unsigned('5')})SalonKey(key);
+        PaintSalon(salonWindow);assert(salon.view.size()==1 && salon.catalog[0][salon.view[0]].id==30030);
+        salon.search.clear();assert(SalonKey(VK_RETURN) && !salon.searchFocus);salon.viewDirty=true;
+        // Large cards: four columns with names.
+        Click(salonWindow,SalonBigButton);PaintSalon(salonWindow);assert(SalonColumns()==4);Save(*salonWindow.image,directory/"salon-big.bmp");
+        Click(salonWindow,SalonBigButton);PaintSalon(salonWindow);
+        // Scrolling never passes the last row.
+        for(int k=0;k<10;++k)SalonWheel(-120);assert(salon.offset==SalonMaxOffset());for(int k=0;k<10;++k)SalonWheel(120);assert(salon.offset==0);
+        // Try-on sends the previewed id; stopping restores the real look.
+        helper.queue.clear();Click(salonWindow,SalonTryButton);assert(salon.tryOn && sent(MapleProtocol::SalonTry)==0 && arg2()==30034);
+        helper.queue.clear();Click(salonWindow,SalonTryButton);assert(!salon.tryOn && sent(MapleProtocol::SalonTry)==0 && arg2()==0);
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        // Favourite toggles the selected style.
+        Click(salonWindow,SalonFavoriteButton);assert(sent(MapleProtocol::SalonFavorite)==0 && arg2()==30030 && arg3()==0);
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        // Apply asks first, then sends the exact id and the price the player saw.
+        Click(salonWindow,SalonApplyButton);assert(helper.queue.empty() && salon.confirmAt && salon.statusColor==Palette::Amber);
+        PaintSalon(salonWindow);Save(*salonWindow.image,directory/"salon-confirm.bmp");
+        std::vector<DWORD> salonShot(salonWindow.image->pixels,salonWindow.image->pixels+Width*Height);
+        salon.status=std::wstring(120,L'长');PaintSalon(salonWindow);
+        for(int y=SalonBodyBottom+1;y<SalonBar;++y)for(int x=0;x<Width;++x)assert(salonWindow.image->pixels[y*Width+x]==salonShot[y*Width+x]); // status stays in the body
+        Click(salonWindow,SalonApplyButton);assert(sent(MapleProtocol::SalonApply)==0 && arg2()==30034 && arg3()==1000000);
+        state.value=30034;state.message=L"已将发型换成「短光头」，花费 1,000,000 金币。";respond(state);helper.queue.clear();
+        assert(salon.current[0]==30034 && salon.preview[0]==0 && salon.statusColor==Palette::Green);
+        Click(salonWindow,SalonUndoButton);assert(sent(MapleProtocol::SalonUndo)==0);
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        // Face and skin tabs.
+        Click(salonWindow,SalonTab+1);assert(salon.tab==1 && sent(MapleProtocol::SalonCatalog)==1);
+        MapleProtocol::Snapshot faces;faces.view=MapleProtocol::SalonCatalogView;faces.value=1;faces.extra=3;
+        faces.rows={{20000,0,0,0x1FF,0,20000,0,L"酷-男脸",L""},{20001,0,0,0x1FF,0,20001,0,L"萌-男脸",L""},{21000,1,0,0x1FF,0,21000,0,L"女脸",L""}};
+        respond(faces);helper.queue.clear();Click(salonWindow,SalonCell+1);assert(salon.preview[1]==20001);
+        assert(SalonKey('2') && salon.preview[1]==20101);
+        PaintSalon(salonWindow);Save(*salonWindow.image,directory/"salon-face.bmp");
+        Click(salonWindow,SalonTab+2);assert(salon.tab==2 && sent(MapleProtocol::SalonCatalog)==2);
+        MapleProtocol::Snapshot skins;skins.view=MapleProtocol::SalonCatalogView;skins.value=2;skins.extra=2;
+        skins.rows={{0,2,0,0,0,0,0,L"普通肤色",L""},{1,2,0,0,0,1,0,L"小麦肤色",L""}};
+        respond(skins);helper.queue.clear();Click(salonWindow,SalonCell+1);assert(salon.preview[2]==1);
+        PaintSalon(salonWindow);Save(*salonWindow.image,directory/"salon-skin.bmp");
+        // Changes on every tab are applied together after the confirmation.
+        assert(SalonPending().size()==2 && SalonPendingPrice()==0);
+        Click(salonWindow,SalonApplyButton);Click(salonWindow,SalonApplyButton);assert(helper.queue.size()==2);
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        HideSalon();assert(!salonWindow.shown);
+        puts("PASS salon: WZ-composed previews from SalonLayout.txt, hover preview, colour keys, filters/series/sort/id search, big cards, scrolling, try-on, favourite, confirmed apply with quoted price, undo, face and skin tabs");
     }
     // Verify writes into the ACTUAL v83 Canvas DLL, including tile boundaries.
     assert(SetCurrentDirectoryA(argv[1]));assert(SetDllDirectoryA(argv[1]));HMODULE pcom=LoadLibraryA("PCOM.dll");assert(pcom);
