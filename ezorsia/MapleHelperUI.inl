@@ -109,25 +109,25 @@ void SectionHeading(HDC dc,int y,const std::wstring& text) {
     Write(dc,{12,y,12+width+2,y+16},text,Palette::Heading);
     Dotted(dc,20+width,HelperWidth-12,y+8,Palette::StripEdge);
 }
-// Feature tile: native item icon, name and a one-line hint.
+// Feature tile: native item icon and the name, vertically centred (no hint line, so 13+ tiles fit).
+constexpr int HubTileHeight=34,HubTilePitch=36;
 void Tile(Window& w,HDC dc,RECT r,int id,const MapleProtocol::Row& row) {
     bool hover=w.hover==id,pressed=hover && w.pressed==id;
     if(hover)SelectionBox(dc,r);
     else{Fill(dc,r,RGB(246,248,251));HBRUSH edge=CreateSolidBrush(RGB(221,229,238));FrameRect(dc,&r,edge);DeleteObject(edge);}
     int shift=pressed?1:0;
-    {PixelClip clip(r);Scaled(*w.image,{r.left+4+shift,r.top+4+shift,r.left+36+shift,r.top+36+shift},ItemIcon(row.icon),true);}
-    Write(dc,{r.left+40+shift,r.top+5+shift,r.right-3,r.top+19+shift},row.label,Palette::Ink);
-    Write(dc,{r.left+40+shift,r.top+21+shift,r.right-3,r.top+35+shift},row.info,Palette::Muted);
+    {PixelClip clip(r);Scaled(*w.image,{r.left+4+shift,r.top+1+shift,r.left+36+shift,r.top+33+shift},ItemIcon(row.icon),true);}
+    Write(dc,{r.left+40+shift,r.top+shift,r.right-3,r.bottom+shift},row.label,Palette::Ink);
     w.buttons.push_back({r,id,row.label,true});
 }
 int TileGrid(Window& w,HDC dc,int y,int group) {
     int column=0;bool any=false;
     for(int i=0;i<int(helper.hub.size());++i) {
         if(helper.hub[i].kind!=group)continue;any=true;
-        RECT r{10+column*121,y,10+column*121+118,y+40};Tile(w,dc,r,HelperTile+i,helper.hub[i]);
-        if(++column==3){column=0;y+=43;}
+        RECT r{10+column*121,y,10+column*121+118,y+HubTileHeight};Tile(w,dc,r,HelperTile+i,helper.hub[i]);
+        if(++column==3){column=0;y+=HubTilePitch;}
     }
-    return any && column?y+43:y;
+    return any && column?y+HubTilePitch:y;
 }
 void PaintHub(Window& w,HDC dc) {
     bool gm=(helper.flags&1)!=0;if(!gm)helper.hubTab=0;
