@@ -50,7 +50,6 @@ Item/Consume/0237.img/02370000/info/icon
 Item/Etc/0400.img/04000000/info/icon
 Item/Etc/0403.img/04031138/info/icon
 Item/Consume/0243.img/02430034/info/icon
-Skill/112.img/skill/1121000/icon
 Skill/312.img/skill/3121008/icon
 Skill/110.img/skill/1101006/icon
 Skill/210.img/skill/2101001/icon

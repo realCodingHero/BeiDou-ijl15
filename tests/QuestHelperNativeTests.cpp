@@ -333,7 +333,7 @@ int main(int argc,char** argv) {
         Show(helperWindow);helper.page=HubPage;PaintHelper(helperWindow);Click(helperWindow,tile(71));
         assert(helper.page==TeleportPage && sent(MapleProtocol::Teleports)==2);
         MapleProtocol::Snapshot towns;towns.view=MapleProtocol::TeleportView;towns.value=2;towns.extra=40;
-        towns.rows={{104000000,2,1,0,0,0,800,L"维多利亚岛 - 明珠港",L"维多利亚岛 - 明珠港"},{100000000,2,1,0,0,0,1200,L"维多利亚岛 - 射手村",L"维多利亚岛 - 射手村"},
+        towns.rows={{104000000,2,1,0,0,0,800,L"维多利亚岛 - 明珠港",L""},{100000000,2,1,0,0,0,1200,L"维多利亚岛 - 射手村",L"维多利亚岛 - 射手村"},
             {101050000,2,1,0,0,0,600000000,L"妖精森林 - 埃欧雷",L"妖精森林 - 埃欧雷"}};
         respond(towns);assert(helper.teleports.size()==3 && helper.locked==40);
         HelperRow(1);PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-teleport.bmp");
@@ -377,7 +377,6 @@ int main(int argc,char** argv) {
         constexpr int A=MapleProtocol::TalismanAvailable,On=MapleProtocol::TalismanActive,Own=MapleProtocol::TalismanOwnJob,Lock=MapleProtocol::TalismanLocked;
         MapleProtocol::Snapshot list;list.view=MapleProtocol::TalismanView;list.title=L"扎昆的祭台";list.value=3;list.extra=1;
         list.rows={
-            {1121000,0,Lock,4,0,1121000,0,L"冒险岛勇士",L"全属性 +15%\n战士 · 四转（英雄）\n所有能力值提高 15%，攻击与魔法力随之提升。"},
             {3121008,0,Own|Lock,4,0,3121008,0,L"集中精力",L"物攻 +26\n弓箭手 · 四转（神射手）\n物理攻击 +26，并降低技能的 MP 消耗。"},
             {1101006,0,A,2,0,1101006,0,L"怒气",L"物攻 +12\n战士 · 二转（剑客）\n物理攻击 +12，物理防御 -12。"},
             {2101001,0,A|On,2,0,2101001,0,L"精神力",L"魔攻 +20\n法师 · 二转（火毒法师）\n魔法攻击 +20。"},
@@ -398,15 +397,15 @@ int main(int argc,char** argv) {
             {1311008,0,A,3,0,1311008,0,L"龙之魂",L"物攻 +12\n战士 · 三转（龙骑士）\n物理攻击 +12，但效果期间会持续消耗 HP。"},
             {1121010,0,Lock,4,0,1121010,0,L"激怒",L"物攻提升\n战士 · 四转（英雄）\n提高物理攻击力，效果规则与原技能相同。"}};
         respond(list);helper.queue.clear();
-        assert(helper.talisman.size()==20 && helper.room==L"扎昆的祭台" && helper.talismanCount==3 && helper.talismanActive==1 && !helper.loading);
-        assert(TalismanTabCount(0)==7 && TalismanTabCount(1)==7 && TalismanTabCount(2)==6);
-        assert(TalismanPart(helper.talisman[2],0)==L"物攻 +12" && TalismanPart(helper.talisman[2],1)==L"战士 · 二转（剑客）" && TalismanPart(helper.talisman[2],2)==L"物理攻击 +12，物理防御 -12。");
+        assert(helper.talisman.size()==19 && helper.room==L"扎昆的祭台" && helper.talismanCount==3 && helper.talismanActive==1 && !helper.loading);
+        assert(TalismanTabCount(0)==6 && TalismanTabCount(1)==7 && TalismanTabCount(2)==6); // Maple Warrior is never lent
+        assert(TalismanPart(helper.talisman[1],0)==L"物攻 +12" && TalismanPart(helper.talisman[1],1)==L"战士 · 二转（剑客）" && TalismanPart(helper.talisman[1],2)==L"物理攻击 +12，物理防御 -12。");
         PaintHelper(helperWindow);
         auto cards=[&]{int n=0;for(const auto& b:helperWindow.buttons)if(b.id>=TalismanTile && b.id<TalismanTile+100)++n;return n;};
-        assert(cards()==7 && helperWindow.tabs.size()==3 && !buttonEnabled(helperWindow,HelperBorrow) && buttonEnabled(helperWindow,HelperClose));
+        assert(cards()==6 && helperWindow.tabs.size()==3 && !buttonEnabled(helperWindow,HelperBorrow) && buttonEnabled(helperWindow,HelperClose));
         assert(!hasButton(helperWindow,HelperBack) && !hasButton(helperWindow,HelperRefresh)); // opened by the item, not the hub
         // Selecting an available Buff enables borrowing; the request carries the skill id.
-        Click(helperWindow,TalismanTile+2);assert(helper.talismanSkill==1101006);PaintHelper(helperWindow);assert(buttonEnabled(helperWindow,HelperBorrow));
+        Click(helperWindow,TalismanTile+1);assert(helper.talismanSkill==1101006);PaintHelper(helperWindow);assert(buttonEnabled(helperWindow,HelperBorrow));
         Click(helperWindow,HelperBorrow);assert(sent(MapleProtocol::TalismanBorrow)==1101006 && helper.loading);
         PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,HelperBorrow)); // no double borrow while waiting
         list.message=L"已借用「精神力」，离开首领房前持续有效。";list.value=2;
@@ -419,12 +418,12 @@ int main(int argc,char** argv) {
         for(int y=365;y<HelperBar;++y)for(int x=0;x<HelperWidth;++x)assert(helperWindow.image->pixels[y*HelperWidth+x]==withStatus[y*HelperWidth+x]);
         helper.status=list.message;
         // Own-job and locked Buffs can be inspected but not borrowed.
-        Click(helperWindow,TalismanTile+1);PaintHelper(helperWindow);assert(helper.talismanSkill==3121008 && !buttonEnabled(helperWindow,HelperBorrow));
+        Click(helperWindow,TalismanTile+0);PaintHelper(helperWindow);assert(helper.talismanSkill==3121008 && !buttonEnabled(helperWindow,HelperBorrow));
         Click(helperWindow,TalismanTab+2);PaintHelper(helperWindow);assert(helper.talismanTab==2 && cards()==6);
-        Click(helperWindow,TalismanTile+17);PaintHelper(helperWindow);assert(helper.talismanSkill==3101004 && !buttonEnabled(helperWindow,HelperBorrow));
+        Click(helperWindow,TalismanTile+16);PaintHelper(helperWindow);assert(helper.talismanSkill==3101004 && !buttonEnabled(helperWindow,HelperBorrow));
         Save(*helperWindow.image,directory/"maple-talisman-own.bmp");
         // A refused borrow shows the reason in red and reloads the list.
-        Click(helperWindow,TalismanTile+12);Click(helperWindow,HelperBorrow);assert(sent(MapleProtocol::TalismanBorrow)==4101004);
+        Click(helperWindow,TalismanTile+11);Click(helperWindow,HelperBorrow);assert(sent(MapleProtocol::TalismanBorrow)==4101004);
         MapleProtocol::Snapshot refused;refused.view=MapleProtocol::Error;refused.value=MapleProtocol::TalismanBorrow;refused.message=L"背包中没有孤胆冒险家的护符。";
         respond(refused);assert(helper.status==refused.message && helper.statusColor==Palette::Red && sent(MapleProtocol::TalismanList)==0);
         helper.queue.clear();helper.pending.clear();helper.loading=false;
@@ -435,7 +434,7 @@ int main(int argc,char** argv) {
         MapleProtocol::Snapshot outside;outside.view=MapleProtocol::Error;outside.value=MapleProtocol::TalismanList;outside.message=L"只有单人挑战专属首领房时，才能使用孤胆冒险家的护符。";
         respond(outside);assert(helper.talisman.empty() && helper.talismanSkill==0);PaintHelper(helperWindow);assert(cards()==0);
         Click(helperWindow,HelperClose);assert(!helperWindow.shown && helper.queue.empty() && helper.pending.empty());
-        puts("PASS talisman: item-opened page, 7/7/6 tabs, card states, borrow request, green/red status inside the body, own-job/locked/empty guards");
+        puts("PASS talisman: item-opened page, 6/7/6 tabs, card states, borrow request, green/red status inside the body, own-job/locked/empty guards");
     }
     // Verify writes into the ACTUAL v83 Canvas DLL, including tile boundaries.
     assert(SetCurrentDirectoryA(argv[1]));assert(SetDllDirectoryA(argv[1]));HMODULE pcom=LoadLibraryA("PCOM.dll");assert(pcom);

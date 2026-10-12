@@ -667,10 +667,12 @@ void SplitMapName(const std::wstring& label,std::wstring& map,std::wstring& stre
     if(at==std::wstring::npos){map=label;street.clear();return;}
     street=Trimmed(label.substr(0,at));map=Trimmed(label.substr(at+3));if(map.empty()){map=street;street.clear();}
 }
-void MapNameText(HDC dc,RECT r,const std::wstring& label,int id,COLORREF color) {
+// Quest tables keep the map id for reference; the Maple Helper's teleport list shows names only.
+void MapNameText(HDC dc,RECT r,const std::wstring& label,int id,COLORREF color,bool showId=true) {
     std::wstring map,street;SplitMapName(label,map,street);
     int width=TextWidth(dc,map);Write(dc,{r.left,r.top,r.right,r.bottom},map,color);
-    auto extra=(street.empty()?L"":street+L"  ")+std::to_wstring(id);
+    auto extra=street;if(showId)extra+=(street.empty()?L"":L"  ")+std::to_wstring(id);
+    if(extra.empty())return;
     if(r.left+width+10<r.right)Write(dc,{r.left+width+8,r.top,r.right,r.bottom},extra,Palette::Faint);
 }
 void MapName(HDC dc,RECT r,const Row& row,COLORREF color){MapNameText(dc,r,row.label,row.id,color);}
