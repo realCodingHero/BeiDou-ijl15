@@ -540,7 +540,7 @@ void HelperRow(int index) {
 }
 void HelperWheel(int delta) {
     if(helper.page!=TeleportPage)return;
-    helper.offset=(std::max)(0,helper.offset+(delta>0?-1:1));HelperDirty();
+    helper.offset=(std::max)(0,helper.offset+(delta>0?1:-1)); // delta>0 scrolls down, like the quest listHelperDirty();
 }
 // Holding a step button repeats after 400 ms, then every 60 ms.
 void HelperRepeat(DWORD now) {
