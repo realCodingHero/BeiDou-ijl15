@@ -143,7 +143,8 @@ void PaintTeleports(Window& w,HDC dc,int bottom) {
         if(selected)SelectionBox(dc,card);
         {PixelClip clip(card);SpotAt(img,20,y+10,3);}
         auto cost=Amount(r.cost)+L" "+Text(L"costColumn");int costWidth=TextWidth(dc,cost);
-        MapNameText(dc,{32,y+3,HelperWidth-26-costWidth-8,y+17},r.label,r.id,Palette::Ink);
+        // Name and region only: the price has its own column and the server sends no map id.
+        MapNameText(dc,{32,y+3,HelperWidth-26-costWidth-8,y+17},r.label,r.id,Palette::Ink,false);
         Write(dc,{HelperWidth-26-costWidth,y+3,HelperWidth-26,y+17},cost,affordable?Palette::Green:Palette::Red,false,DT_RIGHT|DT_SINGLELINE|DT_VCENTER|DT_NOPREFIX);
         std::wstring second;
         if(r.min>0)second=L"Lv. "+std::to_wstring(r.min)+L" ~ "+std::to_wstring(r.max);
