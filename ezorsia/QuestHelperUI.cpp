@@ -89,7 +89,7 @@ struct Window {
     std::array<void*,13> mainMethods{};
     std::array<void*,19> inputMethods{};
     void* referenceDestructor=nullptr;
-    int kind=0; // 0 quest helper, 1 its confirmation, 2 Maple Helper
+    int kind=0; // 0 quest helper, 1 its confirmation, 2 Maple Helper, 3 salon
     bool initialized=false,shown=false,modal=false,collapsed=true,positioned=false;
     int x=0,y=0,dragScroll=-1,dragStart=0,dragValue=0;
     int hover=-1,pressed=-1;bool mouseDown=false;
@@ -101,15 +101,15 @@ struct Window {
     std::vector<Scrollbar> scrollbars;
     std::unique_ptr<Bitmap> image;
 };
-Window mainWindow,confirmWindow,helperWindow;
+Window mainWindow,confirmWindow,helperWindow,salonWindow;
 Request quotedRequest{};
 bool confirming=false;
-int WindowWidth(const Window& w){if(w.kind==2)return HelperWidth;return w.modal?350:(w.collapsed && !w.animating)?250:Width;}
-int VisibleWidth(const Window& w){if(w.kind==2)return HelperWidth;return w.modal?350:250+w.drawer;}
-int WindowHeight(const Window& w){return w.kind==2?HelperHeight:w.modal?245:Height;}
+int WindowWidth(const Window& w){if(w.kind==3)return Width;if(w.kind==2)return HelperWidth;return w.modal?350:(w.collapsed && !w.animating)?250:Width;}
+int VisibleWidth(const Window& w){if(w.kind==3)return Width;if(w.kind==2)return HelperWidth;return w.modal?350:250+w.drawer;}
+int WindowHeight(const Window& w){return w.kind==3?Height:w.kind==2?HelperHeight:w.modal?245:Height;}
 bool Blocked(const Window& w){return w.kind!=2 && !w.modal && confirmWindow.shown;}
 Window* Find(void* self,bool input=false) {
-    for(auto* w:{&mainWindow,&confirmWindow,&helperWindow})if(self==w->native+(input?4:0))return w;
+    for(auto* w:{&mainWindow,&confirmWindow,&helperWindow,&salonWindow})if(self==w->native+(input?4:0))return w;
     return nullptr;
 }
 const std::wstring& Text(const wchar_t* key) {
@@ -881,9 +881,10 @@ void Paint(Window& w) {
     }
 }
 #include "MapleHelperUI.inl"
+#include "SalonUI.inl"
 void __fastcall Draw(void* self,void*,RECT* rect) {
     auto w=Find(self);if(!w)return;
-    baseDraw(self,rect);if(w->kind==2)PaintHelper(*w);else Paint(*w);
+    baseDraw(self,rect);if(w->kind==3)PaintSalon(*w);else if(w->kind==2)PaintHelper(*w);else Paint(*w);
     void* layer=*reinterpret_cast<void**>(w->native+0x18);if(!layer || !w->image)return;
     VARIANT index{};index.vt=VT_I4;void* canvas=nullptr;
     if(SUCCEEDED(Method<GetCanvas>(layer,0x100)(layer,index,&canvas)) && canvas) {
@@ -901,6 +902,7 @@ int __fastcall HitTest(void* self,void*,int x,int y,void** control) {
 }
 void __fastcall Key(void* input,void*,unsigned key,unsigned flags) {
     auto w=Find(input,true);if(!w || flags&0x80000000 || Blocked(*w))return;
+    if(w->kind==3){if(!SalonKey(key) && key==VK_ESCAPE)HideSalon();return;}
     if(w->kind==2){if(!HelperKey(key) && key==VK_ESCAPE)HideHelper();return;}
     if(key==VK_ESCAPE){if(w->modal){if(!confirming)DismissQuote();}else {RememberCategory();++navigation;Hide(*w);}return;}
     if(w->modal){if(key==VK_RETURN && !confirming && quote.token && meso>=quote.price && GetTickCount()-quoteTime<30000){Enqueue({5,quotedRequest.quest,quotedRequest.kind,quotedRequest.target,quotedRequest.map,5,quote.token});confirming=true;Dirty();}return;}
@@ -923,6 +925,7 @@ int __fastcall MouseMove(void* input,void*,int x,int y) {
 void __fastcall MouseEnter(void* input,void*,int entered){auto w=Find(input,true);if(!w || entered)return;w->hover=w->pressed=-1;w->mouseDown=false;w->dragScroll=-1;Invalidate(*w);}
 int __fastcall Wheel(void* input,void*,int x,int y,int delta) {
     auto w=Find(input,true);if(!w || w->modal || Blocked(*w))return 1;
+    if(w->kind==3){SalonWheel(delta);return 1;}
     if(w->kind==2){HelperWheel(delta);return 1;}
     if(x<250){listOffset=(std::max)(0,(std::min)(ListMaximum(),listOffset+(delta>0?60:-60)));}
     else if(w->animating)return 1;
@@ -935,6 +938,7 @@ int __fastcall Wheel(void* input,void*,int x,int y,int delta) {
     Dirty();return 1;
 }
 void Click(Window& w,int id) {
+    if(w.kind==3){SalonClick(w,id);return;}
     if(w.kind==2){HelperClick(w,id);return;}
     if(Blocked(w))return;
     if(w.modal){if(id==21 && !confirming)DismissQuote();return;}
@@ -1018,6 +1022,7 @@ void ExpirePending(DWORD now) {
 void __fastcall Update(void* self,void*) {
     auto w=Find(self);if(!w)return;
     reinterpret_cast<NativeVoid>(0x009E067E)(self);
+    if(w->kind==3){SalonUpdate();return;}
     if(w->kind==2){HelperUpdate();return;}
     if(!InField()) {Hide(mainWindow);DismissQuote();queue.clear();pending.clear();selectedQuest=character=completionFeatures=lastFeatureSequence=0;categoryMemory={};restoreSelection=false;progressCount=readyCount=-1;return;}
     // Both native windows can update in the same frame. Only one request is dispatched every 150 ms.
@@ -1153,9 +1158,10 @@ void QuestHelperUI::FieldChange(){
         if(helperWindow.shown && helper.page==TeleportPage)HelperRequest(MapleProtocol::Teleports,helper.category);
         // Talisman Buffs belong to one boss room; the item reopens the window when needed.
         if(helperWindow.shown && (helper.page==TalismanPage || helper.page==BoostPage))HideHelper();
+        if(salonWindow.shown)HideSalon(); // the next map load also restores any try-on
     }
 }
-bool QuestHelperUI::InstallHelper(bool value){if(!value || !enabled)return false;helperWindow.kind=2;helper.enabled=true;return true;}
+bool QuestHelperUI::InstallHelper(bool value){if(!value || !enabled)return false;helperWindow.kind=2;salonWindow.kind=3;helper.enabled=true;return true;}
 bool QuestHelperUI::HelperEnabled(){return helper.enabled;}
 bool QuestHelperUI::HelperReady(){return helper.enabled && helper.serverReady;}
 void QuestHelperUI::OpenHelper(int page){if(page>=HubPage && page<=PetPage)OpenHelperPage(page);}

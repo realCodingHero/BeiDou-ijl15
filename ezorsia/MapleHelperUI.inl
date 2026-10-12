@@ -35,6 +35,11 @@ struct HelperState {
 };
 HelperState helper;
 bool InField();
+// The salon window (SalonUI.inl) shares this request queue and these replies.
+void OpenSalon();
+void SalonOnCatalog(const MapleProtocol::Snapshot& s);
+void SalonOnState(const MapleProtocol::Snapshot& s);
+void SalonOnError(const std::wstring& message);
 void HelperDirty(){if(helperWindow.shown)Invalidate(helperWindow);}
 void HelperStatus(const std::wstring& text,COLORREF color){helper.status=text;helper.statusColor=color;}
 void SendBytes(std::vector<unsigned char>& bytes) {
@@ -520,6 +525,7 @@ void HelperClick(Window& w,int id) {
         if(r.flags&1) {
             // Teleport and pet pages are drawn here; everything else runs on the server.
             helper.selected=-1;helper.offset=0;
+            if(r.id==MapleProtocol::SalonHubFeature){OpenSalon();return;}
             if(r.id==71){helper.page=TeleportPage;HelperRequest(MapleProtocol::Teleports,helper.category);}
             else{helper.page=PetPage;HelperRequest(MapleProtocol::Pet);}
         } else HelperRequest(MapleProtocol::Feature,r.id);
@@ -587,6 +593,8 @@ bool HelperReceive(const unsigned char* data,size_t size) {
                 if(helper.page==TeleportPage && helper.category==MapleProtocol::CustomMaps)HelperRequest(MapleProtocol::Teleports,MapleProtocol::CustomMaps);
             }
             break;
+        case MapleProtocol::SalonCatalogView:SalonOnCatalog(s);break;
+        case MapleProtocol::SalonStateView:SalonOnState(s);break;
         case MapleProtocol::BoostView: {
             if(helper.page!=BoostPage)break;
             bool first=helper.boostPrices.empty();
@@ -609,6 +617,7 @@ bool HelperReceive(const unsigned char* data,size_t size) {
             break;
         }
         case MapleProtocol::Error:
+            if(action>=MapleProtocol::SalonCatalog && action<=MapleProtocol::SalonTry){SalonOnError(s.message);break;}
             HelperStatus(s.message,Palette::Red);
             if(action==MapleProtocol::Warp)HelperRequest(MapleProtocol::Teleports,helper.category);
             // A refused borrow may mean the counts changed: show the server's current state.
