@@ -751,12 +751,13 @@ std::wstring TargetLabel() {
     if(view==3)for(const auto& r:sourceRows)if(r.id==routeMap)return r.label;
     return L"";
 }
-// Summary line for the current target: "street - map" when it fits, otherwise the map alone.
-std::wstring TargetLine(HDC dc,const std::wstring& prefix,int width) {
+// Summary lines for the current target: "street - map" on one line when it fits, otherwise the
+// street on the first line and the map on a second one aligned under it.
+std::vector<std::wstring> TargetLines(HDC dc,const std::wstring& prefix,int width) {
     auto label=TargetLabel();
-    if(TextWidth(dc,prefix+label)<=width)return prefix+label;
     std::wstring map,street;SplitMapName(label,map,street);
-    return prefix+map;
+    if(street.empty() || TextWidth(dc,prefix+label)<=width)return {prefix+label};
+    return {prefix+street+L" -",std::wstring(map)};
 }
 // Native panel slices: tile the dithered body rows/columns, keep borders, title box,
 // tab strip, red rule and the blue button bar pixel-identical.
@@ -844,14 +845,20 @@ void Paint(Window& w) {
             GdiFlush();
             Write(dc,{282,40,482,54},title,Palette::OnBlue,true);
             if(mapView) {
-                Write(dc,{282,58,482,72},TargetLine(dc,Text(view==2?L"sourceTarget":L"routeTarget")+L": ",200),Palette::OnBlueMuted);
-                Write(dc,{282,74,482,88},Text(L"questId")+L": "+std::to_wstring(selectedQuest)+L"   Lv. "+std::to_wstring(questLevel),Palette::OnBlueMuted);
+                auto prefix=Text(view==2?L"sourceTarget":L"routeTarget")+L": ";auto lines=TargetLines(dc,prefix,200);
+                // Two target lines tighten the rows so the quest id still sits above the gauge.
+                int y=lines.size()>1?56:58,step=lines.size()>1?14:16,indent=lines.size()>1?TextWidth(dc,prefix):0;
+                for(size_t i=0;i<lines.size();++i)Write(dc,{282+(i?indent:0),y+int(i)*step,482,y+int(i)*step+14},lines[i],Palette::OnBlueMuted);
+                y+=int(lines.size())*step;
+                Write(dc,{282,y,482,y+14},Text(L"questId")+L": "+std::to_wstring(selectedQuest)+L"   Lv. "+std::to_wstring(questLevel),Palette::OnBlueMuted);
             } else {
                 Write(dc,{282,58,482,72},Text(L"questId")+L": "+std::to_wstring(selectedQuest),Palette::OnBlueMuted);
                 Write(dc,{282,74,482,88},L"Lv. "+std::to_wstring(questLevel),Palette::OnBlueMuted);
             }
+            int gaugeY=98;
+            if(mapView && TargetLines(dc,Text(view==2?L"sourceTarget":L"routeTarget")+L": ",200).size()>1)gaugeY=102;
             int need=0,have=0;for(const auto& r:detailRows)if(r.required>0){need+=r.required;have+=(std::min)(r.current,r.required);}
-            if(need>0){BigGauge(img,272,98,double(have)/need);Write(dc,{440,98,484,112},std::to_wstring(have*100/need)+L"%",Palette::OnBlue,false,DT_RIGHT|DT_SINGLELINE|DT_VCENTER);}
+            if(need>0){BigGauge(img,272,gaugeY,double(have)/need);Write(dc,{440,gaugeY,484,gaugeY+14},std::to_wstring(have*100/need)+L"%",Palette::OnBlue,false,DT_RIGHT|DT_SINGLELINE|DT_VCENTER);}
             {   // Map views show the region mark of the chosen map; objectives show the NPC.
                 PixelClip clip({486,27,593,118});Bitmap* mark=nullptr;
                 if(mapView){int map=view==3?routeMap:selectedRow>=0 && selectedRow<int(rows.size())?rows[selectedRow].id:rows.empty()?0:rows.front().id;mark=MapMark(map);}
