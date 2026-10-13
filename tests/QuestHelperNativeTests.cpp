@@ -215,6 +215,7 @@ int main(int argc,char** argv) {
     int green=0;const auto firstHit=mainWindow.rowHits.front();
     for(int y=firstHit.rect.top;y<firstHit.rect.bottom;++y)for(int x=295;x<571;++x)if(GetPixel(mainWindow.image->dc,x,y)==Palette::Green)++green;
     assert(green>0);Save(*mainWindow.image,directory/"quest-route-table.bmp");
+    {auto saved=sourceRows;sourceRows[0].label=L"地球防御本部 - 皮拉体安的草原";Paint(mainWindow);Save(*mainWindow.image,directory/"quest-route-long-target.bmp");sourceRows=saved;Paint(mainWindow);}
     queue.clear();selectedRow=1;Click(mainWindow,11);assert(queue.empty());selectedRow=0;Click(mainWindow,11);
     assert(queue.size()==1 && queue.front().action==4 && queue.front().map==103000000 && queue.front().token==routeMap);
     auto wire=[](Snapshot snapshot){
@@ -292,7 +293,7 @@ int main(int argc,char** argv) {
     SetExpanded(true);AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);
     puts("PASS compact UI: 18-pixel category rows, one banner, 12-pixel close icon, pressed/drag-out feedback and drawer clipping/reversal");
     puts("PASS remembered selections: both tabs, close/ESC reopening, page 2 and reordered pages, regional group, removed quest and character isolation");
-    view=desiredView=2;sourceRows={{103000000,2,8,0,0,800,L"金银岛 - 废弃都市",L"掉落来源"},{103020000,2,8,0,0,2147483647,L"金银岛 - 逆恩森林 I",L"完整费用"}};
+    view=desiredView=2;sourceRows={{103000000,2,8,0,0,800,L"金银岛 - 废弃都市",L"掉落来源"},{103020000,2,8,0,0,2147483647,L"金银岛 - 逆恩森林 I",L"完整费用"},{221030401,2,0,0,0,8500,L"地球防御本部 - 皮拉体安的草原",L"载运船"}};
     selectedRow=0;detailOffset=textScroll=0;Paint(mainWindow);Save(*mainWindow.image,directory/"quest-map-table.bmp");
         TestNarrowTiles(*mainWindow.image);
     {   // ---- Native Maple Helper (NPC 9900001) ----
