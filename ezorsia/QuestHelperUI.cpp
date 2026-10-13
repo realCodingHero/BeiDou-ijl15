@@ -668,14 +668,19 @@ void SplitMapName(const std::wstring& label,std::wstring& map,std::wstring& stre
     street=Trimmed(label.substr(0,at));map=Trimmed(label.substr(at+3));if(map.empty()){map=street;street.clear();}
 }
 // Quest tables keep the map id for reference; the Maple Helper's teleport list shows names only.
-void MapNameText(HDC dc,RECT r,const std::wstring& label,int id,COLORREF color,bool showId=true) {
+// The id outranks the street: parts that would only show cut off are left out, and the street
+// that had no room is returned so the caller can place it elsewhere.
+std::wstring MapNameText(HDC dc,RECT r,const std::wstring& label,int id,COLORREF color,bool showId=true) {
     std::wstring map,street;SplitMapName(label,map,street);
     int width=TextWidth(dc,map);Write(dc,{r.left,r.top,r.right,r.bottom},map,color);
-    auto extra=street;if(showId)extra+=(street.empty()?L"":L"  ")+std::to_wstring(id);
-    if(extra.empty())return;
-    if(r.left+width+10<r.right)Write(dc,{r.left+width+8,r.top,r.right,r.bottom},extra,Palette::Faint);
+    auto number=showId?std::to_wstring(id):std::wstring();
+    auto extra=street.empty()?number:number.empty()?street:street+L"  "+number;
+    int room=r.right-(r.left+width+8);std::wstring dropped;
+    if(!street.empty() && TextWidth(dc,extra)>room){dropped=street;extra=number;}
+    if(!extra.empty() && TextWidth(dc,extra)<=room)Write(dc,{r.left+width+8,r.top,r.right,r.bottom},extra,Palette::Faint);
+    return dropped;
 }
-void MapName(HDC dc,RECT r,const Row& row,COLORREF color){MapNameText(dc,r,row.label,row.id,color);}
+std::wstring MapName(HDC dc,RECT r,const Row& row,COLORREF color){return MapNameText(dc,r,row.label,row.id,color);}
 // Map list: one card per map with its source, warp price and unlock state.
 void MapList(Window& w,HDC dc,const std::vector<Row>& rows,int bottom) {
     Legend(w,dc,false);
@@ -687,11 +692,15 @@ void MapList(Window& w,HDC dc,const std::vector<Row>& rows,int bottom) {
         if(selected)SelectionBox(dc,{DetailLeft,y,ObjectiveRight+2,rowBottom});
         {PixelClip clip({DetailLeft,y,ObjectiveRight+2,rowBottom});SpotAt(*w.image,SpotX-8,y+10,unlocked?3:1);}
         auto cost=Amount(r.cost)+L" "+Text(L"costColumn");int costWidth=TextWidth(dc,cost);
-        MapName(dc,{DetailLeft+22,y+3,ObjectiveRight-costWidth-8,y+17},r,Palette::Ink);
+        auto street=MapName(dc,{DetailLeft+22,y+3,ObjectiveRight-costWidth-8,y+17},r,Palette::Ink);
         Write(dc,{ObjectiveRight-costWidth,y+3,ObjectiveRight,y+17},cost,unlocked?Palette::Green:Palette::Muted,false,DT_RIGHT|DT_SINGLELINE|DT_VCENTER|DT_NOPREFIX);
         auto state=Text(unlocked?L"unlocked":L"locked");int stateWidth=TextWidth(dc,state);
         Write(dc,{ObjectiveRight-stateWidth,y+19,ObjectiveRight,y+33},state,unlocked?Palette::Green:Palette::Amber,false,DT_RIGHT|DT_SINGLELINE|DT_VCENTER|DT_NOPREFIX);
         Write(dc,{DetailLeft+22,y+19,ObjectiveRight-stateWidth-8,y+33},r.info,Palette::Muted);
+        // A street pushed off the first line follows the source when it fits there whole.
+        int infoRight=DetailLeft+22+(r.info.empty()?0:TextWidth(dc,r.info)+8);
+        if(!street.empty() && infoRight+TextWidth(dc,street)<=ObjectiveRight-stateWidth-8)
+            Write(dc,{infoRight,y+19,ObjectiveRight-stateWidth-8,y+33},street,Palette::Faint);
         RestoreDC(dc,saved);
         if(!selected)Dotted(dc,DetailLeft+2,ObjectiveRight,rowBottom-1);
         w.rowHits.push_back({{DetailLeft,y,ObjectiveRight+2,rowBottom},i});y=rowBottom+1;end=i+1;
@@ -741,6 +750,13 @@ std::wstring TargetLabel() {
     if(view==2)for(const auto& r:detailRows)if(r.kind==sourceKind && r.id==sourceTarget)return r.label;
     if(view==3)for(const auto& r:sourceRows)if(r.id==routeMap)return r.label;
     return L"";
+}
+// Summary line for the current target: "street - map" when it fits, otherwise the map alone.
+std::wstring TargetLine(HDC dc,const std::wstring& prefix,int width) {
+    auto label=TargetLabel();
+    if(TextWidth(dc,prefix+label)<=width)return prefix+label;
+    std::wstring map,street;SplitMapName(label,map,street);
+    return prefix+map;
 }
 // Native panel slices: tile the dithered body rows/columns, keep borders, title box,
 // tab strip, red rule and the blue button bar pixel-identical.
@@ -828,7 +844,7 @@ void Paint(Window& w) {
             GdiFlush();
             Write(dc,{282,40,482,54},title,Palette::OnBlue,true);
             if(mapView) {
-                Write(dc,{282,58,482,72},Text(view==2?L"sourceTarget":L"routeTarget")+L": "+TargetLabel(),Palette::OnBlueMuted);
+                Write(dc,{282,58,482,72},TargetLine(dc,Text(view==2?L"sourceTarget":L"routeTarget")+L": ",200),Palette::OnBlueMuted);
                 Write(dc,{282,74,482,88},Text(L"questId")+L": "+std::to_wstring(selectedQuest)+L"   Lv. "+std::to_wstring(questLevel),Palette::OnBlueMuted);
             } else {
                 Write(dc,{282,58,482,72},Text(L"questId")+L": "+std::to_wstring(selectedQuest),Palette::OnBlueMuted);
