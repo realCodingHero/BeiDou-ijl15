@@ -407,12 +407,12 @@ void BigGauge(Bitmap& img,int left,int top,double ratio) {
     int filled=int((frame->width-17)*ratio+0.5);
     if(bar && filled>0)Nine(img,{left+15,top+1,left+15+filled,top+1+bar->height},bar,{0,0,1,1},Whole(bar->height));
 }
-void ScrollbarAt(Window& w,HDC dc,RECT bounds,int& value,int maximum,int visible,bool always=false,int step=1) {
+void ScrollbarAt(Window& w,HDC dc,RECT bounds,int& value,int maximum,int visible,bool always=false,int step=1,int forcedId=0) {
     maximum=(std::max)(0,maximum);value=(std::max)(0,(std::min)(value,maximum));
     if(!maximum && !always)return;
     auto& img=*w.image;
     bool active=maximum>0 && !Blocked(w);
-    int id=&value==&listOffset?100:&value==&descriptionScroll?102:&value==&detailOffset?104:106;
+    int id=forcedId?forcedId:&value==&listOffset?100:&value==&descriptionScroll?102:&value==&detailOffset?104:106;
     auto path=[&](const wchar_t* part){return std::wstring(L"UI/Basic.img/VScr/")+(active?L"enabled/":L"disabled/")+part;};
     auto prevSkin=Skin(path(!active?L"prev":w.pressed==id && w.hover==id?L"prev1":L"prev0"));
     auto nextSkin=Skin(path(!active?L"next":w.pressed==id+1 && w.hover==id+1?L"next1":L"next0"));
