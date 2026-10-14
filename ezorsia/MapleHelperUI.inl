@@ -7,9 +7,10 @@
 // Quest/backgrnd3 (296x289): title, blue summary box, white body and button bar.
 constexpr Axis HelperX{150,150,175,175},HelperY{150,150,200,200};
 constexpr int HelperBodyBottom=366,HelperBar=376,HelperNpc=9900001,TalismanItem=2430034;
-enum HelperPage {HubPage=0,TeleportPage=1,PetPage=2,TalismanPage=3,BoostPage=4};
+enum HelperPage {HubPage=0,TeleportPage=1,PetPage=2,TalismanPage=3,BoostPage=4,BooksPage=5};
 enum HelperButton {HelperBack=3001,HelperWarp=3002,HelperRefresh=3003,HelperBorrow=3004,HelperClose=3005,
     HelperRemove=3006,HelperAddHere=3007,HelperAddId=3008,HelperInput=3009,BoostConfirm=3010,BoostExit=3011,
+    BookExchangeButton=3012,BookDecomposeButton=3013,BookDecomposeAllButton=3014,BookTab=2300,
     BoostStep=3100,BoostPreset=3110, // steps: 3100+2*slider (down) / +1 (up); presets 3110..3113
     HelperTile=1000,TalismanTile=1600,HelperTab=2000,HelperHubTab=2100,TalismanTab=2200};
 constexpr int BoostTrackLeft=100,BoostTrackRight=282,BoostThumb=22;
@@ -28,6 +29,10 @@ struct HelperState {
     int boostApplied[2]={0,0},boostDraft[2]={0,0},boostPaidTotal=0,boostNpc=0,dragSlider=-1;int64_t boostPaid=0;
     std::vector<int64_t> boostPrices;RECT sliderTracks[2]{};
     DWORD repeatStart=0,lastRepeat=0;bool repeated=false;
+    // Book exchange: rows of both tabs, the tab, the selected book, the page balance, the refund
+    // percent and the jobs line; locked books and "decompose all" need a second click.
+    std::vector<MapleProtocol::Row> books;int bookTab=0,bookSelected=0,bookPages=0,bookRefund=0,bookConfirm=0;
+    bool bookAllArmed=false;std::wstring bookLine;
     std::wstring title,welcome,notice,notes,status,room;COLORREF statusColor=Palette::Muted;
     std::deque<std::vector<unsigned char>> queue;
     std::map<int,std::pair<int,DWORD>> pending; // sequence -> (action, sent tick; 0 while queued)
@@ -62,7 +67,7 @@ void HelperFlush(DWORD now) {
     SendBytes(bytes);helper.lastSend=now;
 }
 // The shared "loading"/"timeout" labels talk about quests and a Refresh button the talisman lacks.
-const std::wstring& HelperLoadingText(){return Text(helper.page==TalismanPage || helper.page==BoostPage?L"tmLoading":L"loading");}
+const std::wstring& HelperLoadingText(){return Text(helper.page==TalismanPage || helper.page==BoostPage || helper.page==BooksPage?L"tmLoading":L"loading");}
 void HelperExpire(DWORD now) {
     bool expired=false;
     for(auto it=helper.pending.begin();it!=helper.pending.end();)if(it->second.second && now-it->second.second>10000){it=helper.pending.erase(it);expired=true;}else ++it;
@@ -72,6 +77,7 @@ void RefreshHelperPage() {
     // The talisman page is opened by the item, not the helper: it needs no hub snapshot.
     if(helper.page==TalismanPage){HelperRequest(MapleProtocol::TalismanList);return;}
     if(helper.page==BoostPage){HelperRequest(MapleProtocol::Boost);return;}
+    if(helper.page==BooksPage){HelperRequest(MapleProtocol::Books);return;}
     HelperRequest(MapleProtocol::Hub);
     if(helper.page==TeleportPage)HelperRequest(MapleProtocol::Teleports,helper.category);
     else if(helper.page==PetPage)HelperRequest(MapleProtocol::Pet);
@@ -92,6 +98,7 @@ std::wstring HelperTitle() {
     if(helper.page==PetPage)return Text(L"mhPet");
     if(helper.page==TalismanPage)return Text(L"tmTitle");
     if(helper.page==BoostPage)return Text(L"bsTitle");
+    if(helper.page==BooksPage)return Text(L"bkTitle");
     return helper.title.empty()?Text(L"mhTitle"):helper.title;
 }
 // A label/value pair inside the blue box: muted label, white figure.
@@ -300,6 +307,97 @@ void PaintTalisman(Window& w,HDC dc) {
     else hint=Text((selected->flags&MapleProtocol::TalismanActive)?L"tmRefreshHint":L"tmCost");
     Write(dc,{16,327,HelperWidth-16,341},hint,color);
 }
+// ---- Book exchange --------------------------------------------------------------------
+const MapleProtocol::Row* BookSelected() {
+    for(const auto& r:helper.books)if(r.kind==helper.bookTab && r.id==helper.bookSelected)return &r;
+    return nullptr;
+}
+int BookCount(int kind){int n=0;for(const auto& r:helper.books)if(r.kind==kind)++n;return n;}
+// Books "decompose all" takes: every stack the character cannot use any more.
+int64_t BookAllPages(int& count) {
+    int64_t pages=0;count=0;
+    for(const auto& r:helper.books)if(r.kind==MapleProtocol::BookHeld && !(r.flags&MapleProtocol::BookLocked)){pages+=r.cost*r.max;count+=r.max;}
+    return pages;
+}
+std::wstring BookPages(int64_t value){return Amount(value)+L" "+Text(L"bkPageUnit");}
+void BookTier(HDC dc,int& x,int y,const MapleProtocol::Row& r) {
+    const wchar_t* keys[]={L"bkTier0",L"bkTier1",L"bkTier2"};const COLORREF colors[]={Palette::Green,Palette::Blue,Palette::Purple};
+    int tier=(std::max)(0,(std::min)(2,r.min));auto text=Text(keys[tier]);int width=TextWidth(dc,text);
+    Write(dc,{x,y,x+width+2,y+14},text,colors[tier]);x+=width+8;
+    if(r.flags&(MapleProtocol::BookHot|MapleProtocol::BookCold)) {
+        bool hot=(r.flags&MapleProtocol::BookHot)!=0;auto heat=Text(hot?L"bkHot":L"bkCold");width=TextWidth(dc,heat);
+        Write(dc,{x,y,x+width+2,y+14},heat,hot?Palette::Red:Palette::Faint);x+=width+8;
+    }
+}
+bool BookExchangeable() {
+    auto r=BookSelected();
+    return r && helper.bookTab==MapleProtocol::BookOffer && !(r->flags&MapleProtocol::BookMaxed) && helper.bookPages>=r->cost && !helper.loading;
+}
+constexpr int BookListTop=133,BookRowHeight=30,BookPanelTop=285;
+void PaintBooks(Window& w,HDC dc) {
+    auto& img=*w.image;
+    DrawTab(w,dc,BookTab,{7,108,127,127},Text(L"bkTabExchange")+L" "+std::to_wstring(BookCount(MapleProtocol::BookOffer)),helper.bookTab==0);
+    DrawTab(w,dc,BookTab+1,{128,108,248,127},Text(L"bkTabDecompose")+L" "+std::to_wstring(BookCount(MapleProtocol::BookHeld)),helper.bookTab==1);
+    RedRule(dc,127);
+    std::vector<int> shown;for(int i=0;i<int(helper.books.size());++i)if(helper.books[i].kind==helper.bookTab)shown.push_back(i);
+    int bottom=BookPanelTop-2,visible=(bottom-BookListTop)/BookRowHeight;
+    int maximum=(std::max)(0,int(shown.size())-visible);helper.offset=(std::min)(helper.offset,maximum);
+    if(shown.empty() && !helper.loading)
+        TextBlock(dc,{14,BookListTop+6,HelperWidth-14,bottom},Text(helper.bookTab==0?L"bkNoOffer":L"bkNoHeld"),Palette::Muted);
+    int y=BookListTop;
+    for(int n=helper.offset;n<int(shown.size()) && y+BookRowHeight<=bottom;++n,y+=BookRowHeight) {
+        const auto& r=helper.books[shown[n]];bool selected=r.id==helper.bookSelected,offer=r.kind==MapleProtocol::BookOffer;
+        bool maxed=(r.flags&MapleProtocol::BookMaxed)!=0,locked=(r.flags&MapleProtocol::BookLocked)!=0;
+        RECT card{8,y,HelperWidth-22,y+BookRowHeight-1};
+        int saved=SaveDC(dc);IntersectClipRect(dc,card.left,card.top,card.right,card.bottom);
+        if(selected)SelectionBox(dc,card);
+        {PixelClip clip(card);Scaled(img,{12,y+1,40,y+29},ItemIcon(r.icon),true,offer && maxed?110:255);}
+        // Right column: the price (green when affordable) or the refund per copy.
+        std::wstring right;COLORREF rightColor=Palette::Ink;
+        if(offer){if(maxed){right=Text(L"bkMaxed");rightColor=Palette::Faint;}else{right=BookPages(r.cost);rightColor=helper.bookPages>=r.cost?Palette::Green:Palette::Red;}}
+        else{right=L"+"+BookPages(r.cost);rightColor=Palette::Green;}
+        int rightWidth=TextWidth(dc,right);
+        auto label=offer?r.label:r.label+L" \x00D7"+std::to_wstring(r.max);
+        Write(dc,{46,y+1,HelperWidth-30-rightWidth,y+15},label,offer && maxed?Palette::Faint:Palette::Ink);
+        Write(dc,{HelperWidth-26-rightWidth,y+1,HelperWidth-26,y+15},right,rightColor,false,DT_RIGHT|DT_SINGLELINE|DT_VCENTER|DT_NOPREFIX);
+        int x=46;BookTier(dc,x,y+15,r);
+        if(offer)Write(dc,{x,y+15,HelperWidth-26,y+29},TalismanPart(r,0),Palette::Muted);
+        else if(locked){auto own=Text(L"bkOwnJob");Write(dc,{x,y+15,HelperWidth-26,y+29},own,Palette::Amber);}
+        else Write(dc,{x,y+15,HelperWidth-26,y+29},r.info,Palette::Muted);
+        RestoreDC(dc,saved);
+        if(!selected)Dotted(dc,10,HelperWidth-24,y+BookRowHeight-1);
+        w.rowHits.push_back({card,shown[n]});
+    }
+    if(maximum>0)ScrollbarAt(w,dc,{HelperWidth-18,BookListTop,HelperWidth-6,bottom},helper.offset,maximum,visible,true,1);
+    // Detail panel: sources of the selected book, or what decomposing it gives.
+    RECT panel{8,BookPanelTop,HelperWidth-8,346};
+    if(auto beige=Skin(L"UI/UIWindow.img/Quest/backgrnd5"))Nine(img,panel,beige,{8,8,250,258},{8,8,100,109});
+    auto selected=BookSelected();int left=16,line=BookPanelTop+4;
+    if(!selected) {
+        if(helper.bookTab==MapleProtocol::BookHeld){int count;auto pages=BookAllPages(count);
+            TextBlock(dc,{left,line,HelperWidth-16,344},count?Format(Format(Text(L"bkAllSummary"),std::to_wstring(count)),Amount(pages)):Text(L"bkNothingToDecompose"),Palette::Muted);}
+        else TextBlock(dc,{left,line,HelperWidth-16,344},Format(Text(L"bkPick"),std::to_wstring(helper.bookRefund)),Palette::Muted);
+        return;
+    }
+    int nameWidth=TextWidth(dc,selected->label,true);
+    Write(dc,{left,line,left+nameWidth+2,line+14},selected->label,Palette::Blue,true);
+    int x=left+nameWidth+10;BookTier(dc,x,line,*selected);
+    if(selected->kind==MapleProtocol::BookOffer) {
+        Write(dc,{left,line+14,HelperWidth-16,line+28},TalismanPart(*selected,0),Palette::Ink);
+        Write(dc,{left,line+28,HelperWidth-16,line+42},TalismanPart(*selected,1),Palette::Muted);
+        Write(dc,{left,line+42,HelperWidth-16,line+56},TalismanPart(*selected,2),Palette::Muted);
+    } else {
+        Write(dc,{left,line+14,HelperWidth-16,line+28},Text(L"bkJobs")+selected->info,Palette::Ink);
+        Write(dc,{left,line+28,HelperWidth-16,line+42},Format(Format(Text(L"bkRefundLine"),BookPages(selected->cost)),BookPages(selected->cost*selected->max)),Palette::Muted);
+        if(selected->flags&MapleProtocol::BookLocked)
+            Write(dc,{left,line+42,HelperWidth-16,line+56},Text(helper.bookConfirm==selected->id?L"bkConfirmLocked":L"bkLockedHint"),Palette::Amber);
+    }
+}
+void OpenBooks() {
+    helper.page=BooksPage;helper.selected=-1;helper.offset=0;helper.bookSelected=0;helper.bookConfirm=0;helper.bookAllArmed=false;
+    helper.books.clear();helper.status.clear();HelperRequest(MapleProtocol::Books);HelperDirty();
+}
+void BookChoose(int tab,int id){helper.bookTab=tab;helper.bookSelected=id;helper.bookConfirm=0;helper.bookAllArmed=false;HelperDirty();}
 // ---- Boss-room boost ------------------------------------------------------------------
 int64_t BoostPrice(int total){return total>=0 && total<int(helper.boostPrices.size())?helper.boostPrices[total]:0;}
 int BoostTotal(){return helper.boostDraft[0]+helper.boostDraft[1];}
@@ -390,6 +488,10 @@ void PaintHelper(Window& w) {
         Write(dc,{22,39,262,53},Text(L"mhPet"),Palette::OnBlue,true);
         std::wstring mode;for(const auto& r:helper.pets)if(r.id==helper.petMode)mode=r.label;
         Figure(dc,14,262,60,Text(L"mhCurrentMode"),mode);
+    } else if(helper.page==BooksPage) {
+        Write(dc,{22,39,262,53},Text(L"bkHeadline"),Palette::OnBlue,true);
+        Figure(dc,14,262,60,Text(L"bkBalance"),Amount(helper.bookPages));
+        Figure(dc,14,262,78,Text(L"bkLine"),helper.bookLine);
     } else if(helper.page==BoostPage) {
         Write(dc,{22,39,262,53},Text(L"bsHeadline"),Palette::OnBlue,true);
         Figure(dc,14,262,60,Text(L"tmRoom"),helper.room.empty()?std::wstring():helper.room+L" \x00B7 "+Text(L"tmSolo"));
@@ -402,7 +504,9 @@ void PaintHelper(Window& w) {
     }
     {   PixelClip clip({HelperWidth-113,27,HelperWidth-7,102});Bitmap* mark=nullptr;
         if(helper.page==TeleportPage && helper.selected>=0 && helper.selected<int(helper.teleports.size()))mark=MapMark(helper.teleports[helper.selected].id);
+        auto book=helper.page==BooksPage?BookSelected():nullptr;
         if(helper.page==TalismanPage)Enlarged(img,HelperWidth-60,64,ItemIcon(TalismanItem),2);
+        else if(book)Enlarged(img,HelperWidth-60,64,ItemIcon(book->icon),2);
         else if(helper.page==BoostPage)NpcPortrait(img,{HelperWidth-111,29,HelperWidth-9,101},helper.boostNpc);
         else if(mark)Sprite(img,HelperWidth-60-mark->width/2,64-mark->height/2,mark);else NpcPortrait(img,{HelperWidth-111,29,HelperWidth-9,101},HelperNpc);
     }
@@ -411,6 +515,7 @@ void PaintHelper(Window& w) {
     else if(helper.page==TeleportPage)PaintTeleports(w,dc,bottom);
     else if(helper.page==PetPage)PaintPet(w,dc);
     else if(helper.page==BoostPage)PaintBoost(w,dc);
+    else if(helper.page==BooksPage)PaintBooks(w,dc);
     else PaintTalisman(w,dc);
     // One clipped line inside the white body (it ends at y=367, the button bar starts at 372).
     if(!helper.status.empty())Write(dc,{12,HelperBodyBottom-16,HelperWidth-14,HelperBodyBottom-2},helper.status,helper.statusColor);
@@ -437,6 +542,15 @@ void PaintHelper(Window& w) {
         bool affordable=chosen && (helper.teleports[helper.selected].flags&1) && helper.meso>=helper.teleports[helper.selected].cost;
         if(helper.category==MapleProtocol::CustomMaps)ButtonAt(w,dc,HelperRemove,{76,HelperBar,136,HelperBar+17},L"mhRemove",chosen && !helper.loading);
         ButtonAt(w,dc,HelperWarp,{HelperWidth-144,HelperBar,HelperWidth-78,HelperBar+17},L"warp",affordable && !helper.loading);
+    }
+    if(helper.page==BooksPage) {
+        if(helper.bookTab==MapleProtocol::BookOffer)
+            ButtonAt(w,dc,BookExchangeButton,{HelperWidth-144,HelperBar,HelperWidth-78,HelperBar+17},L"bkExchange",BookExchangeable());
+        else {
+            int count;BookAllPages(count);
+            ButtonAt(w,dc,BookDecomposeAllButton,{76,HelperBar,156,HelperBar+17},helper.bookAllArmed?L"bkConfirmAllButton":L"bkDecomposeAll",count>0 && !helper.loading);
+            ButtonAt(w,dc,BookDecomposeButton,{HelperWidth-144,HelperBar,HelperWidth-78,HelperBar+17},L"bkDecompose",BookSelected() && !helper.loading);
+        }
     }
     ButtonAt(w,dc,HelperRefresh,{HelperWidth-72,HelperBar,HelperWidth-10,HelperBar+17},L"refresh",!helper.loading);
     GdiFlush();for(int i=0;i<width*height;++i)img.pixels[i]=(img.pixels[i]&0xFFFFFF)|(DWORD(shape[i])<<24);
@@ -497,6 +611,24 @@ void HelperClick(Window& w,int id) {
     if(id==BoostExit){if(!helper.loading){helper.status.clear();HelperRequest(MapleProtocol::BoostExit);HelperDirty();}return;}
     if(id>=100 && id<200){HelperScroll(w,id);return;}
     if(id>=TalismanTab && id<TalismanTab+3){helper.talismanTab=id-TalismanTab;HelperDirty();return;}
+    if(id>=BookTab && id<BookTab+2){if(helper.bookTab!=id-BookTab){helper.offset=0;BookChoose(id-BookTab,0);helper.status.clear();}return;}
+    if(id==BookExchangeButton) {
+        if(!BookExchangeable())return;
+        auto r=BookSelected();helper.status.clear();HelperRequest(MapleProtocol::BookExchange,r->id,0,r->cost);HelperDirty();return;
+    }
+    if(id==BookDecomposeButton) {
+        auto r=BookSelected();if(!r || helper.loading)return;
+        bool locked=(r->flags&MapleProtocol::BookLocked)!=0;
+        // A book this job can still use needs a second click.
+        if(locked && helper.bookConfirm!=r->id){helper.bookConfirm=r->id;HelperStatus(Text(L"bkConfirmLocked"),Palette::Amber);HelperDirty();return;}
+        helper.bookConfirm=0;helper.status.clear();
+        HelperRequest(MapleProtocol::BookDecompose,r->id,1|(locked?MapleProtocol::BookConfirm:0),r->cost);HelperDirty();return;
+    }
+    if(id==BookDecomposeAllButton) {
+        int count;auto pages=BookAllPages(count);if(!count || helper.loading)return;
+        if(!helper.bookAllArmed){helper.bookAllArmed=true;HelperStatus(Format(Format(Text(L"bkConfirmAll"),std::to_wstring(count)),Amount(pages)),Palette::Amber);HelperDirty();return;}
+        helper.bookAllArmed=false;helper.status.clear();HelperRequest(MapleProtocol::BookDecomposeAll,0,0,pages);HelperDirty();return;
+    }
     if(id>=TalismanTile && id<TalismanTile+100) {
         int index=id-TalismanTile;if(index<int(helper.talisman.size()))helper.talismanSkill=helper.talisman[index].id;
         HelperDirty();return;
@@ -526,6 +658,7 @@ void HelperClick(Window& w,int id) {
             // Teleport and pet pages are drawn here; everything else runs on the server.
             helper.selected=-1;helper.offset=0;
             if(r.id==MapleProtocol::SalonHubFeature){OpenSalon();return;}
+            if(r.id==MapleProtocol::BooksHubFeature){OpenBooks();return;}
             if(r.id==71){helper.page=TeleportPage;HelperRequest(MapleProtocol::Teleports,helper.category);}
             else{helper.page=PetPage;HelperRequest(MapleProtocol::Pet);}
         } else HelperRequest(MapleProtocol::Feature,r.id);
@@ -535,12 +668,14 @@ void HelperClick(Window& w,int id) {
 void HelperRow(int index) {
     helper.inputFocus=false;
     if(helper.page==TeleportPage){helper.selected=index;HelperDirty();}
+    else if(helper.page==BooksPage && index>=0 && index<int(helper.books.size()))BookChoose(helper.books[index].kind,helper.books[index].id);
     else if(helper.page==PetPage && index<int(helper.pets.size()) && helper.pets[index].id!=helper.petMode && !helper.loading)
         {helper.status.clear();HelperRequest(MapleProtocol::PetSet,helper.pets[index].id);HelperDirty();}
 }
 void HelperWheel(int delta) {
-    if(helper.page!=TeleportPage)return;
-    helper.offset=(std::max)(0,helper.offset+(delta>0?1:-1)); // delta>0 scrolls down, like the quest listHelperDirty();
+    if(helper.page!=TeleportPage && helper.page!=BooksPage)return;
+    // delta>0 scrolls down, like the quest list; painting clamps the bottom.
+    helper.offset=(std::max)(0,helper.offset+(delta>0?1:-1));HelperDirty();
 }
 // Holding a step button repeats after 400 ms, then every 60 ms.
 void HelperRepeat(DWORD now) {
@@ -594,6 +729,15 @@ bool HelperReceive(const unsigned char* data,size_t size) {
             }
             break;
         case MapleProtocol::SalonCatalogView:SalonOnCatalog(s);break;
+        case MapleProtocol::BooksView: {
+            if(helper.page!=BooksPage)break;
+            helper.books=std::move(s.rows);helper.bookPages=s.value;helper.bookRefund=s.extra;helper.bookLine=s.title;
+            if(!BookSelected())helper.bookSelected=0;
+            helper.bookConfirm=0;helper.bookAllArmed=false;
+            // A result is green; the "no job line yet" note is not a result.
+            if(!s.message.empty())HelperStatus(s.message,BookCount(MapleProtocol::BookOffer)?Palette::Green:Palette::Amber);
+            break;
+        }
         case MapleProtocol::SalonStateView:SalonOnState(s);break;
         case MapleProtocol::BoostView: {
             if(helper.page!=BoostPage)break;
@@ -626,6 +770,8 @@ bool HelperReceive(const unsigned char* data,size_t size) {
             // A refused purchase (e.g. the price changed) reloads prices and what was paid.
             if(action==MapleProtocol::BoostSet && helper.page==BoostPage)HelperRequest(MapleProtocol::Boost);
             if(action==MapleProtocol::Boost)helper.boostPrices.clear();
+            // A refused exchange or decompose may mean prices or the inventory changed.
+            if(action>=MapleProtocol::BookExchange && action<=MapleProtocol::BookDecomposeAll && helper.page==BooksPage)HelperRequest(MapleProtocol::Books);
             break;
     }
     HelperDirty();return true;

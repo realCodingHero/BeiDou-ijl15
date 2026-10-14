@@ -638,6 +638,56 @@ int main(int argc,char** argv) {
         helper.queue.clear();helper.pending.clear();helper.loading=false;
         HideSalon();assert(!salonWindow.shown);
         puts("PASS salon: WZ-composed previews from SalonLayout.txt, hover preview, colour keys, filters/series/sort/id search, big cards, scrolling, try-on, favourite, confirmed apply with quoted price, undo, face and skin tabs");
+        // ---- Book exchange (hub tile 83), protocol version 5 ----
+        for(auto& r:helper.hub)if(r.id==MapleProtocol::BooksHubFeature)r.flags=1; // v5 servers mark the tile as a page
+        Show(helperWindow);helper.page=HubPage;helper.queue.clear();helper.pending.clear();helper.loading=false;PaintHelper(helperWindow);
+        Click(helperWindow,tile(83));assert(helper.page==BooksPage && sent(MapleProtocol::Books)==0);
+        constexpr int Hot=MapleProtocol::BookHot,Cold=MapleProtocol::BookCold,Maxed=MapleProtocol::BookMaxed,Locked=MapleProtocol::BookLocked;
+        MapleProtocol::Snapshot books;books.view=MapleProtocol::BooksView;books.value=38;books.extra=60;books.title=L"箭神";
+        books.rows={ // {id, kind, flags, tier, master level or quantity, icon, price or refund, label, info}
+            {2290074,0,Hot|Maxed,1,20,2290074,30,L"一击要害箭 20",L"技能等级 20 / 20\n杂兵：绯红卫士\nBoss：扎昆、血焰将军"},
+            {2290075,0,Hot,1,20,2290075,45,L"一击要害箭 30",L"技能等级 20 / 20\n杂兵：小蜥蜴\nBoss：暗黑龙王的灵魂、艾里葛斯"},
+            {2290070,0,Hot,0,0,2290070,15,L"穿透箭 20",L"尚未学会此技能\n杂兵：小金人、巨化金人、巨化银人\nBoss：蝙蝠魔"},
+            {2290071,0,Hot,0,0,2290071,22,L"穿透箭 30",L"尚未学会此技能\n杂兵：老骷髅龙、追忆的守护兵\nBoss：帕普拉图斯"},
+            {2290068,0,Cold,1,0,2290068,14,L"刺眼箭 20",L"尚未学会此技能\n杂兵：小金人、小铜人、巨化金人\nBoss：天鹰"},
+            {2290069,0,Cold,0,0,2290069,10,L"刺眼箭 30",L"尚未学会此技能\n杂兵：武林妖僧分身、追忆的守护队长"},
+            {2290096,0,Hot,1,20,2290096,30,L"冒险岛勇士 20",L"技能等级 12 / 20\n杂兵：黑飞龙\nBoss：大头头、暗黑龙王的灵魂"},
+            {2290061,1,Hot,2,1,2290061,54,L"暴风箭雨 30",L"神射手"},
+            {2290046,1,Hot,1,2,2290046,18,L"落霜冰破 20",L"冰雷魔导师"},
+            {2290070,1,Hot|Locked,0,1,2290070,9,L"穿透箭 20",L"箭神"}};
+        respond(books);helper.queue.clear();
+        assert(helper.bookPages==38 && helper.bookRefund==60 && helper.bookLine==L"箭神" && BookCount(MapleProtocol::BookOffer)==7 && BookCount(MapleProtocol::BookHeld)==3);
+        PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-books.bmp");
+        assert(helperWindow.rowHits.size()==5 && helperWindow.tabs.size()==2); // five 30-pixel rows above the source panel
+        for(const auto& hit:helperWindow.rowHits)assert(hit.rect.bottom<=BookPanelTop);
+        HelperRow(1);PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,BookExchangeButton)); // 45 pages, 38 held
+        HelperRow(0);PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,BookExchangeButton)); // already mastered
+        HelperRow(2);PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-books-selected.bmp");
+        assert(buttonEnabled(helperWindow,BookExchangeButton));
+        Click(helperWindow,BookExchangeButton);assert(sent(MapleProtocol::BookExchange)==2290070 && arg3()==15);
+        MapleProtocol::Snapshot noPages;noPages.view=MapleProtocol::Error;noPages.value=MapleProtocol::BookExchange;noPages.message=L"书页不足，需要 15 书页。";
+        respond(noPages);assert(helper.status==noPages.message && helper.statusColor==Palette::Red && sent(MapleProtocol::Books)==0); // refused: reload
+        helper.queue.clear();helper.pending.clear();helper.loading=false;helper.status.clear();
+        helper.offset=0;Wheel(helperWindow.native+4,nullptr,200,200,1);assert(helper.offset==1);
+        Wheel(helperWindow.native+4,nullptr,200,200,1);Wheel(helperWindow.native+4,nullptr,200,200,1);PaintHelper(helperWindow);assert(helper.offset==2); // 7 rows, 5 visible
+        Click(helperWindow,BookTab+1);assert(helper.bookTab==1 && helper.bookSelected==0 && helper.offset==0);
+        PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-books-decompose.bmp");
+        assert(buttonEnabled(helperWindow,BookDecomposeAllButton) && !buttonEnabled(helperWindow,BookDecomposeButton));
+        // Decompose all: the locked stack stays out and a second click confirms the quoted total.
+        Click(helperWindow,BookDecomposeAllButton);assert(helper.queue.empty() && helper.bookAllArmed && helper.statusColor==Palette::Amber);
+        Click(helperWindow,BookDecomposeAllButton);assert(sent(MapleProtocol::BookDecomposeAll)==0 && arg3()==54+18*2);
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        // A book this job can still use needs a second click, which sets the confirm bit.
+        HelperRow(9);PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-books-locked.bmp");
+        Click(helperWindow,BookDecomposeButton);assert(helper.queue.empty() && helper.bookConfirm==2290070);
+        Click(helperWindow,BookDecomposeButton);assert(sent(MapleProtocol::BookDecompose)==2290070 && arg2()==(1|MapleProtocol::BookConfirm) && arg3()==9);
+        books.rows.pop_back();books.value=47;books.message=L"已分解「穿透箭 20」×1，获得 9 书页。";respond(books);helper.queue.clear();
+        assert(helper.bookPages==47 && helper.bookSelected==0 && helper.statusColor==Palette::Green && BookCount(MapleProtocol::BookHeld)==2);
+        HelperRow(7);Click(helperWindow,BookDecomposeButton);assert(sent(MapleProtocol::BookDecompose)==2290061 && arg2()==1 && arg3()==54); // not locked: one click
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        Click(helperWindow,HelperBack);assert(helper.page==HubPage);
+        HideHelper();
+        puts("PASS book exchange: v5 hub tile, price colours and mastered rows, quoted exchange, refused reload, wheel clamp, decompose tab, confirmed decompose-all total, locked second click");
     }
     // Verify writes into the ACTUAL v83 Canvas DLL, including tile boundaries.
     assert(SetCurrentDirectoryA(argv[1]));assert(SetDllDirectoryA(argv[1]));HMODULE pcom=LoadLibraryA("PCOM.dll");assert(pcom);
