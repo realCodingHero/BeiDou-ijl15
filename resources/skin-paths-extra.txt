@@ -111,3 +111,10 @@ Item/Consume/0229.img/02290069/info/icon
 Item/Consume/0229.img/02290096/info/icon
 Item/Consume/0229.img/02290061/info/icon
 Item/Consume/0229.img/02290046/info/icon
+Character/Weapon/01302020.img/info/icon
+Character/Weapon/01302000.img/info/icon
+Character/Weapon/01302004.img/info/icon
+Character/Cap/01002004.img/info/icon
+Character/Coat/01040002.img/info/icon
+Item/Etc/0402.img/04020007/info/icon
+Npc/1022004.img/stand/0

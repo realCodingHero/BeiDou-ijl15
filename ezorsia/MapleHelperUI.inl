@@ -7,11 +7,12 @@
 // Quest/backgrnd3 (296x289): title, blue summary box, white body and button bar.
 constexpr Axis HelperX{150,150,175,175},HelperY{150,150,200,200};
 constexpr int HelperBodyBottom=366,HelperBar=376,HelperNpc=9900001,TalismanItem=2430034;
-enum HelperPage {HubPage=0,TeleportPage=1,PetPage=2,TalismanPage=3,BoostPage=4,BooksPage=5};
+enum HelperPage {HubPage=0,TeleportPage=1,PetPage=2,TalismanPage=3,BoostPage=4,BooksPage=5,TransmogPage=6};
 enum HelperButton {HelperBack=3001,HelperWarp=3002,HelperRefresh=3003,HelperBorrow=3004,HelperClose=3005,
     HelperRemove=3006,HelperAddHere=3007,HelperAddId=3008,HelperInput=3009,BoostConfirm=3010,BoostExit=3011,
     BookExchangeButton=3012,BookDecomposeButton=3013,BookDecomposeAllButton=3014,BookTab=2300,
     BookMapsButton=3015,BookRouteButton=3016,BookWarpButton=3017,
+    TgTryButton=3018,TgApplyButton=3019,TgRestoreButton=3020,TgTab=2400,TgBaseRow=4000,TgSourceRow=4500,
     BoostStep=3100,BoostPreset=3110, // steps: 3100+2*slider (down) / +1 (up); presets 3110..3113
     HelperTile=1000,TalismanTile=1600,HelperTab=2000,HelperHubTab=2100,TalismanTab=2200};
 constexpr int BoostTrackLeft=100,BoostTrackRight=282,BoostThumb=22;
@@ -37,6 +38,11 @@ struct HelperState {
     // Drop maps and routes of one book: view 0 = book list, 1 = drop maps, 2 = route to one map.
     std::vector<MapleProtocol::Row> bookMaps,bookRoute;int bookView=0,bookItem=0,bookMapPick=-1,bookStepPick=-1,bookRouteMap=0;
     std::wstring bookMapsTitle,bookRouteTitle,bookNotice;
+    // Transmog page: equips, looks for the chosen equip, the ore, the craftsman, the chosen codes,
+    // the right column's scroll, a pending second click and whether a try-on is showing.
+    std::vector<MapleProtocol::Row> tgBases,tgSources;std::wstring tgOreName,tgSourcesNote;
+    int tgTab=0,tgBase=0,tgSource=0,tgRight=0,tgOre=0,tgOreHeld=0,tgOreNeed=0,tgNpc=0;
+    bool tgArmed=false,tgTrying=false,tgTryPending=false;
     std::wstring title,welcome,notice,notes,status,room;COLORREF statusColor=Palette::Muted;
     std::deque<std::vector<unsigned char>> queue;
     std::map<int,std::pair<int,DWORD>> pending; // sequence -> (action, sent tick; 0 while queued)
@@ -81,6 +87,7 @@ void RefreshHelperPage() {
     // The talisman page is opened by the item, not the helper: it needs no hub snapshot.
     if(helper.page==TalismanPage){HelperRequest(MapleProtocol::TalismanList);return;}
     if(helper.page==BoostPage){HelperRequest(MapleProtocol::Boost);return;}
+    if(helper.page==TransmogPage){HelperRequest(MapleProtocol::TransmogList);return;}
     if(helper.page==BooksPage) {
         if(helper.bookView==1)HelperRequest(MapleProtocol::BookMaps,helper.bookItem);
         else if(helper.bookView==2)HelperRequest(MapleProtocol::BookRoute,helper.bookItem,helper.bookRouteMap);
@@ -96,10 +103,19 @@ void OpenHelperPage(int page) {
     helper.page=page;helper.selected=-1;helper.offset=0;helper.status.clear();
     if(page==TalismanPage){helper.talisman.clear();helper.talismanTab=0;helper.talismanSkill=0;helper.room.clear();}
     if(page==BoostPage){helper.boostPrices.clear();helper.room.clear();helper.dragSlider=-1;}
+    if(page==TransmogPage){helper.tgBases.clear();helper.tgSources.clear();helper.tgTab=0;helper.tgBase=helper.tgSource=helper.tgRight=0;helper.tgArmed=helper.tgTrying=false;}
     helper.inputFocus=false;
     Show(helperWindow);RefreshHelperPage();HelperDirty();
 }
-void HideHelper(){Hide(helperWindow);helper.queue.clear();helper.pending.clear();helper.loading=false;}
+// Sends one request now, outside the 150 ms queue; tests swap it out.
+void (*HelperSendNow)(std::vector<unsigned char>&)=SendBytes;
+void HideHelper() {
+    // A try-on only lives on this client. The hidden window gets no more updates to flush the
+    // queue, so the real look is asked for straight away.
+    if(helper.page==TransmogPage && helper.tgTrying){auto bytes=MapleProtocol::Request(MapleProtocol::TransmogTry,++helper.sequence,helper.tgBase,0);HelperSendNow(bytes);}
+    helper.tgTrying=false;
+    Hide(helperWindow);helper.queue.clear();helper.pending.clear();helper.loading=false;
+}
 
 // ---- Drawing -----------------------------------------------------------------
 std::wstring HelperTitle() {
@@ -108,6 +124,7 @@ std::wstring HelperTitle() {
     if(helper.page==TalismanPage)return Text(L"tmTitle");
     if(helper.page==BoostPage)return Text(L"bsTitle");
     if(helper.page==BooksPage)return Text(L"bkTitle");
+    if(helper.page==TransmogPage)return Text(L"tgTitle");
     return helper.title.empty()?Text(L"mhTitle"):helper.title;
 }
 // A label/value pair inside the blue box: muted label, white figure.
@@ -453,6 +470,85 @@ void OpenBooks() {
     helper.books.clear();helper.status.clear();HelperRequest(MapleProtocol::Books);HelperDirty();
 }
 void BookChoose(int tab,int id){helper.bookTab=tab;helper.bookSelected=id;helper.bookConfirm=0;helper.bookAllArmed=false;HelperDirty();}
+// ---- Transmog ----------------------------------------------------------------------------
+const MapleProtocol::Row* TgRow(const std::vector<MapleProtocol::Row>& rows,int code){for(const auto& r:rows)if(r.id==code)return &r;return nullptr;}
+const MapleProtocol::Row* TgBase(){return TgRow(helper.tgBases,helper.tgBase);}
+const MapleProtocol::Row* TgSource(){return TgRow(helper.tgSources,helper.tgSource);}
+bool TgFits(){auto s=TgSource();return TgBase() && s && (s->flags&MapleProtocol::TransmogFits);}
+bool TgApplicable(){return TgFits() && helper.tgOreHeld>=helper.tgOreNeed && !helper.loading;}
+bool TgTryable(){auto b=TgBase();return helper.tgTrying || (TgFits() && (b->flags&MapleProtocol::TransmogWorn) && !helper.loading);}
+std::vector<int> TgShown(){std::vector<int> v;for(int i=0;i<int(helper.tgBases.size());++i)if(helper.tgTab==0 || (helper.tgBases[i].flags&MapleProtocol::TransmogChanged))v.push_back(i);return v;}
+void TgStopTry(){if(helper.tgTrying){HelperRequest(MapleProtocol::TransmogTry,helper.tgBase,0);helper.tgTryPending=false;helper.tgTrying=false;}}
+// One equip row: icon, name and a second line (worn, the original equip, or why it can't be the look).
+void TgRowAt(Window& w,HDC dc,RECT card,int id,const MapleProtocol::Row& r,bool selected,bool source) {
+    bool usable=!source || (r.flags&MapleProtocol::TransmogFits),hover=w.hover==id;
+    int saved=SaveDC(dc);IntersectClipRect(dc,card.left,card.top,card.right,card.bottom);
+    if(selected || hover)SelectionBox(dc,card);
+    {PixelClip clip(card);Scaled(*w.image,{card.left+2,card.top+1,card.left+28,card.top+27},ItemIcon(r.icon),true,usable?255:110);}
+    Write(dc,{card.left+32,card.top+1,card.right-2,card.top+14},r.label,usable?Palette::Ink:Palette::Faint);
+    std::wstring second;COLORREF color=Palette::Muted;
+    if(source){if(usable)second=L"Lv. "+std::to_wstring(r.min);else{second=r.info;color=Palette::Red;}}
+    else if(r.flags&MapleProtocol::TransmogChanged){second=r.info;color=Palette::Amber;}
+    else{second=(r.flags&MapleProtocol::TransmogWorn)?Text(L"tgWorn"):L"Lv. "+std::to_wstring(r.min);color=(r.flags&MapleProtocol::TransmogWorn)?Palette::Blue:Palette::Muted;}
+    Write(dc,{card.left+32,card.top+14,card.right-2,card.top+27},second,color);
+    RestoreDC(dc,saved);
+    if(!selected)Dotted(dc,card.left+2,card.right-2,card.bottom);
+    w.buttons.push_back({card,id,r.label,true});
+}
+constexpr int TgListTop=146,TgRowHeight=28,TgPanelTop=290;
+void TgColumn(Window& w,HDC dc,int left,int right,int idBase,const std::vector<MapleProtocol::Row>& rows,const std::vector<int>& shown,int& offset,int selected,bool source,int scrollId) {
+    int bottom=TgPanelTop-4,visible=(bottom-TgListTop)/TgRowHeight;
+    int maximum=(std::max)(0,int(shown.size())-visible);offset=(std::max)(0,(std::min)(offset,maximum));
+    for(int n=offset,y=TgListTop;n<int(shown.size()) && y+TgRowHeight<=bottom;++n,y+=TgRowHeight) {
+        const auto& r=rows[shown[n]];
+        TgRowAt(w,dc,{left,y,right-14,y+TgRowHeight-1},idBase+shown[n],r,r.id==selected,source);
+    }
+    if(maximum>0)ScrollbarAt(w,dc,{right-12,TgListTop,right,bottom},offset,maximum,visible,true,1,scrollId);
+}
+void PaintTransmog(Window& w,HDC dc) {
+    auto& img=*w.image;
+    int changed=0;for(const auto& r:helper.tgBases)if(r.flags&MapleProtocol::TransmogChanged)++changed;
+    DrawTab(w,dc,TgTab,{7,108,127,127},Text(L"tgTabApply"),helper.tgTab==0);
+    DrawTab(w,dc,TgTab+1,{128,108,248,127},Text(L"tgTabRestore")+L" "+std::to_wstring(changed),helper.tgTab==1);
+    RedRule(dc,127);
+    auto shown=TgShown();
+    if(helper.tgTab==0) {
+        Write(dc,{12,130,180,144},Text(L"tgPickBase"),Palette::Heading,true);
+        Write(dc,{196,130,HelperWidth-14,144},Text(L"tgPickSource"),Palette::Heading,true);
+        if(shown.empty() && !helper.loading)TextBlock(dc,{12,TgListTop+4,180,TgPanelTop-6},Text(L"tgNoBase"),Palette::Muted);
+        TgColumn(w,dc,8,182,TgBaseRow,helper.tgBases,shown,helper.offset,helper.tgBase,false,106);
+        std::vector<int> sources;for(int i=0;i<int(helper.tgSources.size());++i)sources.push_back(i);
+        if(helper.tgBase && sources.empty() && !helper.tgSourcesNote.empty())TextBlock(dc,{196,TgListTop+4,HelperWidth-14,TgPanelTop-6},helper.tgSourcesNote,Palette::Muted);
+        TgColumn(w,dc,192,HelperWidth-14,TgSourceRow,helper.tgSources,sources,helper.tgRight,helper.tgSource,true,108);
+    } else {
+        if(shown.empty() && !helper.loading)TextBlock(dc,{12,TgListTop-12,HelperWidth-14,TgPanelTop-6},Text(L"tgNoChanged"),Palette::Muted);
+        TgColumn(w,dc,8,HelperWidth-14,TgBaseRow,helper.tgBases,shown,helper.offset,helper.tgBase,false,106);
+    }
+    RECT panel{8,TgPanelTop,HelperWidth-8,346};
+    if(auto beige=Skin(L"UI/UIWindow.img/Quest/backgrnd5"))Nine(img,panel,beige,{8,8,250,258},{8,8,100,109});
+    int left=16,line=TgPanelTop+5;auto base=TgBase();
+    if(helper.tgTab==1) {
+        if(!base || !(base->flags&MapleProtocol::TransmogChanged)){TextBlock(dc,{left,line,HelperWidth-16,344},Text(L"tgPickRestore"),Palette::Muted);return;}
+        Write(dc,{left,line,HelperWidth-16,line+14},base->label,Palette::Blue,true);
+        Write(dc,{left,line+16,HelperWidth-16,line+30},base->info,Palette::Ink);
+        Write(dc,{left,line+32,HelperWidth-16,line+46},Text(helper.tgArmed?L"tgArmedRestore":L"tgRestoreHint"),Palette::Amber);
+        return;
+    }
+    if(!base){TextBlock(dc,{left,line,HelperWidth-16,344},Text(L"tgHintBase"),Palette::Muted);return;}
+    auto source=TgSource();
+    if(!source){TextBlock(dc,{left,line,HelperWidth-16,344},Text(L"tgHintSource"),Palette::Muted);return;}
+    auto arrow=base->label+L"  \x2192  "+source->label;
+    Write(dc,{left,line,HelperWidth-16,line+14},arrow,Palette::Blue,true);
+    if(!(source->flags&MapleProtocol::TransmogFits)){Write(dc,{left,line+16,HelperWidth-16,line+30},source->info,Palette::Red);return;}
+    auto cost=Text(L"tgCost")+helper.tgOreName+L" \x00D7"+std::to_wstring(helper.tgOreNeed)+L"  ("+Text(L"tgOreHeld")+L" "+std::to_wstring(helper.tgOreHeld)+L")";
+    Write(dc,{left,line+16,HelperWidth-16,line+30},helper.tgOreNeed?cost:Text(L"tgFree"),helper.tgOreHeld>=helper.tgOreNeed?Palette::Ink:Palette::Red);
+    Write(dc,{left,line+32,HelperWidth-16,line+46},Format(Text(helper.tgArmed?L"tgArmedApply":L"tgConsume"),source->label),Palette::Amber);
+}
+void TgPickBase(int code) {
+    TgStopTry();helper.tgBase=code;helper.tgSource=0;helper.tgArmed=false;helper.tgSources.clear();helper.tgSourcesNote.clear();helper.tgRight=0;
+    if(helper.tgTab==0 && code)HelperRequest(MapleProtocol::TransmogSources,code);
+    HelperDirty();
+}
 // ---- Boss-room boost ------------------------------------------------------------------
 int64_t BoostPrice(int total){return total>=0 && total<int(helper.boostPrices.size())?helper.boostPrices[total]:0;}
 int BoostTotal(){return helper.boostDraft[0]+helper.boostDraft[1];}
@@ -543,6 +639,10 @@ void PaintHelper(Window& w) {
         Write(dc,{22,39,262,53},Text(L"mhPet"),Palette::OnBlue,true);
         std::wstring mode;for(const auto& r:helper.pets)if(r.id==helper.petMode)mode=r.label;
         Figure(dc,14,262,60,Text(L"mhCurrentMode"),mode);
+    } else if(helper.page==TransmogPage) {
+        Write(dc,{22,39,262,53},Text(L"tgHeadline"),Palette::OnBlue,true);
+        Figure(dc,14,262,60,Text(L"tgOre"),helper.tgOreName);
+        Figure(dc,14,262,78,Text(L"tgOreHeld"),std::to_wstring(helper.tgOreHeld)+L" / "+Text(L"tgOreNeed")+L" "+std::to_wstring(helper.tgOreNeed));
     } else if(helper.page==BooksPage) {
         Write(dc,{22,39,262,53},Text(L"bkHeadline"),Palette::OnBlue,true);
         Figure(dc,14,262,60,Text(L"bkBalance"),Amount(helper.bookPages));
@@ -561,9 +661,12 @@ void PaintHelper(Window& w) {
         if(helper.page==TeleportPage && helper.selected>=0 && helper.selected<int(helper.teleports.size()))mark=MapMark(helper.teleports[helper.selected].id);
         auto book=helper.page==BooksPage?BookSelected():nullptr;
         if(helper.page==BooksPage && helper.bookView>0){auto picked=BookPicked();if(picked)mark=MapMark(picked->id);book=mark?nullptr:book;}
+        // The transmog preview: the chosen look, else the chosen equip, else the craftsman.
+        if(helper.page==TransmogPage){auto look=TgSource()?TgSource():TgBase();if(look)book=look;}
         if(helper.page==TalismanPage)Enlarged(img,HelperWidth-60,64,ItemIcon(TalismanItem),2);
         else if(book)Enlarged(img,HelperWidth-60,64,ItemIcon(book->icon),2);
         else if(helper.page==BoostPage)NpcPortrait(img,{HelperWidth-111,29,HelperWidth-9,101},helper.boostNpc);
+        else if(helper.page==TransmogPage)NpcPortrait(img,{HelperWidth-111,29,HelperWidth-9,101},helper.tgNpc);
         else if(mark)Sprite(img,HelperWidth-60-mark->width/2,64-mark->height/2,mark);else NpcPortrait(img,{HelperWidth-111,29,HelperWidth-9,101},HelperNpc);
     }
     int bottom=helper.status.empty()?HelperBodyBottom:HelperBodyBottom-18;
@@ -572,6 +675,7 @@ void PaintHelper(Window& w) {
     else if(helper.page==PetPage)PaintPet(w,dc);
     else if(helper.page==BoostPage)PaintBoost(w,dc);
     else if(helper.page==BooksPage){if(helper.bookView>0)PaintBookPlaces(w,dc,bottom);else PaintBooks(w,dc);}
+    else if(helper.page==TransmogPage)PaintTransmog(w,dc);
     else PaintTalisman(w,dc);
     // One clipped line inside the white body (it ends at y=367, the button bar starts at 372).
     if(!helper.status.empty())Write(dc,{12,HelperBodyBottom-16,HelperWidth-14,HelperBodyBottom-2},helper.status,helper.statusColor);
@@ -581,6 +685,20 @@ void PaintHelper(Window& w) {
         // Opened by the exit NPC: its own dialogue is one click away, there is no hub to go back to.
         ButtonAt(w,dc,BoostExit,{10,HelperBar,80,HelperBar+17},L"bsExit",!helper.loading);
         ButtonAt(w,dc,BoostConfirm,{HelperWidth-144,HelperBar,HelperWidth-78,HelperBar+17},L"bsConfirm",BoostConfirmable());
+        ButtonAt(w,dc,HelperClose,{HelperWidth-72,HelperBar,HelperWidth-10,HelperBar+17},L"close");
+        GdiFlush();for(int i=0;i<width*height;++i)img.pixels[i]=(img.pixels[i]&0xFFFFFF)|(DWORD(shape[i])<<24);
+        return;
+    }
+    if(helper.page==TransmogPage) {
+        // Opened by a craftsman, so there is no hub to go back to.
+        if(helper.tgTab==0) {
+            ButtonAt(w,dc,TgTryButton,{10,HelperBar,90,HelperBar+17},helper.tgTrying?L"tgStopTry":L"tgTry",TgTryable());
+            ButtonAt(w,dc,TgApplyButton,{HelperWidth-144,HelperBar,HelperWidth-78,HelperBar+17},helper.tgArmed?L"tgConfirm":L"tgApply",TgApplicable());
+        } else {
+            auto b=TgBase();
+            ButtonAt(w,dc,TgRestoreButton,{HelperWidth-144,HelperBar,HelperWidth-78,HelperBar+17},helper.tgArmed?L"tgConfirm":L"tgRestore",
+                b && (b->flags&MapleProtocol::TransmogChanged) && !helper.loading);
+        }
         ButtonAt(w,dc,HelperClose,{HelperWidth-72,HelperBar,HelperWidth-10,HelperBar+17},L"close");
         GdiFlush();for(int i=0;i<width*height;++i)img.pixels[i]=(img.pixels[i]&0xFFFFFF)|(DWORD(shape[i])<<24);
         return;
@@ -673,6 +791,31 @@ void HelperClick(Window& w,int id) {
     if(id==BoostExit){if(!helper.loading){helper.status.clear();HelperRequest(MapleProtocol::BoostExit);HelperDirty();}return;}
     if(id>=100 && id<200){HelperScroll(w,id);return;}
     if(id>=TalismanTab && id<TalismanTab+3){helper.talismanTab=id-TalismanTab;HelperDirty();return;}
+    if(id>=TgTab && id<TgTab+2) {
+        if(helper.tgTab!=id-TgTab){TgStopTry();helper.tgTab=id-TgTab;helper.offset=0;helper.tgBase=helper.tgSource=0;helper.tgArmed=false;helper.tgSources.clear();helper.status.clear();HelperDirty();}
+        return;
+    }
+    if(id>=TgBaseRow && id<TgBaseRow+500){int i=id-TgBaseRow;if(i<int(helper.tgBases.size()) && !helper.loading)TgPickBase(helper.tgBases[i].id);return;}
+    if(id>=TgSourceRow && id<TgSourceRow+500) {
+        int i=id-TgSourceRow;if(i>=int(helper.tgSources.size()))return;
+        TgStopTry();helper.tgSource=helper.tgSources[i].id;helper.tgArmed=false;helper.status.clear();HelperDirty();return;
+    }
+    if(id==TgTryButton) {
+        if(!TgTryable())return;
+        if(helper.tgTrying){TgStopTry();HelperDirty();return;}
+        helper.status.clear();helper.tgTryPending=true;HelperRequest(MapleProtocol::TransmogTry,helper.tgBase,helper.tgSource);HelperDirty();return;
+    }
+    if(id==TgApplyButton) {
+        if(!TgApplicable())return;
+        // The look is consumed, so it takes a second click.
+        if(!helper.tgArmed){helper.tgArmed=true;HelperStatus(Format(Text(L"tgArmedApply"),TgSource()->label),Palette::Amber);HelperDirty();return;}
+        helper.tgArmed=false;helper.tgTrying=false;helper.status.clear();HelperRequest(MapleProtocol::TransmogApply,helper.tgBase,helper.tgSource);HelperDirty();return;
+    }
+    if(id==TgRestoreButton) {
+        auto b=TgBase();if(!b || !(b->flags&MapleProtocol::TransmogChanged) || helper.loading)return;
+        if(!helper.tgArmed){helper.tgArmed=true;HelperStatus(Text(L"tgArmedRestore"),Palette::Amber);HelperDirty();return;}
+        helper.tgArmed=false;helper.status.clear();HelperRequest(MapleProtocol::TransmogRestore,helper.tgBase);HelperDirty();return;
+    }
     if(id>=BookTab && id<BookTab+2){if(helper.bookTab!=id-BookTab){helper.offset=0;BookChoose(id-BookTab,0);helper.status.clear();}return;}
     if(id==BookExchangeButton) {
         if(!BookExchangeable())return;
@@ -750,6 +893,11 @@ void HelperRow(int index) {
         {helper.status.clear();HelperRequest(MapleProtocol::PetSet,helper.pets[index].id);HelperDirty();}
 }
 void HelperWheel(int delta) {
+    if(helper.page==TransmogPage) {
+        // The column under the cursor scrolls; painting clamps both.
+        int& value=helperWindow.hover>=TgSourceRow && helperWindow.hover<TgSourceRow+500?helper.tgRight:helper.offset;
+        value=(std::max)(0,value+(delta>0?1:-1));HelperDirty();return;
+    }
     if(helper.page!=TeleportPage && helper.page!=BooksPage)return;
     // delta>0 scrolls down, like the quest list; painting clamps the bottom.
     helper.offset=(std::max)(0,helper.offset+(delta>0?1:-1));HelperDirty();
@@ -772,7 +920,9 @@ bool HelperReceive(const unsigned char* data,size_t size) {
     if(s.view==MapleProtocol::Open) {
         helper.serverReady=true;
         if(s.value==MapleProtocol::OpenBoost)helper.boostNpc=s.extra;
-        OpenHelperPage(s.value==MapleProtocol::OpenTalisman?TalismanPage:s.value==MapleProtocol::OpenBoost?BoostPage:HubPage);
+        if(s.value==MapleProtocol::OpenTransmog)helper.tgNpc=s.extra;
+        OpenHelperPage(s.value==MapleProtocol::OpenTalisman?TalismanPage:s.value==MapleProtocol::OpenBoost?BoostPage
+            :s.value==MapleProtocol::OpenTransmog?TransmogPage:HubPage);
         return true;
     }
     // The server acknowledges each field's hello; until then the help menu keeps its old route.
@@ -800,12 +950,32 @@ bool HelperReceive(const unsigned char* data,size_t size) {
             // Scripts, shops and warps take over the screen; the helper steps aside.
             if(action==MapleProtocol::Feature || action==MapleProtocol::Warp || action==MapleProtocol::BookWarp || action==MapleProtocol::BoostExit){HideHelper();return true;}
             if(!s.message.empty())HelperStatus(s.message,Palette::Green);
+            if(action==MapleProtocol::TransmogTry){helper.tgTrying=helper.tgTryPending;helper.tgTryPending=false;}
             if(action==MapleProtocol::CustomAdd || action==MapleProtocol::CustomRemove) {
                 if(action==MapleProtocol::CustomAdd)helper.customInput.clear();else helper.selected=-1;
                 if(helper.page==TeleportPage && helper.category==MapleProtocol::CustomMaps)HelperRequest(MapleProtocol::Teleports,MapleProtocol::CustomMaps);
             }
             break;
         case MapleProtocol::SalonCatalogView:SalonOnCatalog(s);break;
+        case MapleProtocol::TransmogView: {
+            if(helper.page!=TransmogPage)break;
+            helper.tgBases.clear();
+            for(auto& r:s.rows) {
+                if(r.kind==MapleProtocol::TransmogOre){helper.tgOre=r.id;helper.tgOreName=r.label;helper.tgOreHeld=int(r.cost);helper.tgOreNeed=r.max;}
+                else helper.tgBases.push_back(std::move(r));
+            }
+            // After a transmog or restore the server already shows the real look again.
+            helper.tgArmed=false;helper.tgTrying=false;helper.tgSource=0;helper.tgSources.clear();
+            if(!TgBase())helper.tgBase=0;
+            else if(helper.tgTab==0)HelperRequest(MapleProtocol::TransmogSources,helper.tgBase);
+            if(!s.message.empty())HelperStatus(s.message,Palette::Green);
+            break;
+        }
+        case MapleProtocol::TransmogSourcesView:
+            if(helper.page!=TransmogPage || s.value!=helper.tgBase)break;
+            helper.tgSources=std::move(s.rows);helper.tgSourcesNote=s.message;
+            if(!TgSource())helper.tgSource=0;
+            break;
         case MapleProtocol::BookMapsView:
             if(helper.page!=BooksPage || helper.bookView!=1 || s.value!=helper.bookItem)break;
             helper.bookMaps=std::move(s.rows);helper.bookMapsTitle=s.title;helper.bookNotice=s.message;
@@ -861,6 +1031,9 @@ bool HelperReceive(const unsigned char* data,size_t size) {
             if(action>=MapleProtocol::BookExchange && action<=MapleProtocol::BookDecomposeAll && helper.page==BooksPage)HelperRequest(MapleProtocol::Books);
             // A refused warp (price or unlock changed) reloads the maps or the route on screen.
             if(action==MapleProtocol::BookWarp && helper.page==BooksPage)RefreshHelperPage();
+            // A refused transmog or restore reloads the equips (something moved or the ore ran out).
+            if((action==MapleProtocol::TransmogApply || action==MapleProtocol::TransmogRestore) && helper.page==TransmogPage)HelperRequest(MapleProtocol::TransmogList);
+            if(action==MapleProtocol::TransmogTry){helper.tgTryPending=false;}
             break;
     }
     HelperDirty();return true;
