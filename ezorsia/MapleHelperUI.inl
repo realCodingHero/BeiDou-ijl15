@@ -11,6 +11,7 @@ enum HelperPage {HubPage=0,TeleportPage=1,PetPage=2,TalismanPage=3,BoostPage=4,B
 enum HelperButton {HelperBack=3001,HelperWarp=3002,HelperRefresh=3003,HelperBorrow=3004,HelperClose=3005,
     HelperRemove=3006,HelperAddHere=3007,HelperAddId=3008,HelperInput=3009,BoostConfirm=3010,BoostExit=3011,
     BookExchangeButton=3012,BookDecomposeButton=3013,BookDecomposeAllButton=3014,BookTab=2300,
+    BookMapsButton=3015,BookRouteButton=3016,BookWarpButton=3017,
     BoostStep=3100,BoostPreset=3110, // steps: 3100+2*slider (down) / +1 (up); presets 3110..3113
     HelperTile=1000,TalismanTile=1600,HelperTab=2000,HelperHubTab=2100,TalismanTab=2200};
 constexpr int BoostTrackLeft=100,BoostTrackRight=282,BoostThumb=22;
@@ -33,6 +34,9 @@ struct HelperState {
     // percent and the jobs line; locked books and "decompose all" need a second click.
     std::vector<MapleProtocol::Row> books;int bookTab=0,bookSelected=0,bookPages=0,bookRefund=0,bookConfirm=0;
     bool bookAllArmed=false;std::wstring bookLine;
+    // Drop maps and routes of one book: view 0 = book list, 1 = drop maps, 2 = route to one map.
+    std::vector<MapleProtocol::Row> bookMaps,bookRoute;int bookView=0,bookItem=0,bookMapPick=-1,bookStepPick=-1,bookRouteMap=0;
+    std::wstring bookMapsTitle,bookRouteTitle,bookNotice;
     std::wstring title,welcome,notice,notes,status,room;COLORREF statusColor=Palette::Muted;
     std::deque<std::vector<unsigned char>> queue;
     std::map<int,std::pair<int,DWORD>> pending; // sequence -> (action, sent tick; 0 while queued)
@@ -77,7 +81,12 @@ void RefreshHelperPage() {
     // The talisman page is opened by the item, not the helper: it needs no hub snapshot.
     if(helper.page==TalismanPage){HelperRequest(MapleProtocol::TalismanList);return;}
     if(helper.page==BoostPage){HelperRequest(MapleProtocol::Boost);return;}
-    if(helper.page==BooksPage){HelperRequest(MapleProtocol::Books);return;}
+    if(helper.page==BooksPage) {
+        if(helper.bookView==1)HelperRequest(MapleProtocol::BookMaps,helper.bookItem);
+        else if(helper.bookView==2)HelperRequest(MapleProtocol::BookRoute,helper.bookItem,helper.bookRouteMap);
+        else HelperRequest(MapleProtocol::Books);
+        return;
+    }
     HelperRequest(MapleProtocol::Hub);
     if(helper.page==TeleportPage)HelperRequest(MapleProtocol::Teleports,helper.category);
     else if(helper.page==PetPage)HelperRequest(MapleProtocol::Pet);
@@ -393,8 +402,54 @@ void PaintBooks(Window& w,HDC dc) {
             Write(dc,{left,line+42,HelperWidth-16,line+56},Text(helper.bookConfirm==selected->id?L"bkConfirmLocked":L"bkLockedHint"),Palette::Amber);
     }
 }
+// ---- Book drop maps and routes ------------------------------------------------------------
+const MapleProtocol::Row* BookPicked(){auto& rows=helper.bookView==1?helper.bookMaps:helper.bookRoute;int i=helper.bookView==1?helper.bookMapPick:helper.bookStepPick;return i>=0 && i<int(rows.size())?&rows[i]:nullptr;}
+bool BookWarpReady(){auto r=BookPicked();return r && (r->flags&MapleProtocol::BookWarpable) && helper.meso>=r->cost && !helper.loading;}
+// One map row: name with the price (or why there is none) on the right, sources or the step below.
+void BookMapRow(Window& w,HDC dc,int y,int index,const MapleProtocol::Row& r,bool selected,bool route) {
+    constexpr int Height=34;
+    RECT card{8,y,HelperWidth-22,y+Height-1};
+    int saved=SaveDC(dc);IntersectClipRect(dc,card.left,card.top,card.right,card.bottom);
+    if(selected)SelectionBox(dc,card);
+    {PixelClip clip(card);SpotAt(*w.image,20,y+10,3);}
+    bool warpable=(r.flags&MapleProtocol::BookWarpable)!=0,boss=!route && r.kind==MapleProtocol::BookMapBoss;
+    std::wstring right;COLORREF color;
+    // Boss maps, and a visited map the route may not warp to, offer the route alone.
+    if(boss || (route && !warpable && (r.flags&MapleProtocol::BookVisited))){right=Text(L"bkRouteOnly");color=Palette::Amber;}
+    else if(warpable){right=Amount(r.cost)+L" "+Text(L"costColumn");color=helper.meso>=r.cost?Palette::Green:Palette::Red;}
+    else{right=Text(L"mhNotVisited");color=Palette::Faint;}
+    int rightWidth=TextWidth(dc,right);
+    MapNameText(dc,{32,y+3,HelperWidth-34-rightWidth,y+17},r.label,r.id,warpable || boss?Palette::Ink:Palette::Faint,false);
+    Write(dc,{HelperWidth-26-rightWidth,y+3,HelperWidth-26,y+17},right,color,false,DT_RIGHT|DT_SINGLELINE|DT_VCENTER|DT_NOPREFIX);
+    int x=32;
+    if(boss){auto tag=Text(L"bkTier2");int width=TextWidth(dc,tag);Write(dc,{x,y+18,x+width+2,y+32},tag,Palette::Purple);x+=width+8;}
+    Write(dc,{x,y+18,HelperWidth-26,y+32},r.info,Palette::Muted);
+    RestoreDC(dc,saved);
+    if(!selected)Dotted(dc,10,HelperWidth-24,y+Height-1);
+    w.rowHits.push_back({card,index});
+}
+void PaintBookPlaces(Window& w,HDC dc,int bottom) {
+    bool route=helper.bookView==2;auto& rows=route?helper.bookRoute:helper.bookMaps;
+    SectionHeading(dc,110,Format(Text(route?L"bkRouteHeading":L"bkMapsHeading"),route?helper.bookRouteTitle:helper.bookMapsTitle));
+    int top=130;
+    if(!helper.bookNotice.empty())top+=TextBlock(dc,{12,top,HelperWidth-14,top+42},helper.bookNotice,route && !rows.empty()?Palette::Amber:Palette::Muted)+4;
+    if(rows.empty())return;
+    constexpr int Height=34;int visible=(std::max)(1,(bottom-top)/Height);
+    int maximum=(std::max)(0,int(rows.size())-visible);helper.offset=(std::min)(helper.offset,maximum);
+    int y=top,pick=route?helper.bookStepPick:helper.bookMapPick;
+    for(int i=helper.offset;i<int(rows.size()) && y+Height<=bottom;++i,y+=Height)BookMapRow(w,dc,y,i,rows[i],i==pick,route);
+    if(maximum>0)ScrollbarAt(w,dc,{HelperWidth-18,top,HelperWidth-6,bottom},helper.offset,maximum,visible,true,1);
+}
+void OpenBookMaps(int item) {
+    helper.bookView=1;helper.bookItem=item;helper.bookMaps.clear();helper.bookMapPick=-1;helper.bookNotice.clear();helper.bookMapsTitle.clear();
+    helper.offset=0;helper.status.clear();HelperRequest(MapleProtocol::BookMaps,item);HelperDirty();
+}
+void OpenBookRoute(int map) {
+    helper.bookView=2;helper.bookRouteMap=map;helper.bookRoute.clear();helper.bookStepPick=-1;helper.bookNotice.clear();helper.bookRouteTitle.clear();
+    helper.offset=0;helper.status.clear();HelperRequest(MapleProtocol::BookRoute,helper.bookItem,map);HelperDirty();
+}
 void OpenBooks() {
-    helper.page=BooksPage;helper.selected=-1;helper.offset=0;helper.bookSelected=0;helper.bookConfirm=0;helper.bookAllArmed=false;
+    helper.page=BooksPage;helper.selected=-1;helper.offset=0;helper.bookSelected=0;helper.bookConfirm=0;helper.bookAllArmed=false;helper.bookView=0;
     helper.books.clear();helper.status.clear();HelperRequest(MapleProtocol::Books);HelperDirty();
 }
 void BookChoose(int tab,int id){helper.bookTab=tab;helper.bookSelected=id;helper.bookConfirm=0;helper.bookAllArmed=false;HelperDirty();}
@@ -505,6 +560,7 @@ void PaintHelper(Window& w) {
     {   PixelClip clip({HelperWidth-113,27,HelperWidth-7,102});Bitmap* mark=nullptr;
         if(helper.page==TeleportPage && helper.selected>=0 && helper.selected<int(helper.teleports.size()))mark=MapMark(helper.teleports[helper.selected].id);
         auto book=helper.page==BooksPage?BookSelected():nullptr;
+        if(helper.page==BooksPage && helper.bookView>0){auto picked=BookPicked();if(picked)mark=MapMark(picked->id);book=mark?nullptr:book;}
         if(helper.page==TalismanPage)Enlarged(img,HelperWidth-60,64,ItemIcon(TalismanItem),2);
         else if(book)Enlarged(img,HelperWidth-60,64,ItemIcon(book->icon),2);
         else if(helper.page==BoostPage)NpcPortrait(img,{HelperWidth-111,29,HelperWidth-9,101},helper.boostNpc);
@@ -515,7 +571,7 @@ void PaintHelper(Window& w) {
     else if(helper.page==TeleportPage)PaintTeleports(w,dc,bottom);
     else if(helper.page==PetPage)PaintPet(w,dc);
     else if(helper.page==BoostPage)PaintBoost(w,dc);
-    else if(helper.page==BooksPage)PaintBooks(w,dc);
+    else if(helper.page==BooksPage){if(helper.bookView>0)PaintBookPlaces(w,dc,bottom);else PaintBooks(w,dc);}
     else PaintTalisman(w,dc);
     // One clipped line inside the white body (it ends at y=367, the button bar starts at 372).
     if(!helper.status.empty())Write(dc,{12,HelperBodyBottom-16,HelperWidth-14,HelperBodyBottom-2},helper.status,helper.statusColor);
@@ -543,10 +599,16 @@ void PaintHelper(Window& w) {
         if(helper.category==MapleProtocol::CustomMaps)ButtonAt(w,dc,HelperRemove,{76,HelperBar,136,HelperBar+17},L"mhRemove",chosen && !helper.loading);
         ButtonAt(w,dc,HelperWarp,{HelperWidth-144,HelperBar,HelperWidth-78,HelperBar+17},L"warp",affordable && !helper.loading);
     }
-    if(helper.page==BooksPage) {
-        if(helper.bookTab==MapleProtocol::BookOffer)
+    if(helper.page==BooksPage && helper.bookView>0) {
+        if(helper.bookView==1)ButtonAt(w,dc,BookRouteButton,{76,HelperBar,146,HelperBar+17},L"bkRoute",BookPicked() && !helper.loading);
+        ButtonAt(w,dc,BookWarpButton,{HelperWidth-144,HelperBar,HelperWidth-78,HelperBar+17},L"warp",BookWarpReady());
+    } else if(helper.page==BooksPage) {
+        bool picked=BookSelected() && !helper.loading;
+        if(helper.bookTab==MapleProtocol::BookOffer) {
+            ButtonAt(w,dc,BookMapsButton,{76,HelperBar,156,HelperBar+17},L"bkMaps",picked);
             ButtonAt(w,dc,BookExchangeButton,{HelperWidth-144,HelperBar,HelperWidth-78,HelperBar+17},L"bkExchange",BookExchangeable());
-        else {
+        } else {
+            ButtonAt(w,dc,BookMapsButton,{162,HelperBar,232,HelperBar+17},L"bkMaps",picked);
             int count;BookAllPages(count);
             ButtonAt(w,dc,BookDecomposeAllButton,{76,HelperBar,156,HelperBar+17},helper.bookAllArmed?L"bkConfirmAllButton":L"bkDecomposeAll",count>0 && !helper.loading);
             ButtonAt(w,dc,BookDecomposeButton,{HelperWidth-144,HelperBar,HelperWidth-78,HelperBar+17},L"bkDecompose",BookSelected() && !helper.loading);
@@ -637,6 +699,19 @@ void HelperClick(Window& w,int id) {
         if(!TalismanBorrowable())return;
         helper.status.clear();HelperRequest(MapleProtocol::TalismanBorrow,helper.talismanSkill);HelperDirty();return;
     }
+    if(id==HelperBack && helper.page==BooksPage && helper.bookView>0) {
+        // Route -> drop maps -> book list.
+        helper.status.clear();helper.offset=0;helper.bookNotice.clear();
+        if(helper.bookView==2){OpenBookMaps(helper.bookItem);return;}
+        helper.bookView=0;HelperDirty();return;
+    }
+    if(id==BookMapsButton){auto r=BookSelected();if(r && !helper.loading)OpenBookMaps(r->id);return;}
+    if(id==BookRouteButton){auto r=BookPicked();if(r && !helper.loading)OpenBookRoute(r->id);return;}
+    if(id==BookWarpButton) {
+        if(!BookWarpReady())return;
+        auto r=BookPicked();int64_t target=helper.bookView==2?helper.bookRouteMap:0;helper.status.clear();
+        HelperRequest(MapleProtocol::BookWarp,r->id,helper.bookItem,(target<<32)|r->cost);HelperDirty();return;
+    }
     if(id==HelperBack){helper.page=HubPage;helper.status.clear();HelperDirty();return;}
     if(id==HelperRefresh){helper.status.clear();RefreshHelperPage();HelperDirty();return;}
     if(id==HelperWarp) {
@@ -668,6 +743,8 @@ void HelperClick(Window& w,int id) {
 void HelperRow(int index) {
     helper.inputFocus=false;
     if(helper.page==TeleportPage){helper.selected=index;HelperDirty();}
+    else if(helper.page==BooksPage && helper.bookView==1){helper.bookMapPick=index;HelperDirty();}
+    else if(helper.page==BooksPage && helper.bookView==2){helper.bookStepPick=index;HelperDirty();}
     else if(helper.page==BooksPage && index>=0 && index<int(helper.books.size()))BookChoose(helper.books[index].kind,helper.books[index].id);
     else if(helper.page==PetPage && index<int(helper.pets.size()) && helper.pets[index].id!=helper.petMode && !helper.loading)
         {helper.status.clear();HelperRequest(MapleProtocol::PetSet,helper.pets[index].id);HelperDirty();}
@@ -721,7 +798,7 @@ bool HelperReceive(const unsigned char* data,size_t size) {
             break;
         case MapleProtocol::Done:
             // Scripts, shops and warps take over the screen; the helper steps aside.
-            if(action==MapleProtocol::Feature || action==MapleProtocol::Warp || action==MapleProtocol::BoostExit){HideHelper();return true;}
+            if(action==MapleProtocol::Feature || action==MapleProtocol::Warp || action==MapleProtocol::BookWarp || action==MapleProtocol::BoostExit){HideHelper();return true;}
             if(!s.message.empty())HelperStatus(s.message,Palette::Green);
             if(action==MapleProtocol::CustomAdd || action==MapleProtocol::CustomRemove) {
                 if(action==MapleProtocol::CustomAdd)helper.customInput.clear();else helper.selected=-1;
@@ -729,6 +806,16 @@ bool HelperReceive(const unsigned char* data,size_t size) {
             }
             break;
         case MapleProtocol::SalonCatalogView:SalonOnCatalog(s);break;
+        case MapleProtocol::BookMapsView:
+            if(helper.page!=BooksPage || helper.bookView!=1 || s.value!=helper.bookItem)break;
+            helper.bookMaps=std::move(s.rows);helper.bookMapsTitle=s.title;helper.bookNotice=s.message;
+            if(helper.bookMapPick>=int(helper.bookMaps.size()))helper.bookMapPick=-1;
+            break;
+        case MapleProtocol::BookRouteView:
+            if(helper.page!=BooksPage || helper.bookView!=2 || s.extra!=helper.bookRouteMap)break;
+            helper.bookRoute=std::move(s.rows);helper.bookRouteTitle=s.title;helper.bookNotice=s.message;
+            if(helper.bookStepPick>=int(helper.bookRoute.size()))helper.bookStepPick=-1;
+            break;
         case MapleProtocol::BooksView: {
             if(helper.page!=BooksPage)break;
             helper.books=std::move(s.rows);helper.bookPages=s.value;helper.bookRefund=s.extra;helper.bookLine=s.title;
@@ -772,6 +859,8 @@ bool HelperReceive(const unsigned char* data,size_t size) {
             if(action==MapleProtocol::Boost)helper.boostPrices.clear();
             // A refused exchange or decompose may mean prices or the inventory changed.
             if(action>=MapleProtocol::BookExchange && action<=MapleProtocol::BookDecomposeAll && helper.page==BooksPage)HelperRequest(MapleProtocol::Books);
+            // A refused warp (price or unlock changed) reloads the maps or the route on screen.
+            if(action==MapleProtocol::BookWarp && helper.page==BooksPage)RefreshHelperPage();
             break;
     }
     HelperDirty();return true;
