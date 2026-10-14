@@ -688,6 +688,41 @@ int main(int argc,char** argv) {
         Click(helperWindow,HelperBack);assert(helper.page==HubPage);
         HideHelper();
         puts("PASS book exchange: v5 hub tile, price colours and mastered rows, quoted exchange, refused reload, wheel clamp, decompose tab, confirmed decompose-all total, locked second click");
+        // ---- Book drop maps and routes ----
+        Show(helperWindow);helper.pending.clear();helper.queue.clear();OpenBooks();
+        books.message.clear();respond(books);helper.queue.clear();
+        HelperRow(1);PaintHelper(helperWindow);assert(buttonEnabled(helperWindow,BookMapsButton));
+        Click(helperWindow,BookMapsButton);assert(helper.bookView==1 && sent(MapleProtocol::BookMaps)==2290075);
+        MapleProtocol::Snapshot maps;maps.view=MapleProtocol::BookMapsView;maps.value=2290075;maps.title=L"一击要害箭 30";
+        maps.rows={{105090900,0,MapleProtocol::BookWarpable|MapleProtocol::BookVisited,0,0,0,4200,L"神木村 - 龙之巢入口",L"小蜥蜴 0.10%"},
+            {240060200,1,MapleProtocol::BookVisited,0,0,0,9800,L"神木村 - 暗黑龙王洞穴",L"暗黑龙王的灵魂 108.00%"},
+            {240020100,0,0,0,0,0,5600,L"神木村 - 火焰之林",L"小蜥蜴 0.10%"}};
+        respond(maps);helper.queue.clear();
+        assert(helper.bookMaps.size()==3 && helper.bookMapsTitle==L"一击要害箭 30");
+        HelperRow(0);PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-books-maps.bmp");
+        assert(buttonEnabled(helperWindow,BookWarpButton) && buttonEnabled(helperWindow,BookRouteButton));
+        Click(helperWindow,BookWarpButton);assert(sent(MapleProtocol::BookWarp)==105090900 && arg2()==2290075 && arg3()==4200); // a drop map: no route target
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        HelperRow(1);PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,BookWarpButton)); // boss map: route only
+        HelperRow(2);PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,BookWarpButton)); // not visited
+        HelperRow(1);Click(helperWindow,BookRouteButton);assert(helper.bookView==2 && sent(MapleProtocol::BookRoute)==2290075 && arg2()==240060200);
+        MapleProtocol::Snapshot route;route.view=MapleProtocol::BookRouteView;route.value=2290075;route.extra=240060200;route.title=L"神木村 - 暗黑龙王洞穴";
+        route.message=L"Boss 只提供路线，不能直接传送到 Boss 所在地图；途中已到访的地图可以传送。";
+        route.rows={{240000000,0,MapleProtocol::BookWarpable|MapleProtocol::BookVisited,0,0,0,800,L"神木村 - 神木村",L"起点"},
+            {240040700,0,0,0,0,0,6400,L"神木村 - 龙之峡谷",L"传送口"},
+            {240060200,0,MapleProtocol::BookVisited,0,0,0,9800,L"神木村 - 暗黑龙王洞穴",L"传送口"}};
+        respond(route);helper.queue.clear();
+        HelperRow(2);PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,BookWarpButton)); // the boss map itself
+        HelperRow(0);PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-books-route.bmp");
+        Click(helperWindow,BookWarpButton);assert(sent(MapleProtocol::BookWarp)==240000000 && arg2()==2290075 && arg3()==((int64_t(240060200)<<32)|800));
+        MapleProtocol::Snapshot arrived;arrived.view=MapleProtocol::Done;arrived.value=MapleProtocol::BookWarp;respond(arrived);assert(!helperWindow.shown); // the warp closes the helper
+        Show(helperWindow);helper.page=BooksPage;helper.bookView=2;helper.queue.clear();helper.pending.clear();helper.loading=false;
+        Click(helperWindow,HelperBack);assert(helper.bookView==1 && sent(MapleProtocol::BookMaps)==2290075);
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        Click(helperWindow,HelperBack);assert(helper.bookView==0 && helper.page==BooksPage);
+        Click(helperWindow,HelperBack);assert(helper.page==HubPage);
+        HideHelper();
+        puts("PASS book drop maps: maps per book, quoted direct warp, boss maps route-only, unvisited locked, route steps with the route target, warp closes, Back steps out");
     }
     // Verify writes into the ACTUAL v83 Canvas DLL, including tile boundaries.
     assert(SetCurrentDirectoryA(argv[1]));assert(SetDllDirectoryA(argv[1]));HMODULE pcom=LoadLibraryA("PCOM.dll");assert(pcom);
