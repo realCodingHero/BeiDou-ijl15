@@ -73,9 +73,9 @@ constexpr uint8_t Version=5;
 enum Action:uint8_t {Hello=0,Hub=1,Feature=2,Teleports=3,Warp=4,Pet=5,PetSet=6,TalismanList=7,TalismanBorrow=8,
     CustomAdd=9,CustomRemove=10,Boost=11,BoostSet=12,BoostExit=13,
     SalonCatalog=14,SalonState=15,SalonFavorite=16,SalonApply=17,SalonUndo=18,SalonTry=19,
-    Books=20,BookExchange=21,BookDecompose=22,BookDecomposeAll=23};
+    Books=20,BookExchange=21,BookDecompose=22,BookDecomposeAll=23,BookMaps=24,BookRoute=25,BookWarp=26};
 enum View:uint8_t {Open=0,HubView=1,TeleportView=2,PetView=3,Done=4,Error=5,TalismanView=6,BoostView=7,
-    SalonCatalogView=8,SalonStateView=9,BooksView=10};
+    SalonCatalogView=8,SalonStateView=9,BooksView=10,BookMapsView=11,BookRouteView=12};
 // Salon: kinds, catalogue rows (kind = gender, min = colour bits, max = page, icon = first id) and
 // state rows (kind 0-2 = favourites, then these).
 enum SalonKind:int {SalonHair=0,SalonFace=1,SalonSkin=2};
@@ -89,6 +89,11 @@ constexpr int SalonHubFeature=84;
 enum BookRow:int {BookOffer=0,BookHeld=1};
 enum BookFlag:int {BookMaxed=1,BookHot=2,BookCold=4,BookLocked=8};
 constexpr int BookConfirm=0x10000,BooksHubFeature=83;
+// Book drop maps (value = the book): kind 1 = only bosses drop it there, so the map offers its route
+// alone. Route rows (value = the book, extra = the drop map) are steps from the nearest town. Warps
+// send the map, the book and the quoted price, with the route's drop map above it (0 for a drop map).
+enum BookMapKind:int {BookMapMob=0,BookMapBoss=1};
+enum BookMapFlag:int {BookWarpable=1,BookVisited=2};
 // Open.value selects the page (Open.extra is the exit NPC for the boost page); talisman rows carry these flags.
 enum OpenPage:int {OpenHub=0,OpenTalisman=1,OpenBoost=2};
 // Teleport categories shown by version 3 (Boss=0 and Event=3 remain for older clients only).
@@ -109,7 +114,7 @@ inline bool Parse(const unsigned char* p,size_t n,Snapshot& result) {
     if(!p || n>60000)return false;
     try {
         QuestProtocol::Reader r(p,n);if(r.number<uint8_t>()!=Version)return false;
-        Snapshot s;s.view=r.number<uint8_t>();if(s.view>BooksView)return false;
+        Snapshot s;s.view=r.number<uint8_t>();if(s.view>BookRouteView)return false;
         s.sequence=r.number<int>();s.character=r.number<int>();s.meso=r.number<int64_t>();
         s.cash=r.number<int>();s.maplePoint=r.number<int>();s.credit=r.number<int>();s.flags=r.number<uint8_t>();
         s.value=r.number<int>();s.extra=r.number<int>();s.title=r.string();s.message=r.string();
