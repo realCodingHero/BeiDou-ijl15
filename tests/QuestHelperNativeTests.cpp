@@ -723,6 +723,57 @@ int main(int argc,char** argv) {
         Click(helperWindow,HelperBack);assert(helper.page==HubPage);
         HideHelper();
         puts("PASS book drop maps: maps per book, quoted direct warp, boss maps route-only, unvisited locked, route steps with the route target, warp closes, Back steps out");
+        // ---- Transmog (opened by a craftsman), protocol version 6 ----
+        {   MapleProtocol::Snapshot open6;open6.view=MapleProtocol::Open;open6.value=MapleProtocol::OpenTransmog;open6.extra=1022004;open6.character=42;
+            auto bytes=mwire(open6);MapleProtocol::Snapshot parsed6;
+            assert(MapleProtocol::Parse(bytes.data(),bytes.size(),parsed6) && parsed6.value==MapleProtocol::OpenTransmog && parsed6.extra==1022004);}
+        // What the Open reply does in the field (InField needs the live client).
+        helper.tgNpc=1022004;helper.page=TransmogPage;helper.tgBases.clear();helper.tgSources.clear();helper.tgTab=0;helper.tgBase=helper.tgSource=0;
+        Show(helperWindow);RefreshHelperPage();
+        assert(helperWindow.shown && sent(MapleProtocol::TransmogList)==0 && helper.queue.size()==1);
+        constexpr int Worn=MapleProtocol::TransmogWorn,Changed=MapleProtocol::TransmogChanged,Fits=MapleProtocol::TransmogFits;
+        MapleProtocol::Snapshot tg;tg.view=MapleProtocol::TransmogView;
+        tg.rows={{10011,0,Worn,35,0,1302020,0,L"枫叶剑",L"枫叶剑"},{10001,0,Worn|Changed,50,0,1002004,0,L"钢盔",L"幻化自：黄金犄角帽"},
+            {3,0,0,30,0,1040002,0,L"白色短袖",L"白色短袖"},{4020007,2,0,0,1,4020007,3,L"钻石母矿",L""}};
+        respond(tg);helper.queue.clear();
+        assert(helper.tgBases.size()==3 && helper.tgOre==4020007 && helper.tgOreHeld==3 && helper.tgOreNeed==1 && helper.tgOreName==L"钻石母矿");
+        PaintHelper(helperWindow);
+        assert(!buttonEnabled(helperWindow,TgApplyButton) && !buttonEnabled(helperWindow,TgTryButton));
+        Click(helperWindow,TgBaseRow+0);assert(helper.tgBase==10011 && sent(MapleProtocol::TransmogSources)==10011);
+        MapleProtocol::Snapshot looks;looks.view=MapleProtocol::TransmogSourcesView;looks.value=10011;
+        looks.rows={{5,1,Fits,0,0,1302000,0,L"剑",L""},{6,1,0,40,0,1302004,0,L"巨剑",L"攻击速度不同，武器只能换成同攻速的外观。"}};
+        respond(looks);helper.queue.clear();PaintHelper(helperWindow);
+        assert(helper.tgSources.size()==2);
+        Click(helperWindow,TgSourceRow+1);PaintHelper(helperWindow);assert(helper.tgSource==6 && !buttonEnabled(helperWindow,TgApplyButton)); // a different speed
+        Click(helperWindow,TgSourceRow+0);PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-transmog.bmp");
+        assert(buttonEnabled(helperWindow,TgApplyButton) && buttonEnabled(helperWindow,TgTryButton));
+        // Try-on shows the look on this client; the reply confirms it, a second click puts the real look back.
+        Click(helperWindow,TgTryButton);assert(sent(MapleProtocol::TransmogTry)==10011 && arg2()==5);
+        MapleProtocol::Snapshot tried;tried.view=MapleProtocol::Done;tried.value=MapleProtocol::TransmogTry;respond(tried);helper.queue.clear();
+        assert(helper.tgTrying && helperWindow.shown);
+        // Transmog takes a second click; the look is consumed.
+        Click(helperWindow,TgApplyButton);assert(helper.queue.empty() && helper.tgArmed && helper.statusColor==Palette::Amber);
+        Click(helperWindow,TgApplyButton);assert(sent(MapleProtocol::TransmogApply)==10011 && arg2()==5 && !helper.tgArmed);
+        tg.rows[0].flags=Worn|Changed;tg.rows[0].icon=1302000;tg.rows[0].label=L"剑";tg.rows[0].info=L"幻化自：枫叶剑";tg.rows[3].cost=2;
+        tg.message=L"「枫叶剑」已幻化为「剑」的外观。";respond(tg);
+        assert(!helper.tgTrying && helper.tgOreHeld==2 && helper.statusColor==Palette::Green && sent(MapleProtocol::TransmogSources)==10011);
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        // Restore tab: only transmogged equips, a second click, free.
+        Click(helperWindow,TgTab+1);assert(helper.tgTab==1 && helper.tgBase==0);
+        PaintHelper(helperWindow);assert(TgShown().size()==2);
+        Click(helperWindow,TgBaseRow+1);PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-transmog-restore.bmp");
+        assert(helper.tgBase==10001 && helper.queue.empty() && buttonEnabled(helperWindow,TgRestoreButton));
+        Click(helperWindow,TgRestoreButton);assert(helper.queue.empty() && helper.tgArmed);
+        Click(helperWindow,TgRestoreButton);assert(sent(MapleProtocol::TransmogRestore)==10001);
+        MapleProtocol::Snapshot away;away.view=MapleProtocol::Error;away.value=MapleProtocol::TransmogRestore;away.message=L"幻化只能在匠人身边进行，请重新和匠人对话。";
+        respond(away);assert(helper.status==away.message && helper.statusColor==Palette::Red && sent(MapleProtocol::TransmogList)==0);
+        helper.queue.clear();helper.pending.clear();helper.loading=false;
+        // Closing during a try-on sends the real look back straight away.
+        static std::vector<unsigned char> sentNow;HelperSendNow=[](std::vector<unsigned char>& b){sentNow=b;};
+        helper.tgTab=0;helper.tgBase=10011;helper.tgTrying=true;HideHelper();
+        {int arg=-1,arg2=-1;memcpy(&arg,sentNow.data()+8,4);memcpy(&arg2,sentNow.data()+12,4);
+         assert(!helperWindow.shown && !helper.tgTrying && helper.queue.empty() && sentNow.size()==24 && sentNow[3]==MapleProtocol::TransmogTry && arg==10011 && arg2==0);}
+        puts("PASS transmog: craftsman-opened page, ore row, equip and look columns, speed-mismatch looks disabled, try-on and stop, confirmed transmog, restore tab with confirm, refused reload, close restores the try-on");
     }
     // Verify writes into the ACTUAL v83 Canvas DLL, including tile boundaries.
     assert(SetCurrentDirectoryA(argv[1]));assert(SetDllDirectoryA(argv[1]));HMODULE pcom=LoadLibraryA("PCOM.dll");assert(pcom);

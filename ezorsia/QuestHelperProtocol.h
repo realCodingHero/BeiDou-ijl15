@@ -67,15 +67,17 @@ inline std::vector<unsigned char> Request(int action,int seq,int quest,int kind,
 namespace MapleProtocol {
 constexpr uint16_t Opcode=0x1004;
 // Version 2 adds the Lone Adventurer's Talisman page, version 3 the custom teleport tab and the
-// boss-room boost page, version 4 the salon, version 5 the book exchange; the server answers
-// with the client's version.
-constexpr uint8_t Version=5;
+// boss-room boost page, version 4 the salon, version 5 the book exchange, version 6 the transmog
+// page; the server answers with the client's version.
+constexpr uint8_t Version=6;
 enum Action:uint8_t {Hello=0,Hub=1,Feature=2,Teleports=3,Warp=4,Pet=5,PetSet=6,TalismanList=7,TalismanBorrow=8,
     CustomAdd=9,CustomRemove=10,Boost=11,BoostSet=12,BoostExit=13,
     SalonCatalog=14,SalonState=15,SalonFavorite=16,SalonApply=17,SalonUndo=18,SalonTry=19,
-    Books=20,BookExchange=21,BookDecompose=22,BookDecomposeAll=23,BookMaps=24,BookRoute=25,BookWarp=26};
+    Books=20,BookExchange=21,BookDecompose=22,BookDecomposeAll=23,BookMaps=24,BookRoute=25,BookWarp=26,
+    TransmogList=27,TransmogSources=28,TransmogApply=29,TransmogRestore=30,TransmogTry=31};
 enum View:uint8_t {Open=0,HubView=1,TeleportView=2,PetView=3,Done=4,Error=5,TalismanView=6,BoostView=7,
-    SalonCatalogView=8,SalonStateView=9,BooksView=10,BookMapsView=11,BookRouteView=12};
+    SalonCatalogView=8,SalonStateView=9,BooksView=10,BookMapsView=11,BookRouteView=12,
+    TransmogView=13,TransmogSourcesView=14};
 // Salon: kinds, catalogue rows (kind = gender, min = colour bits, max = page, icon = first id) and
 // state rows (kind 0-2 = favourites, then these).
 enum SalonKind:int {SalonHair=0,SalonFace=1,SalonSkin=2};
@@ -95,7 +97,13 @@ constexpr int BookConfirm=0x10000,BooksHubFeature=83;
 enum BookMapKind:int {BookMapMob=0,BookMapBoss=1};
 enum BookMapFlag:int {BookWarpable=1,BookVisited=2};
 // Open.value selects the page (Open.extra is the exit NPC for the boost page); talisman rows carry these flags.
-enum OpenPage:int {OpenHub=0,OpenTalisman=1,OpenBoost=2};
+enum OpenPage:int {OpenHub=0,OpenTalisman=1,OpenBoost=2,OpenTransmog=3};
+// Transmog (opened by a craftsman, Open.extra = the NPC). Row ids are equip codes: worn equips are
+// 10000 + slot, held ones their slot. Base rows: min = level, flags worn / transmogged, info = the
+// original equip (or the transmog line). Source rows (value = the base): flag 1 = can be its look,
+// info = why not. The ore row: id = item, cost = held, max = needed.
+enum TransmogRowKind:int {TransmogBase=0,TransmogSource=1,TransmogOre=2};
+enum TransmogFlag:int {TransmogWorn=1,TransmogChanged=2,TransmogFits=1};
 // Teleport categories shown by version 3 (Boss=0 and Event=3 remain for older clients only).
 // Custom lists carry the server's per-character limit in Snapshot.extra.
 enum TeleportCategory:int {LevelMaps=1,TownMaps=2,CustomMaps=4};
@@ -114,7 +122,7 @@ inline bool Parse(const unsigned char* p,size_t n,Snapshot& result) {
     if(!p || n>60000)return false;
     try {
         QuestProtocol::Reader r(p,n);if(r.number<uint8_t>()!=Version)return false;
-        Snapshot s;s.view=r.number<uint8_t>();if(s.view>BookRouteView)return false;
+        Snapshot s;s.view=r.number<uint8_t>();if(s.view>TransmogSourcesView)return false;
         s.sequence=r.number<int>();s.character=r.number<int>();s.meso=r.number<int64_t>();
         s.cash=r.number<int>();s.maplePoint=r.number<int>();s.credit=r.number<int>();s.flags=r.number<uint8_t>();
         s.value=r.number<int>();s.extra=r.number<int>();s.title=r.string();s.message=r.string();
