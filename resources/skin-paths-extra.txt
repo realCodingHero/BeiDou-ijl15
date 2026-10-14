@@ -102,3 +102,12 @@ Character/Hair/00030060.img/default/hair
 Character/Hair/00030010.img/default/hairOverHead
 Character/Hair/00030020.img/default/hairOverHead
 Item/Cash/0515.img/05150040/info/icon
+Item/Consume/0229.img/02290074/info/icon
+Item/Consume/0229.img/02290075/info/icon
+Item/Consume/0229.img/02290070/info/icon
+Item/Consume/0229.img/02290071/info/icon
+Item/Consume/0229.img/02290068/info/icon
+Item/Consume/0229.img/02290069/info/icon
+Item/Consume/0229.img/02290096/info/icon
+Item/Consume/0229.img/02290061/info/icon
+Item/Consume/0229.img/02290046/info/icon
