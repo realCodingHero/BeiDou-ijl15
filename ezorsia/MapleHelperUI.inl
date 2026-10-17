@@ -13,6 +13,7 @@ enum HelperButton {HelperBack=3001,HelperWarp=3002,HelperRefresh=3003,HelperBorr
     BookExchangeButton=3012,BookDecomposeButton=3013,BookDecomposeAllButton=3014,BookTab=2300,
     BookMapsButton=3015,BookRouteButton=3016,BookWarpButton=3017,
     TgTryButton=3018,TgApplyButton=3019,TgRestoreButton=3020,TgTab=2400,TgBaseRow=4000,TgSourceRow=4500,
+    HelperExpandAll=3021,HelperCollapseAll=3022,
     BoostStep=3100,BoostPreset=3110, // steps: 3100+2*slider (down) / +1 (up); presets 3110..3113
     HelperTile=1000,TalismanTile=1600,HelperTab=2000,HelperHubTab=2100,TalismanTab=2200};
 constexpr int BoostTrackLeft=100,BoostTrackRight=282,BoostThumb=22;
@@ -26,6 +27,8 @@ struct HelperState {
     // Custom teleport tab: the typed map id and whether its box has keyboard focus.
     // The limit comes from the server (game_config custom_warp_limit) with every custom list.
     std::wstring customInput;bool inputFocus=false;int customLimit=0;
+    // Teleport lists group by region (the grey part of "Region - Name"); folded regions by name.
+    std::set<std::wstring> foldedRegions;
     // Boost page: applied and drafted allocations (physical, magic), the price of each total,
     // what this run has paid, the exit NPC, slider drag and press-and-hold repeat.
     int boostApplied[2]={0,0},boostDraft[2]={0,0},boostPaidTotal=0,boostNpc=0,dragSlider=-1;int64_t boostPaid=0;
@@ -176,6 +179,31 @@ void PaintHub(Window& w,HDC dc) {
         SectionHeading(dc,y+2,Text(L"mhMore"));TileGrid(w,dc,y+20,1);
     } else {SectionHeading(dc,y,Text(L"mhGm"));TileGrid(w,dc,y+18,2);}
 }
+// One teleport list line: a region header (index<0, the region's position) or a destination.
+struct TeleportEntry {int index;std::wstring region;int count;};
+std::wstring TeleportRegion(const MapleProtocol::Row& r){std::wstring map,street;SplitMapName(r.label,map,street);return street;}
+// Regions keep the server's order of their first destination; rows without one stay ungrouped.
+std::vector<TeleportEntry> TeleportEntries() {
+    std::vector<std::wstring> order;std::map<std::wstring,std::vector<int>> groups;
+    for(int i=0;i<int(helper.teleports.size());++i){auto region=TeleportRegion(helper.teleports[i]);if(!groups.count(region))order.push_back(region);groups[region].push_back(i);}
+    std::vector<TeleportEntry> result;
+    for(int g=0;g<int(order.size());++g) {
+        const auto& region=order[g];
+        if(!region.empty())result.push_back({-1-g,region,int(groups[region].size())});
+        if(region.empty() || !helper.foldedRegions.count(region))for(int i:groups[region])result.push_back({i,region,0});
+    }
+    return result;
+}
+bool AnyRegion(bool folded) {
+    for(const auto& r:helper.teleports){auto region=TeleportRegion(r);if(!region.empty() && helper.foldedRegions.count(region)!=0==folded)return true;}
+    return false;
+}
+void ToggleRegion(int index) {
+    for(const auto& e:TeleportEntries())if(e.index==index) {
+        if(!helper.foldedRegions.erase(e.region))helper.foldedRegions.insert(e.region);
+        HelperDirty();return;
+    }
+}
 void PaintTeleports(Window& w,HDC dc,int bottom) {
     auto& img=*w.image;
     // Version 3: boss and event shortcuts are gone; the third tab lists the character's own maps.
@@ -205,11 +233,28 @@ void PaintTeleports(Window& w,HDC dc,int bottom) {
         top+=TextBlock(dc,{12,top,HelperWidth-14,top+42},helper.notice,helper.teleports.empty()?Palette::Muted:Palette::Amber)+4;
         if(helper.teleports.empty())return;
     }
-    constexpr int CardHeight=34;int visible=(std::max)(1,(bottom-top)/CardHeight);
-    int maximum=(std::max)(0,int(helper.teleports.size())-visible);helper.offset=(std::min)(helper.offset,maximum);
-    int y=top;
-    for(int i=helper.offset;i<int(helper.teleports.size()) && y+CardHeight<=bottom;++i,y+=CardHeight) {
-        const auto& r=helper.teleports[i];bool selected=i==helper.selected,unlocked=(r.flags&1)!=0,affordable=unlocked && helper.meso>=r.cost;
+    // Count and expand all (down arrow) / collapse all (up arrow), as on the quest list.
+    Write(dc,{12,top,HelperWidth-50,top+14},Text(L"mhPlaces")+L" "+std::to_wstring(helper.teleports.size()),Palette::Muted);
+    IconButton(w,HelperExpandAll,HelperWidth-40,top+1,L"BtMin2",Trimmed(Text(L"expandAll")),AnyRegion(true));
+    IconButton(w,HelperCollapseAll,HelperWidth-25,top+1,L"BtMax2",Trimmed(Text(L"collapseAll")),AnyRegion(false));
+    top+=17;
+    // The offset counts lines; the last offset is the first one whose tail fits.
+    constexpr int CardHeight=34,HeaderHeight=20;auto entries=TeleportEntries();
+    auto height=[&](const TeleportEntry& e){return e.index<0?HeaderHeight:CardHeight;};
+    int maximum=0;for(int i=int(entries.size())-1,h=0;i>=0;--i){h+=height(entries[i]);if(h>bottom-top){maximum=i+1;break;}}
+    helper.offset=(std::min)(helper.offset,maximum);
+    int y=top,visible=0;
+    for(int n=helper.offset;n<int(entries.size()) && y+height(entries[n])<=bottom;++n,++visible) {
+        const auto& e=entries[n];
+        if(e.index<0) {
+            RECT strip{8,y,HelperWidth-22,y+HeaderHeight-2};HeaderStrip(dc,strip);bool folded=helper.foldedRegions.count(e.region)!=0;
+            Sprite(img,11,y+3,Skin(folded?L"UI/Basic.img/BtMax/normal/0":L"UI/Basic.img/BtMin/normal/0"));
+            int nameWidth=(std::min)(200,TextWidth(dc,e.region));
+            Write(dc,{27,y,27+nameWidth,y+HeaderHeight-2},e.region,Palette::Heading);
+            Write(dc,{27+nameWidth,y,HelperWidth-26,y+HeaderHeight-2},L" ("+std::to_wstring(e.count)+L")",Palette::Muted);
+            w.rowHits.push_back({strip,e.index});y+=HeaderHeight;continue;
+        }
+        int i=e.index;const auto& r=helper.teleports[i];bool selected=i==helper.selected,unlocked=(r.flags&1)!=0,affordable=unlocked && helper.meso>=r.cost;
         RECT card{8,y,HelperWidth-22,y+CardHeight-1};
         int saved=SaveDC(dc);IntersectClipRect(dc,card.left,card.top,card.right,card.bottom);
         if(selected)SelectionBox(dc,card);
@@ -225,9 +270,9 @@ void PaintTeleports(Window& w,HDC dc,int bottom) {
         Write(dc,{32,y+18,HelperWidth-26,y+32},second,Palette::Muted);
         RestoreDC(dc,saved);
         if(!selected)Dotted(dc,10,HelperWidth-24,y+CardHeight-1);
-        w.rowHits.push_back({card,i});
+        w.rowHits.push_back({card,i});y+=CardHeight;
     }
-    if(maximum>0)ScrollbarAt(w,dc,{HelperWidth-18,top,HelperWidth-6,bottom},helper.offset,maximum,visible,true,1);
+    if(maximum>0)ScrollbarAt(w,dc,{HelperWidth-18,top,HelperWidth-6,bottom},helper.offset,maximum,(std::max)(1,visible),true,1);
 }
 void PaintPet(Window& w,HDC dc) {
     auto& img=*w.image;int y=110;
@@ -907,6 +952,10 @@ void HelperClick(Window& w,int id) {
     }
     if(id==HelperBack){helper.page=HubPage;helper.status.clear();HelperDirty();return;}
     if(id==HelperRefresh){helper.status.clear();RefreshHelperPage();HelperDirty();return;}
+    if(id==HelperExpandAll || id==HelperCollapseAll) {
+        for(const auto& r:helper.teleports){auto region=TeleportRegion(r);if(region.empty())continue;if(id==HelperExpandAll)helper.foldedRegions.erase(region);else helper.foldedRegions.insert(region);}
+        helper.offset=0;HelperDirty();return;
+    }
     if(id==HelperWarp) {
         if(helper.selected<0 || helper.selected>=int(helper.teleports.size()) || helper.loading)return;
         const auto& r=helper.teleports[helper.selected];helper.status.clear();
@@ -935,7 +984,8 @@ void HelperClick(Window& w,int id) {
 }
 void HelperRow(int index) {
     helper.inputFocus=false;
-    if(helper.page==TeleportPage){helper.selected=index;HelperDirty();}
+    if(helper.page==TeleportPage && index<0)ToggleRegion(index);
+    else if(helper.page==TeleportPage){helper.selected=index;HelperDirty();}
     else if(helper.page==BooksPage && helper.bookView==1){helper.bookMapPick=index;HelperDirty();}
     else if(helper.page==BooksPage && helper.bookView==2){helper.bookStepPick=index;HelperDirty();}
     else if(helper.page==BooksPage && index>=0 && index<int(helper.books.size()))BookChoose(helper.books[index].kind,helper.books[index].id);
