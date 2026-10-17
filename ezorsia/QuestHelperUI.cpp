@@ -66,10 +66,10 @@ std::vector<Row> quests,detailRows,sourceRows,routeRows;
 int progressCount=-1,readyCount=-1,questNpc=0,questLevel=0,descriptionScroll=0,descriptionScrollMax=0;
 std::wstring questDescription;
 std::set<int> collapsedGroups{100000};
-struct CategoryMemory {int quest=0,page=0,offset=0;std::set<int> collapsed{100000};std::map<int,int> groupQuests;};
+struct CategoryMemory {int quest=0,offset=0;std::set<int> collapsed{100000};std::map<int,int> groupQuests;};
 std::array<CategoryMemory,2> categoryMemory;
 bool restoreSelection=false;
-std::set<int> restorePages;
+std::vector<Row> loadingQuests;bool listLoading=false;DWORD listStarted=0;
 int questTotal=0,sourceTotal=0,detailTotal=0,routeTotal=0;
 std::wstring title,message;
 DWORD lastRefresh=0,lastListRefresh=0,lastSend=0,quoteTime=0;
@@ -161,7 +161,7 @@ int ListMaximum(){return (std::max)(0,ListHeight()-(ListViewportBottom-ListViewp
 bool AnyGroupCollapsed(){for(const auto& q:quests)if(collapsedGroups.count(QuestGroup(q)))return true;return false;}
 bool AnyGroupExpanded(){for(const auto& q:quests)if(!collapsedGroups.count(QuestGroup(q)))return true;return false;}
 bool AllGroupsCollapsed(){if(quests.empty())return false;for(const auto& q:quests)if(!collapsedGroups.count(QuestGroup(q)))return false;return true;}
-void RememberCategory(){auto& memory=categoryMemory[category];for(const auto& q:quests)if(q.id==selectedQuest){memory.quest=selectedQuest;memory.page=listPage;}if(!memory.quest)memory.page=listPage;memory.offset=listOffset;memory.collapsed=collapsedGroups;}
+void RememberCategory(){auto& memory=categoryMemory[category];for(const auto& q:quests)if(q.id==selectedQuest)memory.quest=selectedQuest;memory.offset=listOffset;memory.collapsed=collapsedGroups;}
 std::wstring NamedToken(wchar_t kind,const std::wstring& id) {
     if(kind==L'c') {for(const auto& row:detailRows)if(row.kind==2 && row.id==_wtoi(id.c_str()))return std::to_wstring(row.current);return L"0";}
     if(kind==L'a') {
@@ -482,7 +482,8 @@ void Enqueue(Request r) {
     for(const auto& q:queue)if(q.action==r.action && q.quest==r.quest && q.kind==r.kind && q.target==r.target && q.map==r.map && q.purpose==r.purpose && q.token==r.token && q.navigation==r.navigation)return;
     if(queue.size()<16)queue.push_back(r);
 }
-void List(){Enqueue({0,0,0,category,listPage,0});}
+// Every list request starts again from the first server page; later pages follow on their own.
+void List(){listPage=0;loadingQuests.clear();listLoading=true;listStarted=GetTickCount();Enqueue({0,0,0,category,0,0});}
 void Detail(){if(selectedQuest)Enqueue({1,selectedQuest,0,0,detailPage,1});}
 void Route(){if(selectedQuest && routeMap)Enqueue({3,selectedQuest,sourceKind,sourceTarget,routeMap,3,routePage});}
 void SetExpanded(bool expanded);
@@ -490,7 +491,7 @@ void SelectQuest(int quest,const std::wstring& name){++navigation;restoreSelecti
 void Hide(Window& w){if(w.shown){w.shown=false;destroy(w.native);}w.buttons.clear();w.tabs.clear();w.pressed=w.hover=-1;w.mouseDown=false;w.dragScroll=-1;}
 void Show(Window& w);
 void AdvanceDrawer(DWORD now);
-void RestoreCategory(){const auto& memory=categoryMemory[category];listPage=memory.page;listOffset=memory.offset;collapsedGroups=memory.collapsed;selectedQuest=0;selectedRow=-1;view=desiredView=1;quests.clear();detailRows.clear();questTotal=0;title.clear();message.clear();questDescription.clear();restoreSelection=true;restorePages.clear();}
+void RestoreCategory(){const auto& memory=categoryMemory[category];listPage=0;listOffset=memory.offset;collapsedGroups=memory.collapsed;selectedQuest=0;selectedRow=-1;view=desiredView=1;quests.clear();detailRows.clear();questTotal=0;title.clear();message.clear();questDescription.clear();restoreSelection=true;}
 void DismissQuote(){quote={};confirming=false;Hide(confirmWindow);Dirty();}
 void RefreshView(){if(view==2)Enqueue({2,selectedQuest,sourceKind,sourceTarget,sourcePage,2});else if(view==3)Route();else Detail();}
 void* __fastcall DeleteReference(void* reference,void*,unsigned) {
@@ -798,8 +799,7 @@ void Paint(Window& w) {
         // Tabs stand on the native red rule.
         TabAt(w,dc,2,{7,23,124,42},Text(L"progress")+(progressCount>=0?L" "+std::to_wstring(progressCount):L""));
         TabAt(w,dc,3,{126,23,243,42},Text(L"ready")+(readyCount>=0?L" "+std::to_wstring(readyCount):L""));
-        int pages=(std::max)(1,(questTotal+ServerPageSize-1)/ServerPageSize);
-        Write(dc,{10,48,208,63},std::to_wstring(listPage+1)+L" / "+std::to_wstring(pages)+L"  "+Text(L"pageCount")+L" "+std::to_wstring(quests.size()),Palette::Muted);
+        Write(dc,{10,48,208,63},Text(L"questCount")+L" "+std::to_wstring(quests.size()),Palette::Muted);
         // Expand all (down arrow) / collapse all (up arrow) as native 12x12 buttons.
         IconButton(w,16,214,50,L"BtMin2",Trimmed(Text(L"expandAll")),AnyGroupCollapsed());
         IconButton(w,17,229,50,L"BtMax2",Trimmed(Text(L"collapseAll")),AnyGroupExpanded());
@@ -835,8 +835,6 @@ void Paint(Window& w) {
             RestoreDC(dc,savedList);
         }
         ScrollbarAt(w,dc,{231,ListViewportTop,243,ListViewportBottom},listOffset,maximum,visible,true,20);
-        ButtonAt(w,dc,4,{12,BarTop,76,BarTop+17},L"prev",listPage>0);
-        ButtonAt(w,dc,5,{92,BarTop,156,BarTop+17},L"next",(listPage+1)*ServerPageSize<questTotal);
         ButtonAt(w,dc,6,{172,BarTop,236,BarTop+17},L"refresh");
         if(drawerVisible) {
             Write(dc,{262,5,590,19},title);
@@ -971,7 +969,6 @@ void Click(Window& w,int id) {
     if(id==15){SetExpanded(w.collapsed);return;}
     if(id==16 || id==17){bool expand=id==16;for(const auto& q:quests){int group=QuestGroup(q);if(expand)collapsedGroups.erase(group);else collapsedGroups.insert(group);}listOffset=0;Dirty();return;}
     if(id==2 || id==3){int next=id==3?1:0;if(next==category)return;RememberCategory();++navigation;category=next;RestoreCategory();SetExpanded(false);List();Dirty();return;}
-    if(id==4 || id==5){int page=listPage+(id==4?-1:1);if(page<0 || page*ServerPageSize>=questTotal)return;restoreSelection=false;listPage=page;listOffset=0;quests.clear();List();Dirty();return;}
     if(id==6){List();RefreshView();return;}
     if(id==7){
         ++navigation;
@@ -1054,7 +1051,8 @@ void __fastcall Update(void* self,void*) {
     if(now-lastRefresh>=2000){lastRefresh=now;
         if(mainWindow.shown && !mainWindow.collapsed && view==1 && !quote.token)Detail();
     }
-    if(mainWindow.shown && now-lastListRefresh>=(view!=1 || quote.token?2000u:10000u)){lastListRefresh=now;List();}
+    // A refresh waits for a running multi-page fetch unless its replies went missing.
+    if(mainWindow.shown && now-lastListRefresh>=(view!=1 || quote.token?2000u:10000u) && (!listLoading || now-listStarted>=10000)){lastListRefresh=now;List();}
     if(quote.token && !confirming && now-quoteTime>=30000){DismissQuote();message=Text(L"quoteExpired");Dirty();}
     ExpirePending(now);
     if(!queue.empty() && now-lastSend>=150) {
@@ -1147,21 +1145,16 @@ bool QuestHelperUI::Receive(const unsigned char* data,size_t size) {
         }
     }
     if(s.view==6){if(r.quest && r.quest!=selectedQuest)return true;message=s.title;if(r.action==4 || r.action==5)DismissQuote();if(r.purpose==1){selectedQuest=0;detailRows.clear();SetExpanded(false);List();}Dirty();return true;}
-    if(r.purpose==0 && s.view==0 && r.target==category && r.map==listPage){
-        questTotal=s.total;
-        progressCount=s.progress;readyCount=s.ready;
-        if(listPage>0 && listPage*ServerPageSize>=questTotal){listPage=(std::max)(0,(questTotal-1)/ServerPageSize);listOffset=0;List();}
-        else{quests=std::move(s.rows);listOffset=(std::min)(listOffset,ListMaximum());
-            if(restoreSelection && mainWindow.shown){int remembered=categoryMemory[category].quest;auto foundQuest=std::find_if(quests.begin(),quests.end(),[&](const Row& q){return q.id==remembered;});
-                if(foundQuest!=quests.end()){SelectQuest(foundQuest->id,foundQuest->label);int top=0;for(const auto& entry:ListEntries()){int height=EntryHeight(entry);if(entry.index>=0 && quests[entry.index].id==remembered){if(top<listOffset)listOffset=top;else if(top+height>listOffset+ListViewportBottom-ListViewportTop)listOffset=top+height-(ListViewportBottom-ListViewportTop);break;}top+=height;}}
-                else {
-                    // New quests can move the remembered selection to another server page.
-                    restorePages.insert(listPage);int next=-1;
-                    if(remembered)for(int page=0;page<(questTotal+ServerPageSize-1)/ServerPageSize;++page)if(!restorePages.count(page)){next=page;break;}
-                    if(next>=0){listPage=next;listOffset=0;quests.clear();List();}
-                    else {restoreSelection=false;categoryMemory[category].quest=0;if(message==Text(L"loading"))message.clear();}
-                }
-            }
+    if(r.purpose==0 && s.view==0 && r.target==category && r.map==listPage && listLoading){
+        // The list is one scrollable, foldable list: fetch the server's pages one after another
+        // and show them together; a quest that moved between two pages is kept once.
+        questTotal=s.total;progressCount=s.progress;readyCount=s.ready;
+        for(auto& row:s.rows)if(std::none_of(loadingQuests.begin(),loadingQuests.end(),[&](const Row& q){return q.id==row.id;}))loadingQuests.push_back(std::move(row));
+        if(!s.rows.empty() && (listPage+1)*ServerPageSize<questTotal){++listPage;Enqueue({0,0,0,category,listPage,0});if(quests.empty())quests=loadingQuests;Dirty();return true;}
+        listLoading=false;listPage=0;quests=std::move(loadingQuests);loadingQuests.clear();listOffset=(std::min)(listOffset,ListMaximum());
+        if(restoreSelection && mainWindow.shown){int remembered=categoryMemory[category].quest;auto foundQuest=std::find_if(quests.begin(),quests.end(),[&](const Row& q){return q.id==remembered;});
+            if(foundQuest!=quests.end()){SelectQuest(foundQuest->id,foundQuest->label);int top=0;for(const auto& entry:ListEntries()){int height=EntryHeight(entry);if(entry.index>=0 && quests[entry.index].id==remembered){if(top<listOffset)listOffset=top;else if(top+height>listOffset+ListViewportBottom-ListViewportTop)listOffset=top+height-(ListViewportBottom-ListViewportTop);break;}top+=height;}}
+            else {restoreSelection=false;categoryMemory[category].quest=0;if(message==Text(L"loading"))message.clear();}
         }
     }
     else if(s.quest==selectedQuest) {
