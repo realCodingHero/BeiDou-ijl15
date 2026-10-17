@@ -470,6 +470,56 @@ void OpenBooks() {
     helper.books.clear();helper.status.clear();HelperRequest(MapleProtocol::Books);HelperDirty();
 }
 void BookChoose(int tab,int id){helper.bookTab=tab;helper.bookSelected=id;helper.bookConfirm=0;helper.bookAllArmed=false;HelperDirty();}
+// ---- Transmog looks on this client's own avatar -----------------------------------------------
+// The server sends the real equips; only the sprites drawn for the local avatar swap to the look.
+// CAvatar::PrepareActionLayer (0x453AD1) hands an equip-id array to CActionMan::LoadCharacterAction
+// at 0x45464B (eax = the array, edi = the avatar); the cave there passes a swapped copy instead, so
+// the avatar's own AvatarLook (and everything that reads it) keeps the real ids.
+struct TransmogLook {int slot=0,real=0,look=0;};
+std::vector<TransmogLook> transmogLooks;
+constexpr int TransmogEquipSlots=60;
+int transmogEquips[TransmogEquipSlots];
+DWORD transmogActionMan=0x00BE78D4,transmogLoadActionReturn=0x00454651;
+constexpr DWORD LocalUserAddress=0x00BEBF98,LocalAvatarOffset=0x88,ClearActionLayerAddress=0x00453A29;
+// Copies the array with each look swapped in where the slot still holds that real equip.
+int* TransmogSwap(const int* equips) {
+    memcpy(transmogEquips,equips,sizeof(transmogEquips));
+    for(const auto& l:transmogLooks)if(l.slot>=0 && l.slot<TransmogEquipSlots && transmogEquips[l.slot]==l.real)transmogEquips[l.slot]=l.look;
+    return transmogEquips;
+}
+void* LocalAvatar(){void* user=*reinterpret_cast<void**>(LocalUserAddress);return user?static_cast<char*>(user)+LocalAvatarOffset:nullptr;}
+int* __cdecl TransmogLoadAction(void* avatar,int* equips) {
+    if(transmogLooks.empty() || !equips || avatar!=LocalAvatar())return equips;
+    return TransmogSwap(equips);
+}
+__declspec(naked) void TransmogLoadActionCave() {
+    __asm {
+        push eax
+        push edi
+        call TransmogLoadAction
+        add esp,8
+        mov ecx,transmogActionMan
+        mov ecx,[ecx]
+        jmp dword ptr[transmogLoadActionReturn]
+    }
+}
+// Rebuilds the local avatar's layers the way a mount change does: clear, then PrepareActionLayer.
+void RefreshLocalAvatar() {
+    void* avatar=LocalAvatar();if(!avatar)return;
+    reinterpret_cast<void(__thiscall*)(void*,int)>(ClearActionLayerAddress)(avatar,0);
+    auto prepare=reinterpret_cast<void(__thiscall*)(void*,int,int,int)>((*reinterpret_cast<void***>(avatar))[5]);
+    prepare(avatar,6,100,0);
+}
+// Tests swap these out: the live ones read client memory.
+void (*TransmogRefreshAvatar)()=RefreshLocalAvatar;
+void TransmogOnLooks(const MapleProtocol::Snapshot& s) {
+    std::vector<TransmogLook> looks;
+    for(const auto& r:s.rows)if(r.id>0 && r.id<TransmogEquipSlots && r.cost>0 && r.icon>0)looks.push_back({r.id,int(r.cost),r.icon});
+    bool changed=looks.size()!=transmogLooks.size();
+    for(size_t i=0;!changed && i<looks.size();++i)changed=looks[i].slot!=transmogLooks[i].slot || looks[i].real!=transmogLooks[i].real || looks[i].look!=transmogLooks[i].look;
+    transmogLooks=std::move(looks);
+    if(changed)TransmogRefreshAvatar();
+}
 // ---- Transmog ----------------------------------------------------------------------------
 const MapleProtocol::Row* TgRow(const std::vector<MapleProtocol::Row>& rows,int code){for(const auto& r:rows)if(r.id==code)return &r;return nullptr;}
 const MapleProtocol::Row* TgBase(){return TgRow(helper.tgBases,helper.tgBase);}
@@ -925,6 +975,7 @@ bool HelperReceive(const unsigned char* data,size_t size) {
             :s.value==MapleProtocol::OpenTransmog?TransmogPage:HubPage);
         return true;
     }
+    if(s.view==MapleProtocol::TransmogLooksView){TransmogOnLooks(s);return true;}
     // The server acknowledges each field's hello; until then the help menu keeps its old route.
     if(s.sequence==0){if(s.view==MapleProtocol::Done)helper.serverReady=true;return true;}
     auto found=helper.pending.find(s.sequence);if(found==helper.pending.end())return true;

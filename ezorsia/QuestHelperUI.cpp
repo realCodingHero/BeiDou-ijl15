@@ -1184,6 +1184,7 @@ void QuestHelperUI::FieldChange(){
         if(salonWindow.shown)HideSalon(); // the next map load also restores any try-on
     }
 }
+void* QuestHelperUI::TransmogLookCave(){return reinterpret_cast<void*>(&TransmogLoadActionCave);}
 bool QuestHelperUI::InstallHelper(bool value){if(!value || !enabled)return false;helperWindow.kind=2;salonWindow.kind=3;helper.enabled=true;return true;}
 bool QuestHelperUI::HelperEnabled(){return helper.enabled;}
 bool QuestHelperUI::HelperReady(){return helper.enabled && helper.serverReady;}
