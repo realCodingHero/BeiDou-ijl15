@@ -77,7 +77,7 @@ enum Action:uint8_t {Hello=0,Hub=1,Feature=2,Teleports=3,Warp=4,Pet=5,PetSet=6,T
     TransmogList=27,TransmogSources=28,TransmogApply=29,TransmogRestore=30,TransmogTry=31};
 enum View:uint8_t {Open=0,HubView=1,TeleportView=2,PetView=3,Done=4,Error=5,TalismanView=6,BoostView=7,
     SalonCatalogView=8,SalonStateView=9,BooksView=10,BookMapsView=11,BookRouteView=12,
-    TransmogView=13,TransmogSourcesView=14};
+    TransmogView=13,TransmogSourcesView=14,TransmogLooksView=15};
 // Salon: kinds, catalogue rows (kind = gender, min = colour bits, max = page, icon = first id) and
 // state rows (kind 0-2 = favourites, then these).
 enum SalonKind:int {SalonHair=0,SalonFace=1,SalonSkin=2};
@@ -104,6 +104,9 @@ enum OpenPage:int {OpenHub=0,OpenTalisman=1,OpenBoost=2,OpenTransmog=3};
 // info = why not. The ore row: id = item, cost = held, max = needed.
 enum TransmogRowKind:int {TransmogBase=0,TransmogSource=1,TransmogOre=2};
 enum TransmogFlag:int {TransmogWorn=1,TransmogChanged=2,TransmogFits=1};
+// Unsolicited (sequence 0): the looks this client draws on its own avatar. Rows: id = equip slot
+// (1 = cap, 11 = weapon, ...), cost = the real equip id, icon = the look. The client keeps the real
+// equips, so tooltips, requirements and attack speed stay the real equip's.
 // Teleport categories shown by version 3 (Boss=0 and Event=3 remain for older clients only).
 // Custom lists carry the server's per-character limit in Snapshot.extra.
 enum TeleportCategory:int {LevelMaps=1,TownMaps=2,CustomMaps=4};
@@ -122,12 +125,12 @@ inline bool Parse(const unsigned char* p,size_t n,Snapshot& result) {
     if(!p || n>60000)return false;
     try {
         QuestProtocol::Reader r(p,n);if(r.number<uint8_t>()!=Version)return false;
-        Snapshot s;s.view=r.number<uint8_t>();if(s.view>TransmogSourcesView)return false;
+        Snapshot s;s.view=r.number<uint8_t>();if(s.view>TransmogLooksView)return false;
         s.sequence=r.number<int>();s.character=r.number<int>();s.meso=r.number<int64_t>();
         s.cash=r.number<int>();s.maplePoint=r.number<int>();s.credit=r.number<int>();s.flags=r.number<uint8_t>();
         s.value=r.number<int>();s.extra=r.number<int>();s.title=r.string();s.message=r.string();
         unsigned count=r.number<uint16_t>();
-        if(count>200 || s.sequence<0 || s.character<=0 || (s.sequence==0 && s.view!=Open && s.view!=Done))return false;
+        if(count>200 || s.sequence<0 || s.character<=0 || (s.sequence==0 && s.view!=Open && s.view!=Done && s.view!=TransmogLooksView))return false;
         for(unsigned i=0;i<count;++i) {
             Row row;row.id=r.number<int>();row.kind=r.number<uint8_t>();row.flags=r.number<uint8_t>();row.cost=r.number<int64_t>();
             row.min=r.number<int16_t>();row.max=r.number<int16_t>();row.icon=r.number<int>();row.label=r.string();row.info=r.string();

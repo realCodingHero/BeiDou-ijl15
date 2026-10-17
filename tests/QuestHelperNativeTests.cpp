@@ -773,6 +773,23 @@ int main(int argc,char** argv) {
         helper.tgTab=0;helper.tgBase=10011;helper.tgTrying=true;HideHelper();
         {int arg=-1,arg2=-1;memcpy(&arg,sentNow.data()+8,4);memcpy(&arg2,sentNow.data()+12,4);
          assert(!helperWindow.shown && !helper.tgTrying && helper.queue.empty() && sentNow.size()==24 && sentNow[3]==MapleProtocol::TransmogTry && arg==10011 && arg2==0);}
+        // ---- Transmog looks on the local avatar (unsolicited view 15) ----
+        {   static int refreshes=0;TransmogRefreshAvatar=[]{++refreshes;};
+            MapleProtocol::Snapshot looks;looks.view=MapleProtocol::TransmogLooksView;looks.character=42;looks.sequence=0;
+            looks.rows={{11,0,0,0,0,1382020,1382199,L"",L""},{1,0,0,0,0,1002004,1002357,L"",L""}}; // slot, real id in cost, look in icon
+            auto bytes=mwire(looks);assert(QuestHelperUI::ReceiveHelper(bytes.data(),bytes.size()));
+            assert(transmogLooks.size()==2 && transmogLooks[0].slot==11 && transmogLooks[0].real==1382199 && transmogLooks[0].look==1382020 && refreshes==1);
+            assert(QuestHelperUI::ReceiveHelper(bytes.data(),bytes.size()) && refreshes==1); // the same looks again: no redraw
+            int equips[TransmogEquipSlots]{};equips[1]=1002357;equips[11]=1382199;equips[5]=1040002;
+            int* drawn=TransmogSwap(equips);
+            assert(drawn!=equips && drawn[11]==1382020 && drawn[1]==1002004 && drawn[5]==1040002 && equips[11]==1382199); // the avatar keeps the real ids
+            equips[11]=1382001;drawn=TransmogSwap(equips);assert(drawn[11]==1382001); // another weapon in the slot: no swap
+            looks.rows.clear();bytes=mwire(looks);assert(QuestHelperUI::ReceiveHelper(bytes.data(),bytes.size()));
+            assert(transmogLooks.empty() && refreshes==2);
+            // Only the looks view may arrive without a request.
+            MapleProtocol::Snapshot stray;stray.view=MapleProtocol::TransmogView;stray.character=42;stray.sequence=0;
+            auto strayBytes=mwire(stray);MapleProtocol::Snapshot parsedStray;assert(!MapleProtocol::Parse(strayBytes.data(),strayBytes.size(),parsedStray));
+        }
         puts("PASS transmog: craftsman-opened page, ore row, equip and look columns, speed-mismatch looks disabled, try-on and stop, confirmed transmog, restore tab with confirm, refused reload, close restores the try-on");
     }
     // Verify writes into the ACTUAL v83 Canvas DLL, including tile boundaries.
