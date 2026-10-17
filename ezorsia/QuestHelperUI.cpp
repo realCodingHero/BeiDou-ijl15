@@ -901,6 +901,14 @@ void Paint(Window& w) {
         w.scrollbars.erase(std::remove_if(w.scrollbars.begin(),w.scrollbars.end(),[](const Scrollbar& bar){return bar.track.left>=250;}),w.scrollbars.end());
     }
 }
+// Two releases on the same row of the same window within the system double-click time.
+struct RowClick {const Window* window=nullptr;int index=0;DWORD at=0;} lastRowClick;
+bool RowClickedTwice(const Window& w,int index) {
+    DWORD now=GetTickCount();
+    bool twice=lastRowClick.window==&w && lastRowClick.index==index && now-lastRowClick.at<=GetDoubleClickTime();
+    lastRowClick=twice?RowClick{}:RowClick{&w,index,now};
+    return twice;
+}
 #include "MapleHelperUI.inl"
 #include "SalonUI.inl"
 void __fastcall Draw(void* self,void*,RECT* rect) {
@@ -1015,13 +1023,14 @@ void __fastcall MouseButton(void* input,void*,unsigned msg,unsigned,int x,int y)
         else Click(*w,b.id);return;
     }
     if(w->modal || pressed>=0)return;
-    if(w->kind==2){for(const auto& hit:w->rowHits)if(PtInRect(&hit.rect,p)){HelperRow(hit.index);break;}return;}
+    if(w->kind==2){for(const auto& hit:w->rowHits)if(PtInRect(&hit.rect,p)){bool twice=RowClickedTwice(*w,hit.index);HelperRow(hit.index);if(twice)HelperRowTwice(hit.index);break;}return;}
     for(const auto& hit:w->listHits)if(PtInRect(&hit.rect,p)) {
         auto entry=hit.entry;
         if(entry.index<0){if(collapsedGroups.count(entry.group)){collapsedGroups.erase(entry.group);int remembered=categoryMemory[category].groupQuests[entry.group];for(const auto& q:quests)if(q.id==remembered){SelectQuest(q.id,q.label);break;}}else collapsedGroups.insert(entry.group);Dirty();}
         else SelectQuest(quests[entry.index].id,quests[entry.index].label);return;
     }
-    for(const auto& hit:w->rowHits)if(PtInRect(&hit.rect,p)){selectedRow=hit.index;textScroll=0;Dirty();break;}
+    // A double click on a map (source list or route step) is the Teleport button, which asks first.
+    for(const auto& hit:w->rowHits)if(PtInRect(&hit.rect,p)){bool twice=RowClickedTwice(*w,hit.index);selectedRow=hit.index;textScroll=0;Dirty();if(twice && (view==2 || view==3))Click(*w,11);break;}
 }
 bool InField() {
     void* stage=*reinterpret_cast<void**>(0x00BEDED4);if(!stage)return false;
