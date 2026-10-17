@@ -306,6 +306,12 @@ int main(int argc,char** argv) {
     puts("PASS remembered selections: both tabs, close/ESC reopening, page 2 and reordered pages, regional group, removed quest and character isolation");
     view=desiredView=2;sourceRows={{103000000,2,8,0,0,800,L"金银岛 - 废弃都市",L"掉落来源"},{103020000,2,8,0,0,2147483647,L"金银岛 - 逆恩森林 I",L"完整费用"},{221030401,2,0,0,0,8500,L"地球防御本部 - 皮拉体安的草原",L"载运船"}};
     selectedRow=0;detailOffset=textScroll=0;Paint(mainWindow);Save(*mainWindow.image,directory/"quest-map-table.bmp");
+    {   // Double-clicking an unlocked map is its Teleport button (the server quote then asks to confirm).
+        auto row=mainWindow.rowHits.front().rect;int x=(row.left+row.right)/2,y=(row.top+row.bottom)/2;queue.clear();lastRowClick={};
+        mouse(mainWindow.native+4,WM_LBUTTONUP,0,x,y);assert(queue.empty());Paint(mainWindow);
+        mouse(mainWindow.native+4,WM_LBUTTONUP,0,x,y);assert(!queue.empty() && queue.back().action==4 && queue.back().map==103000000);
+        queue.clear();Paint(mainWindow);
+    }
         TestNarrowTiles(*mainWindow.image);
     {   // ---- Native Maple Helper (NPC 9900001) ----
         assert(QuestHelperUI::InstallHelper(true) && QuestHelperUI::HelperEnabled() && helperWindow.kind==2);
@@ -362,7 +368,18 @@ int main(int argc,char** argv) {
             Save(*helperWindow.image,directory/"maple-teleport-folded.bmp");
             Click(helperWindow,HelperExpandAll);assert(TeleportEntries().size()==5 && helper.foldedRegions.empty());PaintHelper(helperWindow);
         }
-        Click(helperWindow,HelperWarp);assert(sent(MapleProtocol::Warp)==100000000);
+        {   // Teleport asks first: the page dims, only the dialog takes input, Esc says no.
+            size_t queued=helper.queue.size();Click(helperWindow,HelperWarp);assert(helper.ask==1 && helper.queue.size()==queued);
+            PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-teleport-confirm.bmp");
+            assert(helperWindow.rowHits.empty() && helperWindow.buttons.size()==2 && buttonEnabled(helperWindow,HelperAskYes) && buttonEnabled(helperWindow,HelperAskNo));
+            Click(helperWindow,HelperWarp);HelperWheel(1);assert(helper.ask==1 && helper.queue.size()==queued);
+            assert(HelperKey(VK_ESCAPE) && helper.ask==0 && helper.queue.size()==queued);
+            // A double click on the selected destination opens the same dialog; a click on another row does not.
+            assert(!RowClickedTwice(helperWindow,1) && RowClickedTwice(helperWindow,1) && !RowClickedTwice(helperWindow,1));
+            HelperRowTwice(2);assert(helper.ask==0);HelperRowTwice(1);assert(helper.ask==1 && helper.askRow.id==100000000);
+            PaintHelper(helperWindow);Click(helperWindow,HelperAskYes);assert(helper.ask==0);
+        }
+        assert(sent(MapleProtocol::Warp)==100000000);
         {auto& b=helper.queue.back();int category=0;int64_t price=0;memcpy(&category,b.data()+12,4);memcpy(&price,b.data()+16,8);assert(category==2 && price==1200);}
         HelperRow(2);PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,HelperWarp)); // 600,000,000 mesos is not affordable
         MapleProtocol::Snapshot failed;failed.view=MapleProtocol::Error;failed.value=MapleProtocol::Warp;failed.message=L"该地图当前无法直接传送。";
@@ -489,10 +506,13 @@ int main(int argc,char** argv) {
         HelperRow(2);assert(!helper.inputFocus && !HelperKey('5'));
         // An unvisited map can be removed but not warped to.
         PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,HelperWarp) && buttonEnabled(helperWindow,HelperRemove));
-        Click(helperWindow,HelperRemove);assert(sent(MapleProtocol::CustomRemove)==101030000);
+        {size_t queued=helper.queue.size();Click(helperWindow,HelperRemove);assert(helper.ask==2 && helper.queue.size()==queued);}
+        PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-custom-remove-confirm.bmp");
+        Click(helperWindow,HelperAskYes);assert(helper.ask==0 && sent(MapleProtocol::CustomRemove)==101030000);
         helper.queue.clear();helper.pending.clear();helper.loading=false;
         HelperRow(0);PaintHelper(helperWindow);assert(buttonEnabled(helperWindow,HelperWarp));
-        Click(helperWindow,HelperWarp);{auto& b=helper.queue.back();int category=0;memcpy(&category,b.data()+12,4);assert(category==MapleProtocol::CustomMaps);}
+        Click(helperWindow,HelperWarp);assert(helper.ask==1 && helper.queue.empty());assert(HelperKey(VK_RETURN) && helper.ask==0);
+        {auto& b=helper.queue.back();int category=0;memcpy(&category,b.data()+12,4);assert(category==MapleProtocol::CustomMaps);}
         helper.queue.clear();helper.pending.clear();helper.loading=false;
         Click(helperWindow,HelperAddHere);assert(sent(MapleProtocol::CustomAdd)==0); // 0 = the current map
         helper.queue.clear();helper.pending.clear();helper.loading=false;
