@@ -13,7 +13,7 @@ enum HelperButton {HelperBack=3001,HelperWarp=3002,HelperRefresh=3003,HelperBorr
     BookExchangeButton=3012,BookDecomposeButton=3013,BookDecomposeAllButton=3014,BookTab=2300,
     BookMapsButton=3015,BookRouteButton=3016,BookWarpButton=3017,
     TgTryButton=3018,TgApplyButton=3019,TgRestoreButton=3020,TgTab=2400,TgBaseRow=4000,TgSourceRow=4500,
-    HelperExpandAll=3021,HelperCollapseAll=3022,
+    HelperExpandAll=3021,HelperCollapseAll=3022,HelperAskYes=3023,HelperAskNo=3024,
     BoostStep=3100,BoostPreset=3110, // steps: 3100+2*slider (down) / +1 (up); presets 3110..3113
     HelperTile=1000,TalismanTile=1600,HelperTab=2000,HelperHubTab=2100,TalismanTab=2200};
 constexpr int BoostTrackLeft=100,BoostTrackRight=282,BoostThumb=22;
@@ -29,6 +29,8 @@ struct HelperState {
     std::wstring customInput;bool inputFocus=false;int customLimit=0;
     // Teleport lists group by region (the grey part of "Region - Name"); folded regions by name.
     std::set<std::wstring> foldedRegions;
+    // Teleport and remove wait for a yes in a small dialog over the list: 0 none, 1 warp, 2 remove.
+    int ask=0;MapleProtocol::Row askRow{};int askCategory=0;
     // Boost page: applied and drafted allocations (physical, magic), the price of each total,
     // what this run has paid, the exit NPC, slider drag and press-and-hold repeat.
     int boostApplied[2]={0,0},boostDraft[2]={0,0},boostPaidTotal=0,boostNpc=0,dragSlider=-1;int64_t boostPaid=0;
@@ -103,7 +105,7 @@ void RefreshHelperPage() {
 }
 void OpenHelperPage(int page) {
     if(!helper.enabled || !InField())return;
-    helper.page=page;helper.selected=-1;helper.offset=0;helper.status.clear();
+    helper.page=page;helper.selected=-1;helper.offset=0;helper.status.clear();helper.ask=0;
     if(page==TalismanPage){helper.talisman.clear();helper.talismanTab=0;helper.talismanSkill=0;helper.room.clear();}
     if(page==BoostPage){helper.boostPrices.clear();helper.room.clear();helper.dragSlider=-1;}
     if(page==TransmogPage){helper.tgBases.clear();helper.tgSources.clear();helper.tgTab=0;helper.tgBase=helper.tgSource=helper.tgRight=0;helper.tgArmed=helper.tgTrying=false;}
@@ -116,7 +118,7 @@ void HideHelper() {
     // A try-on only lives on this client. The hidden window gets no more updates to flush the
     // queue, so the real look is asked for straight away.
     if(helper.page==TransmogPage && helper.tgTrying){auto bytes=MapleProtocol::Request(MapleProtocol::TransmogTry,++helper.sequence,helper.tgBase,0);HelperSendNow(bytes);}
-    helper.tgTrying=false;
+    helper.tgTrying=false;helper.ask=0;
     Hide(helperWindow);helper.queue.clear();helper.pending.clear();helper.loading=false;
 }
 
@@ -273,6 +275,43 @@ void PaintTeleports(Window& w,HDC dc,int bottom) {
         w.rowHits.push_back({card,i});y+=CardHeight;
     }
     if(maximum>0)ScrollbarAt(w,dc,{HelperWidth-18,top,HelperWidth-6,bottom},helper.offset,maximum,(std::max)(1,visible),true,1);
+}
+// The confirm dialog: the page behind is dimmed and stops taking input; Enter says yes, Esc no.
+bool AskWarpReady(){return helper.ask==1 && (helper.askRow.flags&1) && helper.meso>=helper.askRow.cost && !helper.loading;}
+void PaintAsk(Window& w,HDC dc) {
+    auto& img=*w.image;GdiFlush();
+    for(int i=0;i<img.width*img.height;++i){DWORD c=img.pixels[i];img.pixels[i]=(c&0xFF000000)|((c>>1)&0x7F7F7F);}
+    w.buttons.clear();w.tabs.clear();w.rowHits.clear();w.scrollbars.clear();
+    constexpr int AskWidth=300,AskHeight=150;int x=(HelperWidth-AskWidth)/2,y=(HelperHeight-AskHeight)/2;
+    {Bitmap frame(AskWidth,AskHeight);if(frame.pixels){std::fill(frame.pixels,frame.pixels+AskWidth*AskHeight,0);
+        Nine(frame,{0,0,AskWidth,AskHeight},Skin(L"UI/UIWindow.img/Quest/backgrnd"),MainX,ModalY,true);Sprite(img,x,y,&frame);}}
+    Fill(dc,{x+5,y+5,x+AskWidth-5,y+19},RGB(255,255,255));
+    Write(dc,{x+10,y+5,x+AskWidth-20,y+19},Text(L"mhAskTitle"));
+    std::wstring map,street;SplitMapName(helper.askRow.label,map,street);
+    int line=y+32;
+    line+=TextBlock(dc,{x+16,line,x+AskWidth-16,line+30},Format(Text(helper.ask==1?L"mhAskWarp":L"mhAskRemove"),map),Palette::Ink)+2;
+    if(!street.empty()){Write(dc,{x+16,line,x+AskWidth-16,line+14},street,Palette::Faint);line+=18;}
+    if(helper.ask==1) {
+        Dotted(dc,x+16,x+AskWidth-16,line+2,Palette::StripEdge);line+=8;
+        Write(dc,{x+16,line,x+AskWidth-16,line+14},Text(L"cost")+L": "+Amount(helper.askRow.cost),Palette::Red);
+        Write(dc,{x+16,line+16,x+AskWidth-16,line+30},Text(L"meso")+L": "+Amount(helper.meso),helper.meso>=helper.askRow.cost?Palette::Muted:Palette::Red);
+    }
+    int bar=y+AskHeight-26;
+    ButtonAt(w,dc,HelperAskYes,{x+AskWidth/2-84,bar,x+AskWidth/2-4,bar+17},L"mhAskYes",helper.ask==1?AskWarpReady():!helper.loading);
+    ButtonAt(w,dc,HelperAskNo,{x+AskWidth/2+4,bar,x+AskWidth/2+84,bar+17},L"cancel");
+}
+// Opens the dialog for the selected destination; nothing is sent until the player says yes.
+void AskSelected(int kind) {
+    if(helper.page!=TeleportPage || helper.selected<0 || helper.selected>=int(helper.teleports.size()) || helper.loading)return;
+    const auto& r=helper.teleports[helper.selected];
+    if(kind==1 && (!(r.flags&1) || helper.meso<r.cost))return;
+    helper.ask=kind;helper.askRow=r;helper.askCategory=helper.category;helper.inputFocus=false;HelperDirty();
+}
+void AnswerAsk(bool yes) {
+    int kind=helper.ask;helper.ask=0;
+    if(yes && kind==1 && helper.askCategory==helper.category){helper.status.clear();HelperRequest(MapleProtocol::Warp,helper.askRow.id,helper.category,helper.askRow.cost);}
+    else if(yes && kind==2){helper.status.clear();HelperRequest(MapleProtocol::CustomRemove,helper.askRow.id);}
+    HelperDirty();
 }
 void PaintPet(Window& w,HDC dc) {
     auto& img=*w.image;int y=110;
@@ -828,6 +867,7 @@ void PaintHelper(Window& w) {
         }
     }
     ButtonAt(w,dc,HelperRefresh,{HelperWidth-72,HelperBar,HelperWidth-10,HelperBar+17},L"refresh",!helper.loading);
+    if(helper.ask)PaintAsk(w,dc);
     GdiFlush();for(int i=0;i<width*height;++i)img.pixels[i]=(img.pixels[i]&0xFFFFFF)|(DWORD(shape[i])<<24);
 }
 
@@ -842,6 +882,7 @@ void AddCustomFromInput() {
 }
 // Digits, Backspace and Enter go to the map id box while it has focus; Escape releases it.
 bool HelperKey(unsigned key) {
+    if(helper.ask){if(key==VK_RETURN){if(helper.ask!=1 || AskWarpReady())AnswerAsk(true);}else if(key==VK_ESCAPE)AnswerAsk(false);return true;}
     if(helper.page!=TeleportPage || helper.category!=MapleProtocol::CustomMaps || !helper.inputFocus)return false;
     int digit=key>='0' && key<='9'?int(key-'0'):key>=VK_NUMPAD0 && key<=VK_NUMPAD9?int(key-VK_NUMPAD0):-1;
     if(digit>=0){if(helper.customInput.size()<9 && !(helper.customInput.empty() && digit==0))helper.customInput+=wchar_t(L'0'+digit);}
@@ -866,10 +907,8 @@ void HelperClick(Window& w,int id) {
     if(id==HelperInput){helper.inputFocus=true;HelperDirty();return;}
     if(id==HelperAddHere){helper.status.clear();HelperRequest(MapleProtocol::CustomAdd,0);HelperDirty();return;}
     if(id==HelperAddId){AddCustomFromInput();return;}
-    if(id==HelperRemove) {
-        if(helper.selected<0 || helper.selected>=int(helper.teleports.size()) || helper.loading)return;
-        helper.status.clear();HelperRequest(MapleProtocol::CustomRemove,helper.teleports[helper.selected].id);HelperDirty();return;
-    }
+    if(helper.ask){if(id==HelperAskYes || id==HelperAskNo)AnswerAsk(id==HelperAskYes);return;}
+    if(id==HelperRemove){AskSelected(2);return;}
     if(id>=BoostStep && id<BoostStep+4) {
         // A held button already stepped while held; its release must not add one more.
         if(helper.repeated){helper.repeated=false;return;}
@@ -956,11 +995,7 @@ void HelperClick(Window& w,int id) {
         for(const auto& r:helper.teleports){auto region=TeleportRegion(r);if(region.empty())continue;if(id==HelperExpandAll)helper.foldedRegions.erase(region);else helper.foldedRegions.insert(region);}
         helper.offset=0;HelperDirty();return;
     }
-    if(id==HelperWarp) {
-        if(helper.selected<0 || helper.selected>=int(helper.teleports.size()) || helper.loading)return;
-        const auto& r=helper.teleports[helper.selected];helper.status.clear();
-        HelperRequest(MapleProtocol::Warp,r.id,helper.category,r.cost);HelperDirty();return;
-    }
+    if(id==HelperWarp){AskSelected(1);return;}
     if(id>=HelperHubTab && id<HelperHubTab+2){helper.hubTab=id-HelperHubTab;HelperDirty();return;}
     if(id>=HelperTab && id<HelperTab+5) {
         int category=id-HelperTab;if(category==helper.category)return;
@@ -982,6 +1017,8 @@ void HelperClick(Window& w,int id) {
         HelperDirty();
     }
 }
+// A double click on a destination is the Teleport button (it asks first).
+void HelperRowTwice(int index){if(helper.page==TeleportPage && index>=0 && index==helper.selected)AskSelected(1);}
 void HelperRow(int index) {
     helper.inputFocus=false;
     if(helper.page==TeleportPage && index<0)ToggleRegion(index);
@@ -993,6 +1030,7 @@ void HelperRow(int index) {
         {helper.status.clear();HelperRequest(MapleProtocol::PetSet,helper.pets[index].id);HelperDirty();}
 }
 void HelperWheel(int delta) {
+    if(helper.ask)return;
     if(helper.page==TransmogPage) {
         // The column under the cursor scrolls; painting clamps both.
         int& value=helperWindow.hover>=TgSourceRow && helperWindow.hover<TgSourceRow+500?helper.tgRight:helper.offset;
