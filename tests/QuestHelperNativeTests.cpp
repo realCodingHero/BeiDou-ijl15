@@ -200,11 +200,9 @@ int main(int argc,char** argv) {
     MouseMove(mainWindow.native+4,nullptr,40,100);MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONUP,0,40,100);assert(mainWindow.pressed==-1 && queue.empty());
     mouse(mainWindow.native+4,WM_LBUTTONUP,0,190,430);assert(!queue.empty());
     MouseButton(mainWindow.native+4,nullptr,WM_LBUTTONDOWN,0,190,430);MouseEnter(mainWindow.native+4,nullptr,0);assert(mainWindow.pressed==-1 && !mainWindow.mouseDown);
-    Paint(mainWindow);queue.clear();mouse(mainWindow.native+4,WM_LBUTTONUP,0,100,430);
-    assert(listPage==1 && listOffset==0 && queue.back().map==1);quests.resize(11);Paint(mainWindow);
-    assert(!buttonEnabled(mainWindow,5) && buttonEnabled(mainWindow,4));
-    mouse(mainWindow.native+4,WM_LBUTTONUP,0,40,430);assert(listPage==0 && queue.back().map==0);
-    puts("PASS categories: medal isolation, expand/collapse all, tab totals, 50-row pages, drag/wheel scrollbar and detail resizing");
+    Paint(mainWindow);assert(!hasButton(mainWindow,4) && !hasButton(mainWindow,5)); // one list, no pages
+    quests.resize(11);Paint(mainWindow);
+    puts("PASS categories: medal isolation, expand/collapse all, tab totals, one paged-together list, drag/wheel scrollbar and detail resizing");
     category=1;Paint(mainWindow);for(const auto& hit:mainWindow.listHits)if(hit.entry.index>=0)assert(hit.rect.bottom-hit.rect.top<=20);
     category=0;view=desiredView=3;routePage=0;routeMap=103020100;routeTotal=4;detailOffset=0;selectedRow=-1;
     sourceKind=2;sourceTarget=4000018;sourceRows={{103020100,2,8,0,0,1200,L"金银岛 - 逆恩森林 II",L"木块"}};
@@ -255,38 +253,51 @@ int main(int argc,char** argv) {
     completionFeatures=2;Paint(mainWindow);assert(hasButton(mainWindow,9) && hasButton(mainWindow,11));
     quoted.sequence=13;quotedRequest={4,selectedQuest,7,0,0,4};receive(quoted,quotedRequest);assert(confirmWindow.shown);
     Snapshot off;off.sequence=15;off.quest=0;off.view=0;off.features=0;off.total=3;off.progress=2;off.ready=1;off.rows.assign(quests.begin(),quests.begin()+3);
-    receive(off,{0,0,0,category,listPage,0});assert(!confirmWindow.shown && completionFeatures==0 && progressCount==2 && readyCount==1);
-    off.sequence=14;off.features=3;receive(off,{0,0,0,category,listPage,0});assert(completionFeatures==0);
+    List();receive(off,{0,0,0,category,0,0});assert(!confirmWindow.shown && completionFeatures==0 && progressCount==2 && readyCount==1);
+    off.sequence=14;off.features=3;List();receive(off,{0,0,0,category,0,0});assert(completionFeatures==0);
+    {   // Every server page is fetched in turn; a quest that moved between two pages is kept once.
+        auto kept=quests;std::vector<Row> all;for(int i=0;i<61;++i)all.push_back({3000+i,0,0,10,0,0,L"任务 "+std::to_wstring(i),L""});
+        queue.clear();quests.clear();List();assert(listLoading && queue.back().map==0);
+        Snapshot page;page.sequence=40;page.view=0;page.total=61;page.rows.assign(all.begin(),all.begin()+50);
+        receive(page,queue.back());assert(listLoading && listPage==1 && queue.back().map==1 && quests.size()==50);
+        page.sequence=41;page.rows.assign(all.begin()+49,all.end());
+        receive(page,queue.back());assert(!listLoading && listPage==0 && quests.size()==61);
+        page.sequence=42;receive(page,{0,0,0,category,1,0});assert(quests.size()==61); // stale page after completion
+        quests=kept;
+    }
     Snapshot detail;detail.sequence=16;detail.quest=selectedQuest;detail.view=1;detail.features=0;detail.rows=detailRows;detail.total=3;
     message=Text(L"loading");receive(detail,{1,selectedQuest,0,0,detailPage,1});assert(message.empty() && questNpc==1032001);
     pending.emplace(17,Pending{{1,selectedQuest,0,0,detailPage,1},100});message=Text(L"loading");ExpirePending(10200);assert(message==Text(L"timeout"));
     puts("PASS packet state: original description/NPC, loading clears, stale navigation/features ignored and live switches dismiss purchase modal");
-    // Reopening restores the last selection in each tab, including a later server page.
-    categoryMemory={};category=0;listPage=1;listOffset=0;quests={{2050,0,0,10,0,0,L"第一页之外",L""},{2055,0,0,20,0,0,L"记住这项任务",L""}};
+    // Reopening restores the last selection in each tab, wherever it sits in the list.
+    categoryMemory={};category=0;listPage=0;listOffset=0;quests={{2050,0,0,10,0,0,L"第一页之外",L""},{2055,0,0,20,0,0,L"记住这项任务",L""}};
     questTotal=80;SelectQuest(2055,L"记住这项任务");AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);
-    Click(mainWindow,1);assert(!mainWindow.shown);queue.clear();OpenMain();assert(restoreSelection && listPage==1 && selectedQuest==0);
+    Click(mainWindow,1);assert(!mainWindow.shown);queue.clear();OpenMain();assert(restoreSelection && listPage==0 && selectedQuest==0);
     Snapshot remembered;remembered.sequence=20;remembered.view=0;remembered.total=80;remembered.progress=80;remembered.ready=1;remembered.rows=quests;
     // RestoreCategory intentionally clears the visible rows; use the server's new list.
     remembered.rows={{2050,0,0,10,0,0,L"第一页之外",L""},{2055,0,0,20,0,0,L"记住这项任务",L""}};
-    receive(remembered,{0,0,0,0,1,0});assert(selectedQuest==2055 && !mainWindow.collapsed && !restoreSelection);
+    remembered.total=2;receive(remembered,{0,0,0,0,0,0});assert(selectedQuest==2055 && !mainWindow.collapsed && !restoreSelection);
     AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Click(mainWindow,3);assert(category==1 && restoreSelection && selectedQuest==0 && listPage==0);
     Snapshot readyList=remembered;readyList.sequence=21;readyList.total=1;readyList.rows={{2001,0,1,15,0,0,L"可交付的任务",L""}};
     receive(readyList,{0,0,0,1,0,0});assert(selectedQuest==0);SelectQuest(2001,L"可交付的任务");AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);
-    Click(mainWindow,2);remembered.sequence=22;receive(remembered,{0,0,0,0,1,0});assert(selectedQuest==2055 && listPage==1);
+    Click(mainWindow,2);remembered.sequence=22;receive(remembered,{0,0,0,0,0,0});assert(selectedQuest==2055 && listPage==0);
     AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Paint(mainWindow);mouse(mainWindow.native+4,WM_LBUTTONUP,0,170,36);readyList.sequence=23;receive(readyList,{0,0,0,1,0,0});assert(selectedQuest==2001 && !mainWindow.collapsed);
     AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Key(mainWindow.native+4,nullptr,VK_ESCAPE,0);OpenMain();readyList.sequence=24;
     receive(readyList,{0,0,0,1,0,0});assert(selectedQuest==2001 && !mainWindow.collapsed);
     AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);Click(mainWindow,1);OpenMain();readyList.sequence=25;readyList.rows.clear();readyList.total=0;
     receive(readyList,{0,0,0,1,0,0});assert(selectedQuest==0 && categoryMemory[1].quest==0 && mainWindow.collapsed && !restoreSelection);
-    category=0;listPage=1;quests=remembered.rows;SelectQuest(2055,L"记住这项任务");Click(mainWindow,1);OpenMain();
-    Snapshot moved=remembered;moved.sequence=26;moved.rows.resize(1);receive(moved,{0,0,0,0,1,0});assert(restoreSelection && listPage==0);
-    moved.sequence=27;moved.rows={remembered.rows[1]};receive(moved,{0,0,0,0,0,0});assert(selectedQuest==2055 && listPage==0 && !restoreSelection);
-    category=0;listPage=listOffset=0;quests=remembered.rows;resourceText[L"Quest/QuestInfo.img/2050/area"]=L"20";resourceText[L"Quest/QuestInfo.img/2055/area"]=L"30";
+    category=0;quests=remembered.rows;SelectQuest(2055,L"记住这项任务");Click(mainWindow,1);OpenMain();
+    // The remembered quest arrives on the second server page.
+    Snapshot moved=remembered;moved.sequence=26;moved.total=51;moved.rows.assign(50,remembered.rows[0]);
+    for(int i=0;i<50;++i)moved.rows[i].id=4000+i;
+    receive(moved,{0,0,0,0,0,0});assert(restoreSelection && listPage==1 && selectedQuest==0);
+    moved.sequence=27;moved.rows={remembered.rows[1]};receive(moved,{0,0,0,0,1,0});assert(selectedQuest==2055 && listPage==0 && !restoreSelection);
+    category=0;listOffset=0;quests=remembered.rows;resourceText[L"Quest/QuestInfo.img/2050/area"]=L"20";resourceText[L"Quest/QuestInfo.img/2055/area"]=L"30";
     SelectQuest(2055,L"记住这项任务");SelectQuest(2050,L"第一页之外");AdvanceDrawer(mainWindow.drawerStart+DrawerDuration);collapsedGroups.insert(30);Paint(mainWindow);
     for(const auto& hit:mainWindow.listHits)if(hit.entry.index<0 && hit.entry.group==30){int y=(hit.rect.top+hit.rect.bottom)/2;mouse(mainWindow.native+4,WM_LBUTTONUP,0,80,y);break;}
     assert(selectedQuest==2055 && !collapsedGroups.count(30));
     Snapshot anotherCharacter=remembered;anotherCharacter.sequence=28;
-    pending.emplace(28,Pending{{0,0,0,category,listPage,0},GetTickCount()});auto otherBytes=wire(anotherCharacter);
+    List();pending.emplace(28,Pending{{0,0,0,category,0,0},GetTickCount()});auto otherBytes=wire(anotherCharacter);
     // Snapshot wire character is at byte offset 10. A different character clears all selections.
     int otherCharacter=99;memcpy(otherBytes.data()+10,&otherCharacter,4);QuestHelperUI::Receive(otherBytes.data(),otherBytes.size());
     assert(selectedQuest==0 && categoryMemory[0].quest==0 && categoryMemory[1].quest==0 && categoryMemory[0].groupQuests.empty());
@@ -341,6 +352,16 @@ int main(int argc,char** argv) {
         respond(towns);assert(helper.teleports.size()==3 && helper.locked==40);
         HelperRow(1);PaintHelper(helperWindow);Save(*helperWindow.image,directory/"maple-teleport.bmp");
         assert(buttonEnabled(helperWindow,HelperWarp));
+        {   // Destinations group by region in the server's order; headers fold and unfold.
+            auto entries=TeleportEntries();assert(entries.size()==5 && entries[0].index==-1 && entries[0].region==L"维多利亚岛" && entries[0].count==2);
+            assert(entries[3].index==-2 && entries[3].region==L"妖精森林" && entries[4].index==2);
+            int headers=0;for(const auto& hit:helperWindow.rowHits)if(hit.index<0)++headers;assert(headers==2);
+            HelperRow(-1);assert(helper.foldedRegions.count(L"维多利亚岛") && TeleportEntries().size()==3 && helper.selected==1);
+            PaintHelper(helperWindow);assert(buttonEnabled(helperWindow,HelperExpandAll) && buttonEnabled(helperWindow,HelperCollapseAll));
+            Click(helperWindow,HelperCollapseAll);assert(TeleportEntries().size()==2);PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,HelperCollapseAll));
+            Save(*helperWindow.image,directory/"maple-teleport-folded.bmp");
+            Click(helperWindow,HelperExpandAll);assert(TeleportEntries().size()==5 && helper.foldedRegions.empty());PaintHelper(helperWindow);
+        }
         Click(helperWindow,HelperWarp);assert(sent(MapleProtocol::Warp)==100000000);
         {auto& b=helper.queue.back();int category=0;int64_t price=0;memcpy(&category,b.data()+12,4);memcpy(&price,b.data()+16,8);assert(category==2 && price==1200);}
         HelperRow(2);PaintHelper(helperWindow);assert(!buttonEnabled(helperWindow,HelperWarp)); // 600,000,000 mesos is not affordable
